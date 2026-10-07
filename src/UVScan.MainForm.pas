@@ -51,6 +51,10 @@ type
     btnResetMinMax: TButton;
     btnLiveTest: TButton;
     lblLiveHint: TLabel;
+    chkMinMax: TCheckBox;
+    btnZoomOut: TButton;
+    lblZoom: TLabel;
+    btnZoomIn: TButton;
     tsDashboard: TTabSheet;
     pnlDashBar: TPanel;
     lblDashHint: TLabel;
@@ -152,6 +156,12 @@ type
     procedure btnAddGaugeClick(Sender: TObject);
     procedure btnTickDashPidsClick(Sender: TObject);
     procedure btnTestDisplayClick(Sender: TObject);
+    procedure chkMinMaxClick(Sender: TObject);
+    procedure btnZoomOutClick(Sender: TObject);
+    procedure btnZoomInClick(Sender: TObject);
+    procedure lblZoomClick(Sender: TObject);
+    procedure FormMouseWheel(Sender: TObject; Shift: TShiftState; WheelDelta: Integer;
+      MousePos: TPoint; var Handled: Boolean);
     procedure sbDashResize(Sender: TObject);
     procedure pmPidPopup(Sender: TObject);
     procedure miPidDisplayClick(Sender: TObject);
@@ -195,6 +205,14 @@ type
     FTestMode: Boolean;              // "Test display": made-up values instead of the PCM
     FTestStart: UInt64;
     FTestLo, FTestHi: TArray<Double>;
+    FZoom: Integer;                  // live grid zoom, percent
+    FBaseRowHeight: Integer;         // the grid's row height at 100%
+    procedure SetZoom(Percent: Integer);
+    procedure ZoomStep(Direction: Integer);
+    procedure ApplyGridLayout;
+    function ZoomPx(N: Integer): Integer;
+    function ZoomPt(Points: Integer): Integer;
+    function LastLiveCol: Integer;
     procedure SetupLiveRows(const Ids: TArray<Integer>);
     procedure StartTest;
     procedure StopTest;
@@ -268,6 +286,8 @@ const
 
 procedure TMainForm.FormCreate(Sender: TObject);
 begin
+  FZoom := 100;
+  FBaseRowHeight := grdLive.DefaultRowHeight; // already scaled to the screen DPI
   FSelected := TList<Integer>.Create;
   FSupport := TDictionary<Integer, Boolean>.Create;
   FRejected := TList<Integer>.Create;
@@ -289,11 +309,7 @@ begin
   FEngine := TScanEngine.Create(FCatalog, HandleEvent);
   cbRateChange(nil);
   FEngine.SetTrace(chkTrace.Checked);
-  grdLive.ColWidths[ColName] := 220;
-  grdLive.ColWidths[ColValue] := 140;
-  grdLive.ColWidths[ColUnits] := 80;
-  grdLive.ColWidths[ColMin] := 100;
-  grdLive.ColWidths[ColMax] := 100;
+  SetZoom(FSettings.LiveZoom);
   grdLive.DoubleBuffered := True; // paint off-screen, then copy: no flicker
   sbDash.DoubleBuffered := True;
   BuildDashboard;
@@ -356,7 +372,18 @@ end;
 
 procedure TMainForm.FormKeyDown(Sender: TObject; var Key: Word; Shift: TShiftState);
 begin
-  if (Key = VK_F8) and btnLog.Enabled then
+  if (Shift = [ssCtrl]) and (pcMain.ActivePage = tsLive) and
+    ((Key = VK_ADD) or (Key = VK_OEM_PLUS) or (Key = VK_SUBTRACT) or (Key = VK_OEM_MINUS) or (Key = Ord('0')) or (Key = VK_NUMPAD0)) then
+  begin
+    if (Key = VK_ADD) or (Key = VK_OEM_PLUS) then
+      ZoomStep(1)
+    else if (Key = VK_SUBTRACT) or (Key = VK_OEM_MINUS) then
+      ZoomStep(-1)
+    else
+      SetZoom(100);
+    Key := 0;
+  end
+  else if (Key = VK_F8) and btnLog.Enabled then
   begin
     btnLog.Click;
     Key := 0;
@@ -445,6 +472,7 @@ begin
   cbRate.ItemIndex := Ord(FSettings.StreamSpeed);
   chkTrace.Checked := FSettings.Trace;
   chkSound.Checked := FSettings.AlertSounds;
+  chkMinMax.Checked := FSettings.ShowMinMax;
   for N in FSettings.SelectedPids do
     if (FCatalog.FindById(N) <> nil) and FCatalog.FindById(N).Enabled and not FSelected.Contains(N) then
       FSelected.Add(N);
@@ -471,6 +499,8 @@ begin
   FSettings.StreamSpeed := TStreamSpeed(Max(0, cbRate.ItemIndex));
   FSettings.Trace := chkTrace.Checked;
   FSettings.AlertSounds := chkSound.Checked;
+  FSettings.LiveZoom := FZoom;
+  FSettings.ShowMinMax := chkMinMax.Checked;
   FSettings.SelectedPids := FSelected.ToArray;
   if cbLists.ItemIndex > 0 then
     FSettings.ActiveList := cbLists.Text
@@ -1317,7 +1347,7 @@ var
   R, R2: TRect;
 begin
   R := grdLive.CellRect(ColName, Idx + 1);
-  R2 := grdLive.CellRect(ColMax, Idx + 1);
+  R2 := grdLive.CellRect(LastLiveCol, Idx + 1);
   if IsRectEmpty(R) and IsRectEmpty(R2) then
     Exit; // scrolled out of view
   UnionRect(R, R, R2);
@@ -1384,7 +1414,7 @@ begin
     H := grdLive.DefaultRowHeight;
     D := FDisplay.Find(FLiveIds[I]);
     if (D <> nil) and (D.FontSize > 0) then
-      H := Max(H, MulDiv(D.FontSize, CurrentPPI, 72) + MulDiv(12, CurrentPPI, 96));
+      H := Max(H, MulDiv(ZoomPt(D.FontSize), CurrentPPI, 72) + ZoomPx(12));
     if I + 1 < grdLive.RowCount then
       grdLive.RowHeights[I + 1] := H;
   end;
@@ -1396,6 +1426,112 @@ begin
     if FLiveIds[Result] = PidId then
       Exit;
   Result := -1;
+end;
+
+{ Live grid zoom and columns }
+
+const
+  ZoomSteps: array[0..8] of Integer = (75, 90, 100, 110, 125, 150, 175, 200, 250);
+
+function TMainForm.ZoomPx(N: Integer): Integer;
+begin
+  Result := MulDiv(N, CurrentPPI * FZoom, 96 * 100);
+end;
+
+function TMainForm.ZoomPt(Points: Integer): Integer;
+begin
+  Result := Max(6, Round(Points * FZoom / 100));
+end;
+
+function TMainForm.LastLiveCol: Integer;
+begin
+  Result := grdLive.ColCount - 1;
+end;
+
+procedure TMainForm.SetZoom(Percent: Integer);
+begin
+  FZoom := EnsureRange(Percent, ZoomSteps[0], ZoomSteps[High(ZoomSteps)]);
+  lblZoom.Caption := IntToStr(FZoom) + '%';
+  btnZoomOut.Enabled := FZoom > ZoomSteps[0];
+  btnZoomIn.Enabled := FZoom < ZoomSteps[High(ZoomSteps)];
+  ApplyGridLayout;
+end;
+
+procedure TMainForm.ZoomStep(Direction: Integer);
+var
+  I: Integer;
+begin
+  if Direction > 0 then
+  begin
+    for I := 0 to High(ZoomSteps) do
+      if ZoomSteps[I] > FZoom then
+      begin
+        SetZoom(ZoomSteps[I]);
+        Exit;
+      end;
+  end
+  else
+    for I := High(ZoomSteps) downto 0 do
+      if ZoomSteps[I] < FZoom then
+      begin
+        SetZoom(ZoomSteps[I]);
+        Exit;
+      end;
+end;
+
+{ Column widths, row heights and fonts follow the zoom; min / max are the
+  last two columns, so hiding them is just two columns fewer. }
+procedure TMainForm.ApplyGridLayout;
+begin
+  if FBaseRowHeight = 0 then
+    Exit; // called while the form is still loading
+  if chkMinMax.Checked then
+    grdLive.ColCount := ColMax + 1
+  else
+    grdLive.ColCount := ColUnits + 1;
+  grdLive.DefaultRowHeight := MulDiv(FBaseRowHeight, FZoom, 100); // resets every row height
+  grdLive.ColWidths[ColValue] := ZoomPx(140);
+  grdLive.ColWidths[ColUnits] := ZoomPx(80);
+  if chkMinMax.Checked then
+  begin
+    grdLive.ColWidths[ColMin] := ZoomPx(100);
+    grdLive.ColWidths[ColMax] := ZoomPx(100);
+  end;
+  ApplyRowHeights;
+  FShownRows := nil;
+  FormResize(nil);
+  grdLive.Invalidate;
+end;
+
+procedure TMainForm.chkMinMaxClick(Sender: TObject);
+begin
+  ApplyGridLayout;
+end;
+
+procedure TMainForm.btnZoomOutClick(Sender: TObject);
+begin
+  ZoomStep(-1);
+end;
+
+procedure TMainForm.btnZoomInClick(Sender: TObject);
+begin
+  ZoomStep(1);
+end;
+
+procedure TMainForm.lblZoomClick(Sender: TObject);
+begin
+  SetZoom(100);
+end;
+
+{ Ctrl + mouse wheel over the live grid zooms it. }
+procedure TMainForm.FormMouseWheel(Sender: TObject; Shift: TShiftState; WheelDelta: Integer;
+  MousePos: TPoint; var Handled: Boolean);
+begin
+  if (ssCtrl in Shift) and (FindVCLWindow(Mouse.CursorPos) = grdLive) then
+  begin
+    ZoomStep(Sign(WheelDelta));
+    Handled := True;
+  end;
 end;
 
 { Repaints only the value/min/max cells whose text changed, without erasing
@@ -1420,7 +1556,7 @@ begin
       Continue;
     FShownRows[I] := Shown;
     R := grdLive.CellRect(ColValue, I + 1);
-    R2 := grdLive.CellRect(ColMax, I + 1);
+    R2 := grdLive.CellRect(LastLiveCol, I + 1);
     if IsRectEmpty(R) then
       Continue; // row scrolled out of view
     UnionRect(R, R, R2);
@@ -1449,7 +1585,7 @@ begin
     C.Brush.Color := clBtnFace;
     C.FillRect(R);
     C.Font.Style := [fsBold];
-    C.Font.Size := 9;
+    C.Font.Size := ZoomPt(9);
     C.Font.Color := clWindowText;
     InflateRect(R, -6, 0);
     Flags := DT_SINGLELINE or DT_VCENTER;
@@ -1486,7 +1622,7 @@ begin
     Exit;
 
   C.Font.Style := [];
-  C.Font.Size := 10;
+  C.Font.Size := ZoomPt(10);
   if TextColor <> clNone then
     C.Font.Color := TextColor
   else
@@ -1506,7 +1642,7 @@ begin
         begin
           Text := FLive.Text[Idx];
           C.Font.Style := [fsBold];
-          C.Font.Size := IfThen(Style.FontSize > 0, Style.FontSize, 14);
+          C.Font.Size := ZoomPt(IfThen(Style.FontSize > 0, Style.FontSize, 14));
         end;
         Flags := Flags or DT_RIGHT;
       end;
@@ -1522,7 +1658,7 @@ begin
         Flags := Flags or DT_RIGHT;
       end;
   end;
-  InflateRect(R, -6, 0);
+  InflateRect(R, -ZoomPx(6), 0);
   DrawText(C.Handle, PChar(Text), -1, R, Flags);
 end;
 
@@ -1693,13 +1829,14 @@ end;
 
 procedure TMainForm.FormResize(Sender: TObject);
 var
-  Others: Integer;
+  Others, I: Integer;
 begin
   if grdLive = nil then
     Exit;
-  Others := grdLive.ColWidths[ColValue] + grdLive.ColWidths[ColUnits] + grdLive.ColWidths[ColMin] +
-    grdLive.ColWidths[ColMax] + 5;
-  grdLive.ColWidths[ColName] := Max(160, grdLive.ClientWidth - Others);
+  Others := 5;
+  for I := ColValue to grdLive.ColCount - 1 do
+    Inc(Others, grdLive.ColWidths[I]);
+  grdLive.ColWidths[ColName] := Max(ZoomPx(160), grdLive.ClientWidth - Others);
 end;
 
 procedure TMainForm.lblNoticeClick(Sender: TObject);

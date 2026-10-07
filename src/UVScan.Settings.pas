@@ -37,6 +37,8 @@ type
     LogFolder: string;
     Trace: Boolean;
     AlertSounds: Boolean;   // play the sounds of the PID alert levels
+    LiveZoom: Integer;      // live data grid zoom, percent
+    ShowMinMax: Boolean;    // live data grid min / max columns
     Window: TWindowSettings;
     constructor Create;
     procedure ResetToDefaults;
@@ -58,7 +60,7 @@ function StreamSpeedNibble(Speed: TStreamSpeed): Byte;
 implementation
 
 uses
-  Winapi.Windows, System.IOUtils, System.Generics.Collections,
+  Winapi.Windows, System.IOUtils, System.Generics.Collections, System.Math,
   UVScan.JsonFile, UVScan.Class2;
 
 function StreamSpeedNibble(Speed: TStreamSpeed): Byte;
@@ -89,6 +91,8 @@ begin
   LogFolder := TPath.Combine(TPath.GetDocumentsPath, 'UVScan Logs');
   Trace := False;
   AlertSounds := True;
+  LiveZoom := 100;
+  ShowMinMax := True;
   Window := Default(TWindowSettings);
 end;
 
@@ -123,6 +127,11 @@ begin
   Sec.AddPair('trace', TJSONBool.Create(Trace));
   Sec.AddPair('alertSounds', TJSONBool.Create(AlertSounds));
   Result.AddPair('advanced', Sec);
+
+  Sec := TJSONObject.Create;
+  Sec.AddPair('zoom', TJSONNumber.Create(LiveZoom));
+  Sec.AddPair('showMinMax', TJSONBool.Create(ShowMinMax));
+  Result.AddPair('liveGrid', Sec);
 
   if Window.Saved then
   begin
@@ -176,6 +185,13 @@ begin
   begin
     Trace := JBool(Sec, 'trace', Trace);
     AlertSounds := JBool(Sec, 'alertSounds', AlertSounds);
+  end;
+
+  Sec := JObj(Root, 'liveGrid');
+  if Sec <> nil then
+  begin
+    LiveZoom := EnsureRange(JInt(Sec, 'zoom', LiveZoom), 50, 300);
+    ShowMinMax := JBool(Sec, 'showMinMax', ShowMinMax);
   end;
 
   Sec := JObj(Root, 'window');

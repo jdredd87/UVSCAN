@@ -70,6 +70,8 @@ Right‑click a PID (in the list or the live grid) → **Display & alerts…** t
 
 The **Dashboard** tab shows gauges: dial, bar or big number, small / medium / large, each with its own scale. They use the same levels: the scale carries the levels as coloured bands, and the card takes the level's colours (and flashes) while the value is in it. Add gauges with **Add gauge…** or right‑click a PID → **Add to dashboard…**; right‑click a gauge to edit, move or remove it (double‑click edits). **Tick these PIDs** ticks the dashboard's PIDs for scanning.
 
+In the Live data footer, **Min / max** shows or hides those columns and **-** / **+** zoom the grid from 75 % to 250 % (fonts, rows and columns together; also Ctrl + mouse wheel, Ctrl + plus / minus, Ctrl + 0 for 100 %). Both are remembered.
+
 **Test display** (Live data and Dashboard tabs, whenever not scanning) feeds the ticked and dashboard PIDs with made‑up values that rise and fall slowly through each PID's range (its gauge scale, widened to reach every threshold), so you can watch each level, flash and sound. Nothing is sent to the PCM and nothing is logged; a banner says the values are made up.
 
 `display.json` (colours are `#RRGGBB`, `pid` is the id from `pids.json`):

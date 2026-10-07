@@ -18,6 +18,7 @@ object MainForm: TMainForm
   OnCreate = FormCreate
   OnDestroy = FormDestroy
   OnKeyDown = FormKeyDown
+  OnMouseWheel = FormMouseWheel
   OnResize = FormResize
   TextHeight = 15
   object pnlTop: TPanel
@@ -393,9 +394,11 @@ object MainForm: TMainForm
           object lblLiveHint: TLabel
             Left = 262
             Top = 12
-            Width = 300
+            Width = 290
             Height = 15
+            AutoSize = False
             Caption = 'Tick PIDs on the left, connect, then press Start scan.'
+            EllipsisPosition = epEndEllipsis
             Font.Charset = DEFAULT_CHARSET
             Font.Color = clGrayText
             Font.Height = -12
@@ -423,6 +426,58 @@ object MainForm: TMainForm
             ShowHint = True
             TabOrder = 1
             OnClick = btnTestDisplayClick
+          end
+          object chkMinMax: TCheckBox
+            Left = 562
+            Top = 12
+            Width = 76
+            Height = 17
+            Anchors = [akTop, akRight]
+            Caption = 'Min / max'
+            Checked = True
+            State = cbChecked
+            TabOrder = 2
+            OnClick = chkMinMaxClick
+          end
+          object btnZoomOut: TButton
+            Left = 643
+            Top = 7
+            Width = 30
+            Height = 26
+            Hint = 'Smaller (Ctrl+minus, or Ctrl+mouse wheel)'
+            Anchors = [akTop, akRight]
+            Caption = '-'
+            ParentShowHint = False
+            ShowHint = True
+            TabOrder = 3
+            OnClick = btnZoomOutClick
+          end
+          object lblZoom: TLabel
+            Left = 675
+            Top = 12
+            Width = 44
+            Height = 15
+            Hint = 'Live data zoom - click for 100%'
+            Alignment = taCenter
+            Anchors = [akTop, akRight]
+            AutoSize = False
+            Caption = '100%'
+            ParentShowHint = False
+            ShowHint = True
+            OnClick = lblZoomClick
+          end
+          object btnZoomIn: TButton
+            Left = 721
+            Top = 7
+            Width = 30
+            Height = 26
+            Hint = 'Bigger (Ctrl+plus, or Ctrl+mouse wheel)'
+            Anchors = [akTop, akRight]
+            Caption = '+'
+            ParentShowHint = False
+            ShowHint = True
+            TabOrder = 4
+            OnClick = btnZoomInClick
           end
         end
       end
