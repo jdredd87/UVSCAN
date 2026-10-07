@@ -9,8 +9,9 @@ unit UVScan.Serial.Android;
     - FTDI (VID 0403): FT232R/BM, FT2232, FT4232, FT232H, FT-X
     - Silicon Labs CP210x (VID 10C4)
     - WCH CH340 / CH341 (VID 1A86) - no hardware flow control
-    - Prolific PL2303 (VID 067B): the old H, HX/HXD/TA/TB and the newer G
-      series (HXN), following the Linux pl2303 driver
+    - Prolific PL2303 (VID 067B, and the rebranded ones such as ATEN
+      0557:2008): the old H, HX/HXD/TA/TB and the newer G series (HXN),
+      following the Linux pl2303 driver
     - any CDC-ACM device (USB class 2 + data class 10)
     - Keyspan USA-19HS (VID 06CD, PID 0121), following the Linux keyspan
       driver's "usa90" message format: its firmware is in ROM, so no
@@ -156,6 +157,20 @@ type
 const
   DriverNames: array[TUsbDriver] of string = ('', 'FTDI', 'CP210x', 'CH34x', 'CDC', 'Keyspan', 'PL2303');
 
+  // PL2303 adapters, vendor shl 16 or product: the id table of the Linux
+  // pl2303 driver (Prolific's own ids and the many rebranded ones).
+  Pl2303Ids: array[0..77] of Cardinal = (
+    $03F00183, $03F0026B, $03F00956, $03F00B39, $03F00F7F, $03F00F9B, $03F03139, $03F03239,
+    $03F03524, $03F04349, $03F04439, $03F05039, $04132101, $04A54027, $04B34016, $04B80521,
+    $04B80522, $04BB0A03, $04BB0A0E, $050D0257, $05472008, $054C0437, $05572008, $05572021,
+    $05572022, $05572118, $056E5003, $056E5004, $0584B000, $058F9720, $05AD0FBA, $067B0307,
+    $067B04BB, $067B0609, $067B0611, $067B0612, $067B1234, $067B2303, $067B2304, $067B23A3,
+    $067B23B3, $067B23C3, $067B23D3, $067B23E3, $067B23F3, $067B2533, $067B331A, $067BAAA0,
+    $067BAAA2, $067BAAA8, $067BE1F1, $07310528, $07312003, $07450001, $078B1234, $079B0027,
+    $07AA002A, $0B636530, $0B63653A, $0B8C2303, $0CAA3001, $0DF70620, $0E55110B, $0EBA1080,
+    $0EBA2080, $10B5AC70, $11AD0001, $11F50001, $11F50003, $11F50004, $11F50005, $11F62001,
+    $11F702DF, $14534026, $24782008, $345F3020, $53722303, $61892068);
+
 type
   // PL2303 generations: the old H, the HX family (HX, HXD, TA, TB) and the G series.
   TPl2303Kind = (pkLegacy, pkHx, pkHxn);
@@ -250,9 +265,13 @@ end;
 function DriverFor(Device: JUsbDevice): TUsbDriver;
 var
   Vid, Pid: Integer;
+  Id: Cardinal;
 begin
   Vid := Device.getVendorId;
   Pid := Device.getProductId;
+  for Id in Pl2303Ids do
+    if Id = (Cardinal(Vid) shl 16) or Cardinal(Pid) then
+      Exit(udPl2303);
   case Vid of
     $0403:
       Result := udFtdi; // FT232R/BM 6001, FT2232 6010, FT4232 6011, FT232H 6014, FT-X 6015, custom PIDs
@@ -264,13 +283,6 @@ begin
     $1A86:
       if (Pid = $7523) or (Pid = $5523) or (Pid = $7522) then
         Result := udCh34x
-      else
-        Result := udNone;
-    $067B:
-      // 2303 (H / HX / TA / TB), 23A3..23F3 (G series)
-      if (Pid = $2303) or (Pid = $23A3) or (Pid = $23B3) or (Pid = $23C3) or (Pid = $23D3) or (Pid = $23E3) or
-        (Pid = $23F3) then
-        Result := udPl2303
       else
         Result := udNone;
     $06CD:
