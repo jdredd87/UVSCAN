@@ -15,3 +15,6 @@
 *.ico    binary
 *.res    binary
 *.doc    binary
+*.cmd    text eol=crlf
+*.manifest text eol=crlf
+*.md     text eol=crlf

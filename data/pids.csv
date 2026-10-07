@@ -1,0 +1,93 @@
+﻿Counter,Long Name,Desc,Formula,Units,Datalength,PID,group,shortname,Results,PidCat,txtMCI
+1,ENGINE SPEED,,((N1 << 8) +N2) *0.25,RPM,2,000C,1,RPM,,1,%RPM%
+2,Injector PW,,(((N1<<8)+N2)/65.535),ms,2,1193,1,Injector PW,%f,1,%IPW%
+3,ECT (ENGINE COOLANT TEMPERATURE),,N0-40,°C,1,5,1,ECT,,1,%ECT%
+4,MASS AIR FLOW RAW INPUT FREQUENCY,,((N1 << 8) + N2) / 2.048,Hz,2,1250,1,MAF,%f,1,%MAF%
+5,SHORT TERM FUEL TRIM BANK 1,,(N0-128)/1.28,%,1,6,1,STFT,%f,1,%STF%
+6,LONG TERM FUEL TRIM BANK 1,,(N0-128)/1.28,%,1,7,1,LTFT,%f,1,%LTF%
+7,MAP (kPa),,N0,kPa,1,000B,1,MAP(kPa),,1,%MAP%
+8,VEHICLE SPEED,,N0/1.609,MPH,1,000D,1,MPH,%f,1,%MPH%
+9,SPARK ADVANCE,,((N0/2) - 64),Degrees,1,000E,1,Spark,,1,%SPK%
+10,INTAKE AIR TEMPERATURE,,N0-40,°C,1,000F,1,IAT,,1,%IAT%
+11,TP Angle %,,N0/2.55,%,1,11,1,TP %,,1,%TPS%
+12,Ignition 1 Voltage,,N0/10,V,1,1141,1,IGN V,,1,%IGV%
+13,H02S Sensor 1,,0.434*N0*10,mV,1,1145,1,O2,,1,%HO1%
+14,Knock Retard,,22.5*N0/256,Degrees,1,11A6,1,KR,,1,%KRS%
+15,Current Gear,,N0,,1,199A,1,Gear,,2,%CGS%
+16,AD3,,N0/51,Volts,0,FFFD,1,ADC Input 3,%f,7,%AD3%
+17,AD2,,N0/51,Volts,0,FFFE,1,ADC Input 2,%f,7,%AD2%
+18,AD1,,N0/51,Volts,0,FFFF,1,ADC Input 1,%f,7,%AD1%
+19,FAKE PID,,(%ECT% * %IAT% * %HO1% * %IGV% ) * %AD1%,%,0,FPID,1,FAKE PID,,6,%FP1%
+20,Misfire Cyl. 6 History,,(N1 << 8) + N2,Count,2,11F9,1,Misfire Cyl. 6 History,,1,%MH6%
+21,Misfire Cyl. 6 Current,,N0,Count,1,11EB,1,Misfire Cyl. 6 Current,,1,%MC6%
+22,Misfire Cyl. 5 History,,(N1 << 8) + N2,Count,2,11F8,1,Misfire Cyl. 5 History,,1,%MH5%
+23,Misfire Cyl. 5 Current,,N0,Count,1,11EA,1,Misfire Cyl. 5 Current,,1,%MC5%
+24,Misfire Cyl. 4 History,,(N1 << 8) + N2,Count,2,1204,1,Misfire Cyl. 4 History,,1,%MH4%
+25,Misfire Cyl. 4 Current,,N0,Count,1,1208,1,Misfire Cyl. 4 Current,,1,%MC4%
+26,Misfire Cyl. 3 History,,(N1 << 8) + N2,Count,2,1203,1,Misfire Cyl. 3 History,,1,%MH3%
+27,Misfire Cyl. 3 Current,,N0,Count,1,1207,1,Misfire Cyl. 3 Current,,1,%MC3%
+28,Misfire Cyl. 2 History,,(N1 << 8) + N2,Count,2,1202,1,Misfire Cyl. 2 History,,1,%MH2%
+29,Misfire Cyl. 2 Current,,N0,Count,1,1205,1,Misfire Cyl. 2 Current,,1,%MC2%
+30,Misfire Cyl. 1 History,,(N1 << 8) + N2,Count,2,1201,1,Misfire Cyl. 1 History,,1,%MH1%
+31,Misfire Cyl. 1 Current,,N0,Count,1,1206,1,Misfire Cyl. 1 Current,,1,%MC1%
+32,Fuel Trim Cell,,N0,,1,1190,1,FT Cell,,1,%FTC%
+33,RUNTIME,RUNTIME,,,0,FPID,1,RUNTIME,,6,%RUNTIME%
+34,LOGTIME,LOGTIME,,,0,FPID,1,LOGTIME,,6,%LOGTIME%
+35,AFR (LC-1),,%AD1% * 3.008 + 7.35,:1,0,FPID,1,WBO2,%f,6,%AFRWideband%
+36,Airflow mg/cyl,,(%MAFGmPerSec% * 1000) / ((((%RPM% / 60) / 2) * 6) + 0.000001),mg/cyl,0,FPID,1,MPC,%f,6,%MgPerCyl%
+37,MAF Flow Rate,,((N1 << 8) + N2)  / 100,g/s,2,10,1,MAF(g/s),,1,%MAFGmPerSec%
+38,AFR (Commanded),,N0 / 10,:1,1,119E,1,AFR,,1,%AFRCommanded%
+39,Inj  Duty Cycle,,(%IPW% / (1 / ((%RPM% / 60 ) / 2) * 1000)) * 100,%,0,FPID,1,Inj Duty Cycle,%f,6,%InjDutyCycle%
+40,Last Shift Time,,N0 / 40,Seconds,1,1992,1,Shift Time,,2,%LST%
+41,1-2 Shift Time,,N0 / 40,Seconds,1,1993,1,1-2 Time,,2,%ST12%
+42,2-3 Shift Time,,N0 / 40,Seconds,1,1994,1,2-3 Time,,2,%ST23%
+43,3-4 Shift Time,,N0 / 40,Seconds,1,1995,1,3-4 Time,,2,%ST34%
+44,1-2 Shift Error,,N0 / 40,Seconds,1,1997,1,1-2 Error,,2,%SE12%
+45,2-3 Shift Error,,N0 / 40,Seconds,1,1998,1,2-3 Error,,2,%SE23%
+46,3-4 Shift Error,,N0 / 40,Seconds,1,1999,1,3-4 Error,,2,%SE34%
+47,Fuel Loop Status,,((N0 >> 3) & 1),,1,1105,1,Loop,,1,%FuelLoopStatus%
+48,Perf Shift Mode,,((N0 >> 2) & 1),,1,110C,1,Perf Shift,%o,3,%BitShiftMode%
+49,Desired Idle Speed,,N0 * 12.5,RPM,1,1192,1,Desired Idle,,1,%DesiredIdle%
+50,IAC Position,,N0,,1,1172,1,IAC Position,,5,%IACCounts%
+51,Power Enrichment Mode,,((N0 >> 2) & 1),,1,1106,1,PE Mode,%o,3,%BitPEMode%
+52,Decel Fuel Mode,,((N0 >> 3) & 1),,1,1106,1,DFCO Mode,%o,3,%BitDFCOMode%
+53,Transmission ISS,,((N1 << 8) + N2) * 0.125,RPM,2,1941,1,ISS Speed,,2,
+54,Transmission OSS,,((N1 << 8) + N2) * 0.125,RPM,2,1942,1,OSS Speed,,2,
+55,TCC Slip Speed,,((N1 << 8) + N2) * 0.125,RPM,2,1991,1,TCC Slip RPM,,2,
+56,Transmission Fluid Temp,,N0 - 40,°C,1,1940,1,Trans Temp,,2,
+57,TCC Duty Cycle,,N0 / 2.55,%,1,1970,1,TCC %,,2,
+58,PC Solenoid Duty Cycle,,N0 / 2.55,%,1,1972,1,PC %,,2,
+59,PC Solenoid Actual Current,,N0 * 0.0195,Amps,1,199E,1,PC Sol Amp,,2,
+60,PC Solenoid Reference Current,,N0 * 0.0195,Amps,1,199F,1,PC Sol Ref Amp,,2,
+61,AFR (WEGO2),,%AD1% * 2 + 10,:1,0,FPID,1,WBO2,%f,6,%AFRWideband%
+62,18X Crank Sensor,,1310720 / (((N1 << 8) + N2) * 6),Pulses,2,1256,1,18X Crank,,1,
+63,3X Crank Sensor,,1310720 / ((N1 << 8) + N2),Pulses,2,124F,1,3X Crank,,1,
+64,Fuel Pressure,,%AD2% * 31.9  - 9.7,PSI,0,FPID,1,Fuel Pressure,%f,6,
+66,Fans Low Speed,,((N0 >> 6) & 1),,1,1103,1,Fans Low,%o,3,
+67,Fans High Speed,,((N0 >> 7) & 1),,1,1103,1,Fans High,%o,3,
+68,Oil Pressure,,%AD1% * 31.9  - 9.7,PSI,0,FPID,1,Oil Pressure,%f,6,
+69,Gear Ratio,,N0 * 0.01563,:1,1,19A1,1,Gear Ratio,,2,
+70,SPARK ADVANCE (Alt),,((-1 * N0 / 2) + 64) * -1,Degrees,1,000E,1,Spark,,1,%SPK%
+71,HO2 Bank 1 Sensor 2,,0.434 * N0 * 10,mV,1,1146,1,HO2 B1S2,,1,
+72,Traction Control Desired Torque,,((N1 << 8) + N2) * 5 / 256,%,2,160C,1,Traction CTRL Torque,%f,2,
+77,Fuel Level,,((N1 << 8) + N2) * 0.01953125,%,2,12C5,1,Fuel Level,,5,
+79,IC Temp Out  - SPA,IC Temp Out,(9/5) * N0 + 32,°F,0,FFFD,1,IC Temp Out,,6,%ICTempOut%
+80,IC Temp In - SPA,IC-Temp In,(9/5) * N0 + 32,°F,0,FFFE,1,IC Temp In,,6,%ICTempIn%
+81,MAP - 3Bar,MAP - 3Bar,N0 / 0.85,kPa,0,FFFF,1,MAP (kPa),,6,%MAP3BAR%
+82,Transmission Range Switch A,,N0 & 1,,1,1100,1,TR A,,2,
+83,Transmission Range Switch B,,((N0 >> 1) & 1),,1,1100,1,TR B,,2,
+84,Transmission Range Switch C,,((N0 >> 2) & 1),,1,1100,1,TR C,,2,
+85,Transmission Range Switch P,,((N0 >> 3) & 1),,1,1100,1,TR P,,2,
+86,Transmission Range,,N0 & 15,,1,1100,1,TR,,2,
+87,Boost Solenoid PWM,,((N1 > 4) & 2) + ((N2 > 5) & 3),,2,1108,1,Boost Solenoid,,1,%BoostPWM%
+88,Engine Torque,,((N1 << 8) + N2) * 0.33895,N-m,2,19DE,1,Engine Torque,,1,
+89,EGR %,,N0 / 2.55,%,1,1152,1,EGR %,,1,
+90,EGR Duty Cycle,,N0 / 2.55,%,1,1171,1,EGR %,,1,
+91,Desired EGR %,,N0 / 2.55,%,1,119B,1,Desired EGR %,,1,
+92,EGR Closed Valve Pintle Position,,N0 / 51,V,1,11BB,1,EGR Pintle V,,1,
+93,EGR Flow Test Count,,N0,,1,11BD,1,EGR Flow Count,,1,
+94,EGR Position Error,,(N0 - 128) / 1.28,V,1,11C1,1,EGR Error V,,1,
+95,Commanded EGR,,N0 / 2.55,%,1,002C,1,Commanded EGR,,1,
+96,EGR Error %,,N0 * 0.78125 - 100,%,1,002D,1,EGR Error,,1,
+97,TP Sensor Voltage,,N0 / 51,V,1,1143,1,TP V,,1,
+100,CMP Sensor Signal Present,CMP Present,((N0 >> 1) & 1),,1,1107,1,CMP Present,,1,
