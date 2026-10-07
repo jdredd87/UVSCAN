@@ -15,6 +15,14 @@
     <usb-device vendor-id="6790" product-id="29987" />
     <usb-device vendor-id="6790" product-id="21795" />
     <usb-device vendor-id="6790" product-id="29986" />
+    <!-- Prolific PL2303 (H / HX / TA / TB and the G series) -->
+    <usb-device vendor-id="1659" product-id="8963" />
+    <usb-device vendor-id="1659" product-id="9123" />
+    <usb-device vendor-id="1659" product-id="9139" />
+    <usb-device vendor-id="1659" product-id="9155" />
+    <usb-device vendor-id="1659" product-id="9171" />
+    <usb-device vendor-id="1659" product-id="9187" />
+    <usb-device vendor-id="1659" product-id="9203" />
     <!-- Keyspan USA-19HS -->
     <usb-device vendor-id="1741" product-id="289" />
     <!-- Any CDC-ACM serial device (communications class) -->

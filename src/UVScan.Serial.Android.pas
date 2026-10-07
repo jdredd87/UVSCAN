@@ -9,6 +9,8 @@ unit UVScan.Serial.Android;
     - FTDI (VID 0403): FT232R/BM, FT2232, FT4232, FT232H, FT-X
     - Silicon Labs CP210x (VID 10C4)
     - WCH CH340 / CH341 (VID 1A86) - no hardware flow control
+    - Prolific PL2303 (VID 067B): the old H, HX/HXD/TA/TB and the newer G
+      series (HXN), following the Linux pl2303 driver
     - any CDC-ACM device (USB class 2 + data class 10)
     - Keyspan USA-19HS (VID 06CD, PID 0121), following the Linux keyspan
       driver's "usa90" message format: its firmware is in ROM, so no
@@ -117,6 +119,7 @@ type
       length, timeout: Integer): Integer; cdecl;
     function bulkTransfer(endpoint: JUsbEndpoint; buffer: TJavaArray<Byte>; offset, length,
       timeout: Integer): Integer; cdecl;
+    function getRawDescriptors: TJavaArray<Byte>; cdecl;
   end;
   TJUsbDeviceConnection = class(TJavaGenericImport<JUsbDeviceConnectionClass, JUsbDeviceConnection>) end;
 
@@ -148,12 +151,15 @@ const
   JavaBufferSize = 16384;
 
 type
-  TUsbDriver = (udNone, udFtdi, udCp210x, udCh34x, udCdcAcm, udKeyspan);
+  TUsbDriver = (udNone, udFtdi, udCp210x, udCh34x, udCdcAcm, udKeyspan, udPl2303);
 
 const
-  DriverNames: array[TUsbDriver] of string = ('', 'FTDI', 'CP210x', 'CH34x', 'CDC', 'Keyspan');
+  DriverNames: array[TUsbDriver] of string = ('', 'FTDI', 'CP210x', 'CH34x', 'CDC', 'Keyspan', 'PL2303');
 
 type
+  // PL2303 generations: the old H, the HX family (HX, HXD, TA, TB) and the G series.
+  TPl2303Kind = (pkLegacy, pkHx, pkHxn);
+
   TAndroidUsbSerialPort = class(TInterfacedObject, ISerialPort)
   private
     FPortName: string;
@@ -168,6 +174,7 @@ type
     FInPacket: Integer;         // max packet size of the IN endpoint
     FPortIndex: Integer;        // FTDI: interface number + 1
     FMultiPort: Boolean;        // FTDI chip with more than one port
+    FPl2303: TPl2303Kind;
     FJavaIn, FJavaOut: TJavaArray<Byte>;
     FPending: TBytes;           // received but not yet handed to Read
     FPendingPos: Integer;
@@ -181,6 +188,10 @@ type
     procedure SetupCdcAcm;
     procedure SetupKeyspan;
     procedure KeyspanControl(Opening, Closing, FlushRx: Boolean);
+    procedure SetupPl2303;
+    function Pl2303Read(Value: Integer): Integer;
+    procedure Pl2303Write(Value, Index: Integer);
+    procedure Pl2303PurgePipes;
     function BulkRead(TimeoutMs: Integer): Integer;
     procedure ReleaseAll;
   public
@@ -253,6 +264,13 @@ begin
     $1A86:
       if (Pid = $7523) or (Pid = $5523) or (Pid = $7522) then
         Result := udCh34x
+      else
+        Result := udNone;
+    $067B:
+      // 2303 (H / HX / TA / TB), 23A3..23F3 (G series)
+      if (Pid = $2303) or (Pid = $23A3) or (Pid = $23B3) or (Pid = $23C3) or (Pid = $23D3) or (Pid = $23E3) or
+        (Pid = $23F3) then
+        Result := udPl2303
       else
         Result := udNone;
     $06CD:
@@ -494,6 +512,7 @@ begin
         udCh34x: SetupCh34x;
         udCdcAcm: SetupCdcAcm;
         udKeyspan: SetupKeyspan;
+        udPl2303: SetupPl2303;
       end;
       if (FEpIn = nil) or (FEpOut = nil) then
         raise ESerialError.CreateFmt('%s: no bulk data endpoints found', [FPortName]);
@@ -821,6 +840,134 @@ begin
   end;
 end;
 
+{ Prolific PL2303: vendor register reads / writes plus the CDC line
+  requests. The register requests differ between the G series and the rest. }
+function TAndroidUsbSerialPort.Pl2303Read(Value: Integer): Integer;
+var
+  Arr: TJavaArray<Byte>;
+begin
+  Arr := TJavaArray<Byte>.Create(1);
+  try
+    if FConn.controlTransfer($C0, IfThen(FPl2303 = pkHxn, $81, $01), Value, 0, Arr, 1, ControlTimeoutMs) = 1 then
+      Result := Arr.Items[0]
+    else
+      Result := -1;
+  finally
+    Arr.Free;
+  end;
+end;
+
+procedure TAndroidUsbSerialPort.Pl2303Write(Value, Index: Integer);
+begin
+  Control($40, IfThen(FPl2303 = pkHxn, $80, $01), Value, Index);
+end;
+
+procedure TAndroidUsbSerialPort.Pl2303PurgePipes;
+begin
+  case FPl2303 of
+    pkHxn:
+      Pl2303Write($07, $03); // reset upstream + downstream pipes
+    pkHx:
+      begin
+        Pl2303Write(8, 0);
+        Pl2303Write(9, 0);
+      end;
+  end;
+end;
+
+procedure TAndroidUsbSerialPort.SetupPl2303;
+const
+  SupportedBauds: array[0..24] of Cardinal = (75, 150, 300, 600, 1200, 1800, 2400, 3600, 4800, 7200, 9600,
+    14400, 19200, 28800, 38400, 57600, 115200, 230400, 460800, 614400, 921600, 1228800, 2457600, 3000000, 6000000);
+var
+  Desc: TJavaArray<Byte>;
+  DevClass, MaxPacket0, BcdUsb, BcdDevice, Intf, Reg, Mask, Flow, Old: Integer;
+  B: Cardinal;
+  Direct: Boolean;
+begin
+  FControlIntf := FDevice.getInterface(0);
+  if not FConn.claimInterface(FControlIntf, True) then
+    raise ESerialError.CreateFmt('%s: could not claim the USB interface', [FPortName]);
+  FDataIntf := FControlIntf;
+  FindBulkEndpoints(FControlIntf);
+  Intf := FControlIntf.getId;
+
+  // Which generation: from the device descriptor, as the Linux driver does.
+  Desc := FConn.getRawDescriptors;
+  if (Desc = nil) or (Desc.Length < 14) then
+    raise ESerialError.CreateFmt('%s: could not read the USB device descriptor', [FPortName]);
+  try
+    DevClass := Desc.Items[4];
+    MaxPacket0 := Desc.Items[7];
+    BcdUsb := Desc.Items[2] or (Desc.Items[3] shl 8);
+    BcdDevice := Desc.Items[12] or (Desc.Items[13] shl 8);
+  finally
+    Desc.Free;
+  end;
+  if (DevClass = 2) or (MaxPacket0 <> $40) then
+    FPl2303 := pkLegacy
+  else if BcdUsb <> $200 then
+    FPl2303 := pkHx
+  else
+  begin
+    if (BcdDevice and $FF) in [$02, $04, $06] then // PL256x multi-port bridges (3302, 4304, 6506, ...)
+      raise ESerialError.CreateFmt('%s: Prolific multi-port bridge %.4x is not supported', [FPortName, BcdDevice]);
+    // USB 2.0: TA (0300) and TB (0500) answer the HX status read, the G series does not.
+    FPl2303 := pkHx;
+    if not (((BcdDevice = $300) or (BcdDevice = $500)) and (Pl2303Read($8080) >= 0)) then
+      FPl2303 := pkHxn;
+  end;
+
+  if FPl2303 <> pkHxn then
+  begin
+    // Initialisation sequence of the Windows and Linux drivers (results unused).
+    Pl2303Read($8484);
+    Pl2303Write($0404, 0);
+    Pl2303Read($8484);
+    Pl2303Read($8383);
+    Pl2303Read($8484);
+    Pl2303Write($0404, 1);
+    Pl2303Read($8484);
+    Pl2303Read($8383);
+    Pl2303Write(0, 1);
+    Pl2303Write(1, 0);
+    Pl2303Write(2, IfThen(FPl2303 = pkLegacy, $24, $44));
+  end;
+  Pl2303PurgePipes;
+
+  // Line coding: baud (little endian), 1 stop bit, no parity, 8 data bits.
+  // The standard rates are sent as they are; the G series takes any rate.
+  Direct := FPl2303 = pkHxn;
+  for B in SupportedBauds do
+    Direct := Direct or (B = FBaudRate);
+  if not Direct then
+    raise ESerialError.CreateFmt('%s: baud rate %d not supported', [FPortName, FBaudRate]);
+  Control($21, $20, 0, Intf, [Byte(FBaudRate), Byte(FBaudRate shr 8), Byte(FBaudRate shr 16),
+    Byte(FBaudRate shr 24), 0, 0, 8]);
+  Control($21, $22, $0003 {DTR + RTS}, Intf);
+
+  // Flow control register: read, change the flow bits, write back.
+  if FPl2303 = pkHxn then
+  begin
+    Reg := $0A;
+    Mask := $1C;
+    Flow := IfThen(FFlowControl = fcRtsCts, $18, $1C);
+    Old := Pl2303Read(Reg);
+  end
+  else
+  begin
+    Reg := 0;
+    Mask := $F0;
+    if FFlowControl = fcRtsCts then
+      Flow := IfThen(FPl2303 = pkLegacy, $40, $60)
+    else
+      Flow := 0;
+    Old := Pl2303Read(Reg or $80);
+  end;
+  if Old >= 0 then
+    Pl2303Write(Reg, (Old and not Mask) or (Flow and Mask));
+end;
+
 procedure TAndroidUsbSerialPort.ReleaseAll;
 begin
   if FConn <> nil then
@@ -990,6 +1137,8 @@ begin
       Control($41, $12, $000F, FControlIntf.getId); // flush read + write
     udKeyspan:
       KeyspanControl(False, False, True);
+    udPl2303:
+      Pl2303PurgePipes;
   end;
   // Drop anything already on its way to us.
   for I := 1 to 8 do
