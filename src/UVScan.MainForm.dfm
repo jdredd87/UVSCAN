@@ -227,6 +227,18 @@ object MainForm: TMainForm
         TabOrder = 1
         OnClick = btnClearSelectionClick
       end
+      object btnEditPids: TButton
+        Left = 252
+        Top = 34
+        Width = 120
+        Height = 26
+        Hint = 'Add, change or delete PID definitions (not while scanning)'
+        Caption = 'Edit PIDs...'
+        ParentShowHint = False
+        ShowHint = True
+        TabOrder = 2
+        OnClick = btnEditPidsClick
+      end
     end
   end
   object splLeft: TSplitter

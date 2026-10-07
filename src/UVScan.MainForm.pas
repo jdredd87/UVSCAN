@@ -8,7 +8,7 @@ uses
   Vcl.Graphics, Vcl.Controls, Vcl.Forms, Vcl.Dialogs, Vcl.StdCtrls, Vcl.ExtCtrls,
   Vcl.ComCtrls, Vcl.Grids,
   UVScan.Serial, UVScan.Simulator, UVScan.Pids, UVScan.Dpid, UVScan.Dtc, UVScan.Engine,
-  UVScan.Class2, UVScan.Paths, UVScan.Settings;
+  UVScan.Class2, UVScan.Paths, UVScan.Settings, UVScan.PidEditor;
 
 type
   TMainForm = class(TForm)
@@ -32,6 +32,7 @@ type
     lblBudget: TLabel;
     btnTestPids: TButton;
     btnClearSelection: TButton;
+    btnEditPids: TButton;
     splLeft: TSplitter;
     pnlRight: TPanel;
     pnlNotice: TPanel;
@@ -96,6 +97,7 @@ type
     procedure lvPidsItemChecked(Sender: TObject; Item: TListItem);
     procedure btnTestPidsClick(Sender: TObject);
     procedure btnClearSelectionClick(Sender: TObject);
+    procedure btnEditPidsClick(Sender: TObject);
     procedure grdLiveDrawCell(Sender: TObject; ACol, ARow: Integer; Rect: TRect; State: TGridDrawState);
     procedure btnResetMinMaxClick(Sender: TObject);
     procedure btnReadInfoClick(Sender: TObject);
@@ -319,7 +321,7 @@ begin
   cbRate.ItemIndex := Ord(FSettings.StreamSpeed);
   chkTrace.Checked := FSettings.Trace;
   for N in FSettings.SelectedPids do
-    if (FCatalog.FindById(N) <> nil) and not FSelected.Contains(N) then
+    if (FCatalog.FindById(N) <> nil) and FCatalog.FindById(N).Enabled and not FSelected.Contains(N) then
       FSelected.Add(N);
   if FSettings.Window.Saved then
   begin
@@ -412,6 +414,8 @@ begin
     for I := 0 to FCatalog.Count - 1 do
     begin
       P := FCatalog[I];
+      if not P.Enabled then
+        Continue;
       if (Filter <> '') and (Pos(Filter, LowerCase(P.LongName + ' ' + P.ShortName + ' ' + P.PidCode)) = 0) then
         Continue;
       Item := lvPids.Items.Add;
@@ -474,6 +478,37 @@ end;
 procedure TMainForm.edtSearchChange(Sender: TObject);
 begin
   FillPidList;
+end;
+
+procedure TMainForm.btnEditPidsClick(Sender: TObject);
+var
+  I: Integer;
+  P: TPidDef;
+begin
+  // The engine only uses the catalog while scanning or busy, which this button excludes.
+  if not (FState in [esDisconnected, esConnected]) then
+    Exit;
+  if not TPidEditorForm.Execute(FCatalog, PidsFile) then
+    Exit;
+  try
+    FCatalog.LoadFromFile(PidsFile);
+  except
+    on E: Exception do
+    begin
+      ShowNotice('Could not reload PID definitions: ' + E.Message, True);
+      Exit;
+    end;
+  end;
+  for I := FSelected.Count - 1 downto 0 do
+  begin
+    P := FCatalog.FindById(FSelected[I]);
+    if (P = nil) or not P.Enabled then
+      FSelected.Delete(I);
+  end;
+  FSupport.Clear;
+  FRejected.Clear;
+  FillPidList;
+  AddMessage(Format('PID definitions saved (%d PIDs) to %s', [FCatalog.Count, PidsFile]));
 end;
 
 procedure TMainForm.btnClearSelectionClick(Sender: TObject);
@@ -786,6 +821,7 @@ begin
   btnPause.Enabled := FLogging;
   btnPause.Caption := IfThen(FLogPaused, 'Resume (F9)', 'Pause (F9)');
   btnTestPids.Enabled := Idle;
+  btnEditPids.Enabled := FState in [esDisconnected, esConnected];
   btnReadInfo.Enabled := Idle;
   btnReadDtcs.Enabled := Idle;
   btnClearDtcs.Enabled := Idle;

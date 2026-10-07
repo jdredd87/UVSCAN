@@ -712,7 +712,7 @@
       "formula": "%AD1% * 2 + 10",
       "units": ":1",
       "format": "%f",
-      "mci": "AFRWIDEBAND"
+      "mci": "AFRWEGO2"
     },
     {
       "id": 62,
@@ -799,7 +799,7 @@
       "bytes": 1,
       "formula": "((-1 * N0 / 2) + 64) * -1",
       "units": "Degrees",
-      "mci": "SPK"
+      "mci": "SPKALT"
     },
     {
       "id": 71,

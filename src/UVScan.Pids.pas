@@ -32,11 +32,13 @@ type
   TPidDef = class
   private
     FFormula: TFormula;
+    FFormulaText: string;
+    procedure SetFormulaText(const Value: string);
   public
     Id: Integer;
+    Enabled: Boolean;      // disabled entries stay in pids.json but are not offered for scanning
     LongName: string;
     Description: string;
-    FormulaText: string;
     Units: string;
     DataLength: Integer;
     PidCode: string;
@@ -47,8 +49,14 @@ type
     Kind: TPidKind;
     PidNumber: Word;       // pkVehicle
     AnalogChannel: Integer; // pkAnalog: 1..3
+    constructor Create;
     destructor Destroy; override;
+    procedure Assign(Source: TPidDef);
+    { Compiled formula; raises EFormulaError once if FormulaText is invalid. }
     function Formula: TFormula;
+    { Formula problem or ''. }
+    function FormulaError: string;
+    property FormulaText: string read FFormulaText write SetFormulaText;
     function FormatValue(const Value: Double): string;
     function DisplayName: string;
     function ToJson: TJSONObject;
@@ -70,6 +78,14 @@ type
     procedure LoadFromJsonText(const Text: string);
     function ToJson: TJSONObject;
     procedure SaveToJsonFile(const FileName: string);
+    procedure Assign(Source: TPidCatalog);
+    { Editing: no validation here; Validate/LoadFromJson report problems. }
+    procedure Add(P: TPidDef);
+    procedure Delete(Index: Integer);
+    function IndexOf(P: TPidDef): Integer;
+    function NextFreeId: Integer;
+    { Problems that would be reported when this catalog is saved and reloaded. }
+    function Validate: TArray<string>;
     function FindById(Id: Integer): TPidDef;
     function FindByMci(const Mci: string): TPidDef;
     property Count: Integer read GetCount;
@@ -96,10 +112,57 @@ uses
 
 { TPidDef }
 
+constructor TPidDef.Create;
+begin
+  inherited;
+  Enabled := True;
+end;
+
 destructor TPidDef.Destroy;
 begin
   FFormula.Free;
   inherited;
+end;
+
+procedure TPidDef.SetFormulaText(const Value: string);
+begin
+  if Value = FFormulaText then
+    Exit;
+  FFormulaText := Value;
+  FreeAndNil(FFormula); // recompiled on next use
+end;
+
+procedure TPidDef.Assign(Source: TPidDef);
+begin
+  Id := Source.Id;
+  Enabled := Source.Enabled;
+  LongName := Source.LongName;
+  Description := Source.Description;
+  FormulaText := Source.FormulaText;
+  Units := Source.Units;
+  DataLength := Source.DataLength;
+  PidCode := Source.PidCode;
+  ShortName := Source.ShortName;
+  ResultFormat := Source.ResultFormat;
+  Category := Source.Category;
+  Mci := Source.Mci;
+  Kind := Source.Kind;
+  PidNumber := Source.PidNumber;
+  AnalogChannel := Source.AnalogChannel;
+end;
+
+function TPidDef.FormulaError: string;
+var
+  F: TFormula;
+begin
+  Result := '';
+  try
+    F := TFormula.Create(FormulaText);
+    F.Free;
+  except
+    on E: EFormulaError do
+      Result := E.Message;
+  end;
 end;
 
 function TPidDef.Formula: TFormula;
@@ -125,6 +188,8 @@ function TPidDef.ToJson: TJSONObject;
 begin
   Result := TJSONObject.Create;
   Result.AddPair('id', TJSONNumber.Create(Id));
+  if not Enabled then
+    Result.AddPair('enabled', TJSONBool.Create(False));
   Result.AddPair('name', LongName);
   Opt('shortName', ShortName);
   Opt('description', Description);
@@ -133,7 +198,7 @@ begin
   case Kind of
     pkVehicle:
       begin
-        Result.AddPair('pid', IntToHex(PidNumber, 4));
+        Result.AddPair('pid', PidCode);
         Result.AddPair('bytes', TJSONNumber.Create(DataLength));
       end;
     pkAnalog:
@@ -259,6 +324,9 @@ begin
       FWarnings.Add(Format('%s (%s): analog channel must be 1-3', [Where, P.LongName]));
       Exit;
     end;
+    if (P.Mci <> '') and (FindByMci(P.Mci) <> nil) then
+      FWarnings.Add(Format('%s (%s): MCI "%s" is already used by "%s"',
+        [Where, P.LongName, P.Mci, FindByMci(P.Mci).LongName]));
     try
       P.Formula;
     except
@@ -291,6 +359,7 @@ begin
   Result := TPidDef.Create;
   try
     Result.Id := JInt(E, 'id', -1);
+    Result.Enabled := JBool(E, 'enabled', True);
     Result.LongName := Trim(JStr(E, 'name'));
     if Result.Id < 0 then
       raise EConvertError.Create('missing or invalid "id"');
@@ -365,8 +434,6 @@ begin
       FWarnings.Add(Where + ': not an object');
       Continue;
     end;
-    if not JBool(TJSONObject(Arr.Items[I]), 'enabled', True) then
-      Continue;
     P := ParseJsonPid(TJSONObject(Arr.Items[I]), Where);
     if P <> nil then
       Accept(P, Where);
@@ -406,6 +473,62 @@ begin
   try
     WriteJsonFile(FileName, Root);
   finally
+    Root.Free;
+  end;
+end;
+
+procedure TPidCatalog.Assign(Source: TPidCatalog);
+var
+  P: TPidDef;
+  Copy_: TPidDef;
+begin
+  FItems.Clear;
+  FWarnings.Clear;
+  for P in Source.FItems do
+  begin
+    Copy_ := TPidDef.Create;
+    Copy_.Assign(P);
+    FItems.Add(Copy_);
+  end;
+end;
+
+procedure TPidCatalog.Add(P: TPidDef);
+begin
+  FItems.Add(P);
+end;
+
+procedure TPidCatalog.Delete(Index: Integer);
+begin
+  FItems.Delete(Index);
+end;
+
+function TPidCatalog.IndexOf(P: TPidDef): Integer;
+begin
+  Result := FItems.IndexOf(P);
+end;
+
+function TPidCatalog.NextFreeId: Integer;
+var
+  P: TPidDef;
+begin
+  Result := 1;
+  for P in FItems do
+    if P.Id >= Result then
+      Result := P.Id + 1;
+end;
+
+function TPidCatalog.Validate: TArray<string>;
+var
+  Root: TJSONObject;
+  Check: TPidCatalog;
+begin
+  Root := ToJson;
+  Check := TPidCatalog.Create;
+  try
+    Check.LoadFromJson(Root);
+    Result := Check.Warnings.ToStringArray;
+  finally
+    Check.Free;
     Root.Free;
   end;
 end;

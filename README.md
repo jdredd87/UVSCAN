@@ -43,7 +43,11 @@ JSON files are UTF‑8, indented, carry a `"version"`, and are saved via a temp 
   "formula": "((N1 << 8) + N2) * 0.25", "units": "RPM", "mci": "RPM" }
 ```
 
-`kind` is `vehicle` (needs `pid` + `bytes`), `calculated` (formula over other PIDs' `%MCI%` values) or `analog` (`analogChannel` 1–3).
+`kind` is `vehicle` (needs `pid` + `bytes`), `calculated` (formula over other PIDs' `%MCI%` values) or `analog` (`analogChannel` 1–3). MCI names must be unique. `"enabled": false` keeps an entry in the file but hides it from the scan list.
+
+### Editing PIDs
+
+**Edit PIDs…** (under the PID list; not while scanning) opens the editor: add, duplicate, delete and edit every field, with a live formula check, a "try the formula" box (data bytes in hex for vehicle/analog PIDs, `NAME=value` pairs for calculated ones) and a problem count. Save runs the same validation as loading and refuses to write `pids.json` while there are problems; Cancel discards everything.
 The program itself can live anywhere (Program Files once there is an installer). Installer note: grant Users modify rights on `ProgramData\UVScan` — a folder created there by one user is read‑only for other users.
 
 Command line (same idea as legacy UVSCAN): `UVScan.exe -port COM9 -connect -scan -log`
@@ -61,7 +65,8 @@ Command line (same idea as legacy UVSCAN): `UVScan.exe -port COM9 -connect -scan
 | `src/UVScan.Dtc.pas` | `TDtcCatalog`: dtcs.json load/save |
 | `src/UVScan.Engine.pas` | Background thread that owns the port and runs everything |
 | `src/UVScan.Simulator.pas` | Simulated AVT + PCM |
-| `src/UVScan.MainForm.*` | UI |
+| `src/UVScan.MainForm.*` | Main window |
+| `src/UVScan.PidEditor.*` | PID editor dialog |
 | `src/UVScan.Paths.pas` | Data folder (`C:\ProgramData\UVScan`) |
 | `src/UVScan.Settings.pas` | `TAppSettings` (settings.json) |
 | `src/UVScan.JsonFile.pas` | JSON read/write helpers (atomic save) |

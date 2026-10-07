@@ -12,7 +12,8 @@ type
   public
     [Test] procedure RoundTrip;
     [Test] procedure ReportsBadEntries;
-    [Test] procedure SkipsDisabledEntries;
+    [Test] procedure KeepsDisabledEntries;
+    [Test] procedure EditingHelpers;
   end;
 
   [TestFixture]
@@ -123,18 +124,68 @@ begin
   end;
 end;
 
-procedure TPidJsonTests.SkipsDisabledEntries;
+procedure TPidJsonTests.KeepsDisabledEntries;
 var
   C: TPidCatalog;
+  Root: TJSONObject;
 begin
   C := TPidCatalog.Create;
   try
     C.LoadFromJsonText('{"pids":[{"id":1,"name":"On","kind":"calculated","formula":"1"},' +
       '{"id":2,"name":"Off","kind":"calculated","formula":"1","enabled":false}]}');
-    Assert.AreEqual(1, C.Count);
+    Assert.AreEqual(2, C.Count);
     Assert.AreEqual(0, C.Warnings.Count);
+    Assert.IsTrue(C.FindById(1).Enabled);
+    Assert.IsFalse(C.FindById(2).Enabled);
+    Root := C.ToJson;
+    try
+      Assert.IsTrue(Pos('"enabled":false', Root.ToJSON) > 0, Root.ToJSON);
+    finally
+      Root.Free;
+    end;
   finally
     C.Free;
+  end;
+end;
+
+procedure TPidJsonTests.EditingHelpers;
+var
+  A, B: TPidCatalog;
+  P: TPidDef;
+  Problems: TArray<string>;
+begin
+  A := TPidCatalog.Create;
+  B := TPidCatalog.Create;
+  try
+    A.LoadFromJsonText('{"pids":[{"id":4,"name":"One","kind":"calculated","formula":"1","mci":"ONE"},' +
+      '{"id":9,"name":"Two","kind":"calculated","formula":"2","mci":"TWO"}]}');
+    Assert.AreEqual(10, A.NextFreeId);
+    B.Assign(A);
+    Assert.AreEqual(2, B.Count);
+    B[0].LongName := 'Changed';
+    Assert.AreEqual('One', A[0].LongName, 'Assign must deep copy');
+    Assert.AreEqual(0, Integer(Length(B.Validate)));
+
+    P := TPidDef.Create;
+    P.Id := B.NextFreeId;
+    P.LongName := 'Three';
+    P.Kind := pkCalculated;
+    P.FormulaText := '(1 +';
+    P.Mci := 'TWO';
+    B.Add(P);
+    Problems := B.Validate;
+    Assert.AreEqual(2, Integer(Length(Problems)), string.Join(sLineBreak, Problems)); // bad formula + duplicate MCI
+    Assert.IsTrue(P.FormulaError <> '');
+    P.FormulaText := '%ONE% * 2';
+    P.Mci := 'THREE';
+    Assert.AreEqual('', P.FormulaError);
+    Assert.AreEqual(Double(2), P.Formula.Evaluate([], [1]), 0);
+    Assert.AreEqual(0, Integer(Length(B.Validate)));
+    B.Delete(B.IndexOf(P));
+    Assert.AreEqual(2, B.Count);
+  finally
+    A.Free;
+    B.Free;
   end;
 end;
 

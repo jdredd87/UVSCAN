@@ -149,6 +149,7 @@ type
     procedure DoReadVehicleInfo;
     procedure DoStartScan(const Ids: TArray<Integer>);
     procedure DoStopScan;
+    procedure ForgetScan;
     procedure StopStreaming;
     procedure ResetStreamSlots;
     procedure DoStartLog(const FileName: string);
@@ -602,6 +603,7 @@ begin
   end;
   DoStopLog;
   FStreaming := False;
+  ForgetScan;
   FPort.Close;
   FPort := nil;
   Log('Disconnected');
@@ -903,6 +905,8 @@ begin
     SetState(esScanning);
   finally
     Rejected.Free;
+    if not FStreaming then
+      ForgetScan; // start failed or was cancelled
     if FState = esBusy then
       SetState(esConnected);
   end;
@@ -916,8 +920,20 @@ begin
     StopStreaming;
     Log('Scan stopped');
   end;
+  ForgetScan;
   if (FPort <> nil) and FPort.IsOpen then
     SetState(esConnected);
+end;
+
+{ Drop references into the PID catalog once a scan is over, so the UI may
+  edit and reload the catalog while no scan is running. }
+procedure TScanEngine.ForgetScan;
+begin
+  FScanPids := nil;
+  FCalcSources := nil;
+  FRejected := nil;
+  FWork := nil;
+  FPlan := Default(TDpidPlan);
 end;
 
 procedure TScanEngine.HandleDpidData(const Msg: TClass2Message);
@@ -1276,7 +1292,7 @@ begin
     if Length(Ids) = 0 then
     begin
       for I := 0 to FCatalog.Count - 1 do
-        if FCatalog[I].Kind = pkVehicle then
+        if (FCatalog[I].Kind = pkVehicle) and FCatalog[I].Enabled then
           List.Add(FCatalog[I]);
     end
     else
