@@ -166,6 +166,7 @@ type
     procedure DoReadVehicleInfo;
     function ReadBlock(Block: Byte; MinLen: Integer; out Msg: TClass2Message): Boolean;
     procedure FlushInput;
+    procedure DiscardInput(Ms: Cardinal);
     procedure DoStartScan(const Ids: TArray<Integer>);
     procedure DoStopScan;
     procedure ForgetScan;
@@ -453,8 +454,17 @@ begin
   begin
     if FStreaming and (Msg.Mode = $6A) and (Msg.Source = AddrPcm) then
       HandleDpidData(Msg)
+    else if (Msg.Mode = $6A) and (Msg.Source = AddrPcm) then
+      // stream data still in flight after a stop: nothing to do
     else if Msg.Mode = ModeNegativeResponse then
-      Warn(Format('Negative response from %s: %s', [ModuleName(Msg.Source), Msg.ToHex]))
+    begin
+      // A refusal nobody is waiting for any more (it came late). Requests that
+      // need an answer report refusals themselves, so this only goes to
+      // Messages - and "7F 2A .. 23" is the PCM accepting a stream request.
+      if not ((Length(Msg.Data) >= 2) and (Msg.Data[0] = ModeRequestDpids) and
+        (Msg.Data[High(Msg.Data)] = $23)) then
+        Log('Late negative response from %s: %s', [ModuleName(Msg.Source), Msg.ToHex]);
+    end
     else if FTrace = 0 then
       Log('RX  ' + F.ToHex);
   end
@@ -588,9 +598,10 @@ begin
   FPort := Factory();
   Log('Opening %s', [FPort.Description]);
   FPort.Open;
-  FParser.Clear;
-  FPending.Clear;
   SetState(esBusy);
+  // Replies to the last session's clean-up can still be on their way, or
+  // waiting in the adapter, often cut off part-way: drop them.
+  DiscardInput(150);
 
   // Same initialisation the legacy app used: E1 33 (VPW mode), B0 (version).
   // Tried three times: if a program was stopped halfway through sending a
@@ -631,6 +642,22 @@ begin
   FlushInput;
   SetState(esConnected);
   DoReadVehicleInfo;
+end;
+
+{ Reads and throws away everything that arrives for Ms milliseconds. }
+procedure TScanEngine.DiscardInput(Ms: Cardinal);
+var
+  Clock: TStopwatch;
+  Left: Int64;
+begin
+  Clock := TStopwatch.StartNew;
+  repeat
+    Left := Int64(Ms) - Clock.ElapsedMilliseconds;
+    if Left <= 0 then
+      Break;
+    FPort.Read(FReadBuf, SizeOf(FReadBuf), Min(Left, 50));
+  until Terminated;
+  FlushInput;
 end;
 
 { Drops whatever has arrived but not been handled yet: frames waiting in

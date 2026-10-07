@@ -758,6 +758,15 @@ begin
   Control(ReqOut, SET_CONTROL_LINE_STATE, $0003 {DTR + RTS}, CommId);
 end;
 
+{ Keyspan receive mode. The Linux driver uses DMA above 57600 baud, but in
+  DMA mode the adapter holds short replies back (the AVT's answers arrived
+  after the next command's); "by hand" mode passes each byte on, with a status
+  byte per packet. }
+function KeyspanDma(Baud: Cardinal): Boolean;
+begin
+  Result := False;
+end;
+
 { Keyspan USA-19HS: one interface; data out on endpoint 1, port control
   messages out on endpoint 2, data in on endpoint $81 (interrupt). }
 procedure TAndroidUsbSerialPort.SetupKeyspan;
@@ -824,7 +833,7 @@ begin
   end;
   // These must be right in every message.
   Msg[lcr] := DATABITS_8;     // 1 stop bit, no parity
-  if FBaudRate > 57600 then
+  if KeyspanDma(FBaudRate) then
   begin
     Msg[rxMode] := RXMODE_DMA;
     Msg[txMode] := TXMODE_DMA;
@@ -1051,7 +1060,7 @@ begin
     end;
     SetLength(Data, Result);
   end
-  else if (FDriver = udKeyspan) and (FBaudRate <= 57600) then
+  else if (FDriver = udKeyspan) and not KeyspanDma(FBaudRate) then
   begin
     // Bit 7 of the first byte clear: one status byte, then data.
     // Set: status / data pairs.
