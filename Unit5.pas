@@ -2,12 +2,10 @@ unit Unit5;
 
 interface
 
-
 uses
   Windows, Messages, SysUtils, Variants, Classes, Graphics, Controls, Forms,gentypes,
   Dialogs, Menus, Grids, BaseGrid, AdvGrid, ToolWin, ComCtrls, Series, TeEngine,
   ExtCtrls, TeeProcs, Chart, StdCtrls, AsgHTML, AsgImport, AdvObj;
-
 
 type
   TForm5 = class(TForm)
@@ -60,7 +58,6 @@ implementation
 
 {$R *.dfm}
 
-
 procedure tform5.initlist;
 var x:byte;
 begin
@@ -83,7 +80,6 @@ end;
 
 if fstart.text='' then a:=-100000 else a:=newstrtofloat(fstart.Text);
 if fend.text='' then b:=1000000 else b:=newstrtofloat(fend.Text);
-
 
 case combobox3.ItemIndex of
 0:begin
@@ -137,7 +133,6 @@ end;
 
 procedure TForm5.FormCreate(Sender: TObject);
 begin
-//pagecontrol1.ActivePage:=form5.TabSheet1;
 end;
 
 procedure TForm5.HTML1Click(Sender: TObject);
@@ -157,20 +152,4 @@ logview.SortByColumn(logview.col);
 end;
 
 end.
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 

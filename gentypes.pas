@@ -27,7 +27,7 @@ end;
 
 AUTONAMEREC=RECORD
 NAMEHEADER1,nameheader2:STRING;
-DATE,TIME,ENABLED,INCREMENTAL:BOOLEAN;
+ENABLED,INCREMENTAL:BOOLEAN;
 incx:integer;
 END;
 
@@ -37,10 +37,6 @@ vehicler=record
   osid:string;
 end;
 
-{GAUGEREC=RECORD
-  COMP,NAME,VALUE,FORMULA,VEND,VSTART,COLOR1,COLOR2,COLOR3,TEXT:STRING;
-END;}
-
 dhpscanrecord=record
 COMPORT:BYTE;
 BAUD:LONGINT;
@@ -49,7 +45,6 @@ IPPORT:STRING;
 AP:INTEGER; // MODE 1,2
 SENDVPW:INTEGER;
 font,fontsize,fontcolor,primary,secondary:string;
-PAUSEBUTTON,SCANBUTTON:INTEGER;
 savepath:string;
 WB:BYTE;
 WBCOMPORT:BYTE;
@@ -68,36 +63,28 @@ PCMPID, // 000C
 PIDGroupID, // 1 = OSID LOOKUP
 ShortName, // RPM
 ResultsLookup, // 0 = ON , 1 = OFF
-PIDCategoryID,mci,value,
-filterstart,audiofile:string; // 1 = ENGINE TAB
+PIDCategoryID, // 1 = ENGINE TAB
+mci,value:string;
 GRIDLINE:BYTE;
 BlockID,PIDPos:byte;
-enabled:boolean;
 
-prow,pid_grid_row:byte; // row on the scanner grid
+pid_grid_row:byte; // row on the scanner grid
 scanner_x:byte; // # in scanner_pids
 
 pidwindowindex:integer;
-pidwindowhandle:longint;
-pidwindowvx:byte;
 
 fcolor,rcolor:tcolor;
 
 gfcolor,grcolor,wfcolor,wrcolor:tcolor;
 wfilter:real;
 
-//TOP,LEFT,WIDTH,HEIGHT,OPEN:INTEGER;
-
 end;
-
 
 pid_list_count=record
 count:byte;
 bytecount:byte;
 f_count:byte;
-f_bytecount:byte;
 end;
-
 
 Scanner_Info=record
 lastblock:Byte;
@@ -111,50 +98,25 @@ fakepids:tstringlist;
 adports:tstringlist;
 end;
 
-type
-bufferrec=record
-DATA:ansistring;
-inuse:boolean;
-done:boolean;
-end;
-
 function newstrtofloat(v:string):real;
 
 function newstrtoint(v:string):integer;
-
-//Const Stacksize = 1024 * 16;
-
-function IntToBin ( value: LongInt; digits: integer ): string;
 
 function TrimSpaces(stemp: string): string;
 function StringtoHex(Data: string): string;
 function HexToString(Value: string): string;
 
-function bootobyte(f:boolean):byte;
 function bootostr(f:boolean):string;
-function copyfrombuffer(start,count:longint;var dest:ansistring):boolean;
-function buffercount:longint;
-function initbuffer(overrideit:boolean):boolean;
-function writetobuffer(str:string):boolean;
-function searchbuffer(str:string):longint;
-function removefrombuffer(start,count:longint):boolean;
 function SearchAndReplace
    (sSrc, sLookFor, sReplaceWith : string) : string;
 function TColorToHex(Color : TColor) : string;
 function IsNumber(s: string): Boolean;
    function HexToTColor(sColor : string) : TColor;
-function DateTimeDiff(Start, Stop : TDateTime) : int64;
 var
 intportcount:integer;
       nextpidavail,piddone:boolean;
       vehicle:vehicler;
       scanini:TIniFile;
-      heartbeat:longint;
-      hardwaretype:byte;
-      sendpidwait:integer;
-      nuketype:INTEGER;
-      Buffer:bufferrec;
-      bufferstr:ansistring;
   scannerrunning:boolean;
   Log_Grid,PIDCSV,dtclist,
   pid_grid_config:tadvstringgrid;
@@ -177,23 +139,17 @@ intportcount:integer;
 
   PID_TIMEOUTCOUNT:BYTE;
 
-  ppid:pid_rec;
   timedout:boolean;
-  lastcommand:string;
-  sendtestdevice:boolean;
   big_done:boolean;
-  start,LOGSTART,finish,tstamp:tdatetime; // for log time
+  start,LOGSTART,finish:tdatetime; // for log time
   admode:boolean;
   ini:TIniFile;
   cfg:dhpscanrecord;
-  nukebuffer_error:byte; // after 5 clears and no data, then uh oh!
-  scan_logging:boolean;
   AUTONAME:AUTONAMEREC;
   SENDCOMMANDS:SCANCOMMANDREC;
   backupcsv:textfile;
 
   st,et:tdatetime;
-  rcolor,fcolor:longint;
   gridapply:boolean=false;
 
   DTCM:dtcmodules;
@@ -204,14 +160,6 @@ intportcount:integer;
 
 implementation
 
-
-function DateTimeDiff(Start, Stop : TDateTime) : int64;
-var TimeStamp : TTimeStamp;
-begin
-  TimeStamp := DateTimeToTimeStamp(Stop - Start);
-  Dec(TimeStamp.Date, TTimeStamp(DateTimeToTimeStamp(0)).Date);
-  Result := (TimeStamp.Date*24*60*60)+(TimeStamp.Time div 1000);
-end;
 function newstrtoint(v:string):integer;
 var g:integer;
 begin
@@ -229,12 +177,6 @@ begin
    bootostr:='0';
 end;
 
-function bootobyte(f:boolean):byte;
-begin
-  if f=true then bootobyte:=1 else
-   bootobyte:=0;
-end;
-
 function newstrtofloat(v:string):real;
 var g:real;
 begin
@@ -245,8 +187,6 @@ g:=-999;
 end;
 newstrtofloat:=g;
 end;
-
-
 
 function TColorToHex(Color : TColor) : string;
 begin
@@ -265,17 +205,6 @@ l:=strtofloat(s);
 except
 result:=false;
 end;
-end;
-
-function IntToBin ( value: LongInt; digits: integer ): string;
-begin
-    result := StringOfChar ( '0', digits ) ;
-    while value > 0 do begin
-      if ( value and 1 ) = 1 then
-        result [ digits ] := '1';
-      dec ( digits ) ;
-      value := value shr 1;
-    end;
 end;
 
 function HexToTColor(sColor : string) : TColor;
@@ -351,135 +280,15 @@ begin
  Result:=Copy(Final,1,Length(Final));
 end;
 
-function buffercount:longint;
-begin
-try
-buffercount:=length(buffer.data);
-except
-buffercount:=0;
-end;
 sleep(0);
 end;
 
-function initbuffer(overrideit:boolean):boolean;
-begin
-
-
-
-if buffer.inuse=true
- then if overrideit=false then  repeat
- sleep(0);
- until buffer.inuse=false;          // change this to repeat until its done
-
-//setlength(buffer.data,1024);
-buffer.data:='';
-buffer.inuse:=false;
-buffer.done:=false;
-{writeln('Buffer Data Length : ',length(Buffer.data));
-writeln('Buffer Data Size : ',sizeof(Buffer.data));
-writeln('BUffer In Use : ',buffer.inuse);}
-initbuffer:=true;
-end;
-
-function writetobuffer(str:string):boolean;
-begin
-writetobuffer:=false;
-if buffer.inuse=true
- then
- repeat
- sleep(0);
- until buffer.inuse=false;          // change this to repeat until its done
-
-
-buffer.inuse:=true;
-sleep(0);
-try
-buffer.data:=buffer.data+str;
-buffer.inuse:=false;
-writetobuffer:=true;
-except
-buffer.inuse:=false;
-writetobuffer:=false;
 end;
 
 end;
 
-function searchbuffer(str:string):longint;
-var x:longint;
-begin
-searchbuffer:=0; // not found
-if buffer.inuse=true
- then
- repeat
- sleep(0);
- until buffer.inuse=false;          // change this to repeat until its done
-buffer.inuse:=true;
-try
-x:=pos(str,buffer.data);
-searchbuffer:=x;
-buffer.inuse:=false;
-except
-buffer.inuse:=false;
-searchbuffer:=0;
-end;
-end;
-
-
-function removefrombuffer(start,count:longint):boolean;
-begin
-
-
-removefrombuffer:=false;
-if buffer.inuse=true
- then
- repeat
- sleep(0);
- until buffer.inuse=false;          // change this to repeat until its done
-
-buffer.inuse:=true;
-try
- delete(buffer.data,start,count);
- buffer.inuse:=false;
-except
-buffer.inuse:=false;
-removefrombuffer:=false;
 end;
 
 end;
-
-function copyfrombuffer(start,count:longint;var dest:ansistring):boolean;
-var x:longint;
-   tmps:ansistring;
-begin
-copyfrombuffer:=false;
-
-if buffer.inuse=true
- then
- repeat
- sleep(0);
- until buffer.inuse=false;          // change this to repeat until its done
-
-buffer.inuse:=true;
-tmps:='';
-
-
-try
-
- for x:=start to start+count-1 do
- begin
- tmps:=tmps+buffer.data[x];
- sleep(0);
- end;
- dest:=tmps;
- buffer.inuse:=false;
- copyfrombuffer:=true;
-
-except
-buffer.inuse:=false;
-copyfrombuffer:=false;
-end;
-
-end;
-
 
 end.

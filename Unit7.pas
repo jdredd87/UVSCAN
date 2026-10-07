@@ -7,7 +7,6 @@ uses
 
 type
 
-
  tFormX = class
     private
       // The data fields of this new class
@@ -54,7 +53,6 @@ type
 
   pp:tlist;
 
-
 implementation
 
 uses unit1,unit8;
@@ -66,7 +64,6 @@ constructor tformx.Create(const topx:longint;
             const handlex:longint;
             const piddatax:pid_rec);
 
-
 begin
   // Save the passed parameters
 self.topx:=topx;
@@ -77,7 +74,6 @@ self.heightx:=widthx;
 self.piddatax:=piddata;
 end;
 
-
   procedure closewindows;
   var cx:integer;
   begin
@@ -85,7 +81,6 @@ end;
    begin
    with tform8(pp.list[cx]) do
      begin
-//     form1.memo1.lines.add('Closing: '+caption);
      tform8(pp.list[cx]).Close;
      tform8(pp.List[cx]).Free;
      pp.Delete(cx);
@@ -97,29 +92,20 @@ for cx:=pidwindows.Count-1 downto 0 do
    pidwindows.Delete(cx);
 
  end;
-//form1.memo1.lines.add('pp: '+inttostr(pp.count));
   end;
-
 
 function addpidwindow(var p:pid_rec):boolean;
 
-var frm:tformx;
-    xx:longint;
+var xx:longint;
     g:tform8;
 begin
 g:=tform8.Create(nil);
-repeat
-sleep(10);
-until g<>nil;
-//pp.Add(g.create(nil));
  pp.add(g);
 with g do
  begin
-//   show;
    width:=200;
    height:=160;
    pidrow:=p.GRIDLINE;
-
 
    bordericons:=BORDERicons-[BIMAXIMIZE]-[biminimize];
    formstyle:=fsstayontop;
@@ -135,77 +121,37 @@ with g do
 
   if left+width>screen.width then
    begin
-     //memo1.lines.add('no more room!');
      top:=0;
      inc(lastleft,width);
      lastlefT:=0;
      left:=lastleft;
-     //memo1.lines.add(inttostr(left));
    end;
 
   if top+height>screen.Height then
    begin
-     //memo1.lines.add('next column!');
      top:=0;
      inc(lastleft,width);
      left:=lastleft;
-     //memo1.lines.add(inttostr(left));
    end;
  end else
  begin
-   //memo1.lines.add('first window made');
    top:=0;
    left:=0;
  end;
 
-//   caption:=inttostr(handle);
    caption:=p.LongName;
 
    ptitle.Caption:=p.shortname;
    value.Caption:='--';
    units.Caption:=p.Units;
 
-{   with tlabel.Create(nil) do
-    begin
-    name:='ptitle';
-      top:=0;
-      left:=0;
-      caption:=p.ShortName;
-      font.size:=15;
-      parent:=g;
-    end;
-
-    with tlabel.Create(nil) do
-    begin
-    name:='value';
-      top:=30;
-      left:=0;
-      caption:='--';
-      font.size:=15;
-      parent:=g;
-      p.pidwindowvx:=g.ControlCount-1;
-    end;
-
-    with tlabel.Create(nil) do
-    begin
-    name:='units';
-      top:=60;
-      left:=0;
-      caption:=p.Units;
-      font.size:=15;
-      parent:=g;
-    end;}
-
    pidwindows.add(tformx.Create(top,left,width,height,handle,p));
-//  g.Visible:=true;
    HIDE;
 
  end;
- p.pidwindowhandle:=g.Handle;
  p.pidwindowindex:=pp.Count-1;
 
  end;
-
 
 begin
 

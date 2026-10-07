@@ -85,7 +85,6 @@ begin
 if canchange=false then exit;
 colord.Color:=edit2.color;
 if colord.Execute=true then edit2.Color:=colord.Color;
-//form1.pid_grid.FontColors[0,prow]:=colord.color;
 form1.pid_grid.FontColors[1,prow]:=colord.color;
 form1.pid_grid.FontColors[2,prow]:=colord.color;
 scanner_pids[prow].gfcolor:=colord.color;
@@ -99,9 +98,6 @@ scanner_pids[prow].gfcolor:=colord.color;
         end;
 
  end;
-
-
-
 
 procedure TForm6.Button3Click(Sender: TObject);
 vaR X,Y:INTEGER;
@@ -136,7 +132,6 @@ begin
     found:=true;
 end;
 
-
 if found=false then
 begin
     pid_grid_config.RowCount:=pid_grid_config.RowCount+1;
@@ -152,7 +147,6 @@ begin
     pid_grid_config.Cells[7,x]:=result.Text;
     pid_grid_config.Cells[8,x]:=tcolortohex(edit3.color);
     pid_grid_config.Cells[9,x]:=tcolortohex(edit4.color);
-//    pid_grid_config.Cells[10,x]:=floattostr(spinedit3.value);
     pid_grid_config.Cells[10,x]:=(spinedit3.text);
     pid_grid_config.Cells[11,x]:= inttostr(tform(pp.List[scanner_pids[prow].pidwindowindex]).Top);
     pid_grid_config.Cells[12,x]:= inttostr(tform(pp.List[scanner_pids[prow].pidwindowindex]).left);
@@ -160,13 +154,10 @@ begin
     pid_grid_config.Cells[14,x]:= inttostr(tform(pp.List[scanner_pids[prow].pidwindowindex]).height);
     pid_grid_config.cells[15,x]:=bootostr(checkbox1.checked);
 
-
 end;
 PID_GRID_CONFIG.SaveToCSV('PIDGRID.CSV');
 
-
 end;
-
 
 procedure TForm6.Button4Click(Sender: TObject);
 begin
@@ -188,14 +179,12 @@ if odd(PPID.pid_grid_row) then
 EDIT3.COLOR:=HEXTOTCOLOR(CFG.secondary) ELSE
 EDIT3.COLOR:=HEXTOTCOLOR(CFG.primary);
 
-
 EDIT2.COLOR:=CLBLACK;
 edit4.color:=clblack;
 
 spinedit3.text:='200000';
 
 form1.pid_grid.RowColor[prow]:=EDIT1.COLOR;
-//form1.pid_grid.FontColors[0,prow]:=EDIT2.color;
 form1.pid_grid.FontColors[1,prow]:=EDIT2.color;
 form1.pid_grid.FontColors[2,prow]:=EDIT2.color;
 
@@ -261,9 +250,6 @@ begin
 
 if canchange=false then exit;
 
-
-//scanner_pids[prow].wfilter:=spinedit3.Value;
-//if (spinedit3.text<>'') then
 if isnumber(spinedit3.Text) then
 scanner_pids[prow].wfilter:=newstrtofloat(spinedit3.text);
 

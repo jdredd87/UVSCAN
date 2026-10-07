@@ -5,15 +5,13 @@ interface
 uses
   shellapi, unit7,
   Windows, Messages, SysUtils, Variants, Classes, Graphics,
-  Controls, Forms, adscript,
-  Dialogs, StdCtrls, oomisc, AdPort, syncobjs, CheckLst, ComCtrls, Menus,
+  Controls, Forms,
+  Dialogs, StdCtrls, oomisc, AdPort, CheckLst, ComCtrls, Menus,
   ToolWin, ExtCtrls, formula, grids, basegrid, advgrid, stdconvs,
-  Chart, AdWnPort, inifiles, gauges, dsiwin32, unit5, mmsystem,
-  AdStatLt, adselcom, unit2, gentypes, VrControls, VrMatrix,
+  AdWnPort, inifiles, unit5, gentypes,
   AdPacket, Buttons,
-  VrThreads, AppEvnts, VrAngularMeter, VrProgressBar, OleCtrls, MTSSDKLib_TLB,
+  VrThreads, OleCtrls, MTSSDKLib_TLB,
   AdvObj;
-// VrAngularMeter, VrDigit, VrScope, VrProgressBar, Buttons, VrLabel;
 
 type
 
@@ -98,7 +96,6 @@ type
     Logcolor1: TMenuItem;
     OpenLOG1: TMenuItem;
     LogOpen: TOpenDialog;
-    ApplicationEvents1: TApplicationEvents;
     DTCs1: TMenuItem;
     ReadDTCs1: TMenuItem;
     ClearDTCs1: TMenuItem;
@@ -115,7 +112,6 @@ type
     sbar: TStatusBar;
     STOPSCANNER: TToolButton;
     Timer1: TTimer;
-    script: TApdScript;
     CHECKPID1: TApdDataPacket;
     CHECKPID2: TApdDataPacket;
     checkpid3: TApdDataPacket;
@@ -143,11 +139,8 @@ type
 
     procedure pcminfobClick(Sender: TObject);
 
-    procedure togglecomport(force: Boolean);
-
     procedure FormClose(Sender: TObject; var Action: TCloseAction);
 
-    // procedure add_pidlist(t:pid_Rec);
     procedure add_pidlist(t: pid_Rec; b: Byte);
     procedure ScannerBClick(Sender: TObject);
 
@@ -157,13 +150,9 @@ type
 
     procedure pidsize(Sender: TObject);
     procedure createdata;
-    procedure Exit1Click(Sender: TObject);
     procedure Setup1Click(Sender: TObject);
     procedure FormCreate(Sender: TObject);
 
-    procedure EnginePidsClickCheck(Sender: TObject);
-    procedure TrannyPidsClickCheck(Sender: TObject);
-    procedure otherpidsClickCheck(Sender: TObject);
     procedure loadlist(FileName: string; Sender: TObject);
     procedure savelist(FileName: string; Sender: TObject);
     procedure ClearCheckedPIDs1Click(Sender: TObject);
@@ -191,10 +180,7 @@ type
     procedure pid_gridKeyDown(Sender: TObject; var Key: Word; Shift: TShiftState);
     procedure TabSheet7Show(Sender: TObject);
     procedure AutoName1Click(Sender: TObject);
-    procedure ToolButton2Click(Sender: TObject);
     procedure About2Click(Sender: TObject);
-    procedure ToolButton1Click(Sender: TObject);
-    procedure AVTOSIDTimeout(Sender: TObject);
     procedure Button1Click(Sender: TObject);
     procedure Button2Click(Sender: TObject);
     procedure estVehicleforPIDS1Click(Sender: TObject);
@@ -205,7 +191,6 @@ type
     procedure checkline(Sender: string);
     procedure VrTimer1Timer(Sender: TObject);
     procedure OpenLOG1Click(Sender: TObject);
-    procedure ApplicationEvents1ActionExecute(Action: TBasicAction; var Handled: Boolean);
     procedure ReadDTCs1Click(Sender: TObject);
     procedure dtc_agoStringPacket(Sender: TObject; Data: string);
     procedure dtc_findStringPacket(Sender: TObject; Data: string);
@@ -215,27 +200,17 @@ type
     procedure ModifySelectedPID1Click(Sender: TObject);
     procedure pidpopPopup(Sender: TObject);
     procedure ResetallRows1Click(Sender: TObject);
-    procedure pid_gridCellChanging(Sender: TObject; OldRow, OldCol, NewRow, NewCol: Integer; var Allow: Boolean);
     procedure CheckBox1Click(Sender: TObject);
     procedure ShowGauge1Click(Sender: TObject);
     procedure HideGauge1Click(Sender: TObject);
-    procedure MoverowTimer(Sender: TObject);
-    procedure pid_gridMouseDown(Sender: TObject; Button: TMouseButton; Shift: TShiftState; X, Y: Integer);
-    procedure TabSheet7MouseDown(Sender: TObject; Button: TMouseButton; Shift: TShiftState; X, Y: Integer);
-    procedure FormMouseDown(Sender: TObject; Button: TMouseButton; Shift: TShiftState; X, Y: Integer);
-    procedure Timer2Timer(Sender: TObject);
     procedure HideallPIDWindow1Click(Sender: TObject);
     procedure FindModulesStringPacket(Sender: TObject; Data: string);
     procedure STOPSCANNERClick(Sender: TObject);
     procedure addmemoline(s: string);
-    procedure scriptScriptUserFunction(CP: TObject; const Command, Parameter: string);
-    procedure scriptScriptParseVariable(CP: TObject; const Variable: string; var NewValue: string);
     procedure FormShow(Sender: TObject);
     procedure CHECKPID2StringPacket(Sender: TObject; Data: string);
     procedure CHECKPID1StringPacket(Sender: TObject; Data: string);
     procedure checkpid3StringPacket(Sender: TObject; Data: string);
-    procedure checkpid3Timeout(Sender: TObject);
-    procedure CHECKPID2Timeout(Sender: TObject);
     procedure CHECKPID1Timeout(Sender: TObject);
     procedure EnableallPids1Click(Sender: TObject);
     procedure MTSConnectionError(Sender: TObject);
@@ -253,54 +228,19 @@ type
 var
 
   Form1: TForm1;
-  // setupfrm:tform2;
   sysinfo: _SYSTEM_INFO;
-  csv: TStrings;
   FE_Counter: Byte = 0; // use this to send keep alive
   BAD_PID: Boolean = false;
-  total_goodpids: Byte;
   HOTKEY1: Integer;
   testingpids: Boolean = false;
   sentcommand: Boolean = false;
   sendhb: Boolean = false;
-  // timestamp:tstringlist;
 
 implementation
 
 uses unit8, Unit4, Unit6;
 
 {$R *.dfm}
-(*
-  FUNCTION getpidbyid(code:string):pid_Rec;
-  var x:integer;
-  t:pid_rec;
-  o,g:string;
-  begin
-
-  fillchar(t,sizeof(t),#0);
-  t.PIDID:='NOT_FOUND';
-
-  o:=code;
-
-  if o[1]+o[2]+o[3]='000' THEN delete(O,1,3) else
-  if o[1]+o[2]='00' THEN delete(O,1,2) else
-  if o[1]='0' THEN delete(O,1,1);
-
-  for x:=1 to length(availablepids) do
-  begin
-  if (uppercase(code) = availablepids[x].PCMPID) or
-  (uppercase(o)    = availablepids[x].PCMPID)  then
-  begin
-  getpidbyid:=availablepids[x];
-  exit;
-  end;
-
-  end;
-
-  getpidbyid:=t;
-
-
-  end; *)
 
 procedure TForm1.addmemoline(s: string);
 begin
@@ -312,7 +252,6 @@ procedure TForm1.WMHotKey(var Msg: TWMHotKey);
 begin
   if Msg.HotKey = HOTKEY1 then
   begin
-    // if (scannerb.Enabled=false)
     if (scannerrunning = false) then
       Exit
     else
@@ -329,10 +268,6 @@ begin
   TList := Sender as TCheckListBox;
   if TList.Items.Count = 0 then
     Exit;
-  { if filename='' then
-    ini := TIniFile.Create(
-    //     ChangeFileExt(
-    'uvscan_Checklist.pid') else }
 
   if UpperCase(FileName) = 'UVSCAN_CHECKLIST.PID' then
     FileName := ExtractFilePath(application.ExeName) + 'UVSCAN_CHECKLIST.PID';
@@ -359,11 +294,7 @@ begin
   finally
     ini.Free;
   end;
-  // TLIST.Free;
 end;
-
-
-// Load
 
 procedure TForm1.loadlist(FileName: string; Sender: TObject);
 var
@@ -372,8 +303,6 @@ var
   r: Integer;
 begin
   TList := Sender as TCheckListBox;
-
-  // tlist:=tchecklistbox.Create(self);
 
   if SysUtils.FileExists(GetCurrentDir + '\' + 'uvscan_Checklist.pid') = false then
     Exit;
@@ -384,12 +313,8 @@ begin
 
   try
     ini.ReadSection(TList.Name, TList.Items);
-    { tchecklistbox(Sender).Items.clear;
-      tchecklistbox(sender).Items.AddStrings(tlist.Items);
-      statusmemo.Lines.Addstrings(tlist.items); }
     for i := 0 to TList.Items.Count - 1 do
     begin
-      // statusmemo.lines.add(tlist.items[i]);
       r := ini.ReadInteger(TList.Name, TList.Items[i], 0);
       TList.ItemEnabled[i] := true;
       case r of
@@ -459,9 +384,7 @@ var
   fz: Integer;
   h: TColor;
 begin
-  // form6;
 
-  // prow2:=pid_grid.row;
   prow2 := xx;
   fz := pid_grid.FontSizes[1, prow2];
 
@@ -485,7 +408,6 @@ begin
 
     SpinEdit1.Value := pid_grid.RowHeights[prow2];
     spinedit2.Value := fz;
-    // spinedit3.value:=round(scanner_pids[prow].wfilter);
 
     spinedit3.Text := FloatToStr(scanner_pids[prow].wfilter);
 
@@ -501,14 +423,6 @@ end;
 procedure TForm1.ModifySelectedPID1Click(Sender: TObject);
 begin
   modifypid(pid_grid.Row);
-  // pid_grid.SelectRows(pid_grid.RowCount-1,1);
-end;
-
-procedure TForm1.MoverowTimer(Sender: TObject);
-begin
-  pid_grid.ActiveRowShow := false;
-  pid_grid.Update;
-  pid_grid.Repaint;
 end;
 
 procedure TForm1.MTSConnectionError(Sender: TObject);
@@ -537,23 +451,6 @@ var
   sample: Integer;
   ICOUNT, N: Integer;
 begin
-  {
-    If MTS1.InputType = 2 Then ' 5 Volt Channel
-    If MTS1.InputFunction = 9 Then ' MTS_FUNC_NOTLAMBDA
-    ' Range
-    CValue = MTS1.InputMaxValue - MTS1.InputMinValue
-
-    ' Samples to Range
-    CValue = (CValue * sample) / 1024
-
-    ' Shift for minimum (in case negative or offset)
-    CValue = CValue + MTS1.InputMinValue
-    ChannelValue(n).Caption = Format(CValue, "0.0")
-    Else
-    ChannelValue(n).Caption = "?"
-    End If
-  }
-  // mts.CurrentInput:=0;
   ICOUNT := MTS.InputCount;
   Dec(ICOUNT);
   if ICOUNT = -1 then
@@ -615,39 +512,6 @@ begin
       else
         Value := MTS.InputFunction * -1;
       end;
-      { begin
-        if mts.InputType = 0  then
-        begin
-        if mts.InputFunction = 0 then
-        begin
-        sample := mts.InputSample;
-        value2 := sample;
-        value2 := value / 1000;
-        value2 := value + 0.5;
-        end;
-        end else
-
-        if mts.InputType = 1 then
-        if mts.InputFunction = 0 then
-        begin
-        sample := MTS.InputSample;
-        Value := sample;
-        Value := Value / 1000;
-        Value := Value + 0.5;
-        Value := Value * MTS.InputAFRMultiplier;
-        if Value > 22.4 then
-        Value := 22.4
-        else if Value < 7.4 then
-        Value := 7.4;
-        end
-
-        else
-        Value := MTS.InputFunction * -1;
-
-        cfg.WBVALUE := Format('%.1f', [Value]);
-        AFRLABEL.Caption := Format('%.1f', [Value]);
-        lambalabel.Caption := '';
-      }
     end;
   end;
 end;
@@ -670,56 +534,12 @@ begin
   end;
 end;
 
-procedure TForm1.scriptScriptParseVariable(CP: TObject; const Variable: string; var NewValue: string);
-var
-  X: Integer;
-begin
-  statusmemo.Lines.add(Variable);
-  NewValue := '';
-
-  for X := 1 to scani.Pid_Count do
-
-    if Variable = UpperCase('$PID' + scanner_pids[X].mci) then
-
-    begin
-      NewValue := scanner_pids[X].Value;
-      statusmemo.Lines.add('$PID' + scanner_pids[X].mci + ' >> ' + scanner_pids[X].Value);
-    end;
-end;
-
-procedure TForm1.scriptScriptUserFunction(CP: TObject; const Command, Parameter: string);
-begin
-  if Command = '&RESETAVT' then
-    sendcommand('F1A5', NEWSTRTOINT(Parameter));
-end;
-
 procedure TForm1.sendcommand(s: string; wait: Word);
 begin
-  // add later? if comport.Open=false then exit;
 
   s := UpperCase(s);
   s := trimspaces(s);
-  // addmemoline('SENDING >> '+S);
   s := hextostring(s);
-
-  // TXD = send
-  // RXD = GET
-  // RTS = REQUEST TO SEND
-  // CTS = CLEAR TO SEND
-  // DSR = DATA SET READY
-  // DTR = DATA TERMINAL READY
-  // DCD = DATA CARRIER DETECT
-  // RI = RING
-  // SG = SIGNAL GROUND
-
-  { case COMPORT. of
-    FALSE:BEGIN
-    addmemoline('LOST CONNECTION?!');
-    sleep(500);
-    BIG_DONE:=TRUE;
-    EXIT;
-    END;
-    end; }
 
   try
     try
@@ -813,21 +633,14 @@ begin
     fmessage(1);
   if Length(vehicle.vin) < 17 then
     fmessage(2);
-  // if length(vehicle.osid)=0 then fmessage(3);
 
   if failedinit = false then
   begin
     pcminfob.Enabled := true;
     ScannerB.Enabled := true;
-    // STOPSCANNER.ENABLED:=TRUE;
     DisconnectB.Enabled := true;
     logstatus := 0;
   end;
-end;
-
-procedure TForm1.ApplicationEvents1ActionExecute(Action: TBasicAction; var Handled: Boolean);
-begin
-  //
 end;
 
 procedure TForm1.AutoName1Click(Sender: TObject);
@@ -857,12 +670,7 @@ begin
   addmemoline('OSID : ' + vehicle.osid);
 end;
 
-procedure TForm1.AVTOSIDTimeout(Sender: TObject);
-begin
-end;
-
 // 01 60 0C 00
-// 6C F1 10 7C 0A 00 C0 04 78 30 30 07   .`..lñ.|..À.x00.
 // 6C F1 10 7C 0A 00 C0 04 78
 
 procedure TForm1.AVTSPEEDStringPacket(Sender: TObject; Data: string);
@@ -904,7 +712,6 @@ var
   PIDID: string;
   X: Integer;
 begin
-  // IF POS('0C006CF1107F2A14FE',STRINGTOHEX(DATA))<>0 THEN EXIT;
 
   BAD_PID := true;
 
@@ -929,26 +736,17 @@ begin
   tx := TStringList.Create;
   tx.Clear;
   tx.add(IntToStr(scani.linecount));
-  // addmemoline(inttostr(pid_grid.rowcount));
   finish := Now() - start;
-  // rs := FormatDateTime('HH', finish)+':'+FormatDateTime('NN', finish)+':'+FormatDateTime('SS', finish)+':'+FormatDateTime('ZZZ', finish);
-  // pid_grid.Cells[1,PIDCOUNTER.Count+pidcounter.f_count+fakepids.Count]:=rs;
 
   for cx := 1 to pid_grid.RowCount do
-    // pidcounter.count+2 do //pid_grid.RowCount do // -3 do
     if pid_grid.Cells[0, cx] <> '' then // filter out blank lines?!
       tx.add(pid_grid.Cells[1, cx]);
 
-  // addmemolineStrings(tx);
-  // tx.add(rs);
-
-  // timestamp.Add(rs);
   Form1.sbar.Panels[4].Text := 'LINECOUNT ' + IntToStr(scani.linecount);
   log_grid.Rows[scani.linecount] := tx;
   Inc(scani.linecount);
   log_grid.RowCount := scani.linecount + 1;
   Writeln(backupcsv, tx.DelimitedText);
-  // addmemolineStrings(tx);
   tx.Free;
 end;
 
@@ -969,7 +767,6 @@ procedure TForm1.blockFEStringPacket(Sender: TObject; Data: string);
                 ptitle.Font.Color := scanner_pids[cx].gfcolor;
                 units.Font.Color := scanner_pids[cx].gfcolor;
                 pid_grid.RowColor[cx] := scanner_pids[cx].grcolor;
-                // pid_grid.FontColors[0,cx]:=scanner_pids[cx].gfcolor;
                 pid_grid.FontColors[1, cx] := scanner_pids[cx].gfcolor;
                 pid_grid.FontColors[2, cx] := scanner_pids[cx].gfcolor;
               end;
@@ -986,7 +783,6 @@ procedure TForm1.blockFEStringPacket(Sender: TObject; Data: string);
                 ptitle.Font.Color := scanner_pids[cx].wfcolor;
                 units.Font.Color := scanner_pids[cx].wfcolor;
                 pid_grid.RowColor[cx] := scanner_pids[cx].wrcolor;
-                // pid_grid.FontColors[0,cx]:=scanner_pids[cx].wfcolor;
                 pid_grid.FontColors[1, cx] := scanner_pids[cx].wfcolor;
                 pid_grid.FontColors[2, cx] := scanner_pids[cx].wfcolor;
               end;
@@ -1145,47 +941,6 @@ procedure TForm1.blockFEStringPacket(Sender: TObject; Data: string);
 
             checkwarning(final_calc, cx);
 
-            (*
-              if isnumber(final_calc) then
-              begin
-              if pid_grid.Colors[2,scanner_pids[cx].gridline]<>scanner_pids[cx].gfcolor then
-              begin
-
-              if (newstrtofloat(final_calc)<scanner_pids[cx].wfilter) and
-              (scanner_pids[cx].grcolor<>pid_grid.Colors[2,cx]) then
-
-              with tform8(pp.list[scanner_pids[cx].pidwindowindex]) do
-              begin
-              color:=scanner_pids[cx].grcolor;
-              value.Font.color:=scanner_pids[cx].gfcolor;
-              ptitle.Font.color:=scanner_pids[cx].gfcolor;
-              units.Font.color:=scanner_pids[cx].gfcolor;
-              pid_grid.RowColor[cx]:=scanner_pids[cx].grcolor;
-              pid_grid.FontColors[0,cx]:=scanner_pids[cx].gfcolor;
-              pid_grid.FontColors[1,cx]:=scanner_pids[cx].gfcolor;
-              pid_grid.FontColors[2,cx]:=scanner_pids[cx].gfcolor;
-
-              end else
-
-              if (newstrtofloat(final_calc)>=scanner_pids[cx].wfilter) and
-              (scanner_pids[cx].wrcolor<>pid_grid.Colors[2,cx]) then
-              begin
-              with tform8(pp.list[scanner_pids[cx].pidwindowindex]) do
-              begin
-              color:=scanner_pids[cx].wrcolor;
-              value.Font.color:=scanner_pids[cx].wfcolor;
-              ptitle.Font.color:=scanner_pids[cx].wfcolor;
-              units.Font.color:=scanner_pids[cx].wfcolor;
-              pid_grid.RowColor[cx]:=scanner_pids[cx].wrcolor;
-              pid_grid.FontColors[0,cx]:=scanner_pids[cx].wfcolor;
-              pid_grid.FontColors[1,cx]:=scanner_pids[cx].wfcolor;
-              pid_grid.FontColors[2,cx]:=scanner_pids[cx].wfcolor;
-              end;
-              end;
-              end;
-              end;
-            *)
-
             with tform8(pp.list[scanner_pids[cx].pidwindowindex]) do
               try
                 Value.Caption := final_calc;
@@ -1207,15 +962,11 @@ procedure TForm1.blockFEStringPacket(Sender: TObject; Data: string);
                   sbar.Panels[7].Text := 'SENDCOMMAND';
                   sentcommand := true;
                 end;
-                // DELAYTICKS(2,FALSE);
               end;
             end;
 
             if logstatus = 1 then
             begin
-              // log_grid.Cells[CX,scani.linecount]:=FINAL_calc;
-              // checkline('processdata');
-              // check the log lines
             end;
           end; // IF BEGIN/END
     end;
@@ -1230,10 +981,8 @@ procedure TForm1.blockFEStringPacket(Sender: TObject; Data: string);
     bx: Integer;
     cx: Integer;
   begin
-    // addmemoline(adstr);
     Delete(adstr, 1, 2);
 
-    // addmemoline(adstr);
     for ccx := 1 to scani.Pid_Count do
     begin
       if (scanner_pids[ccx].PCMPID = 'FFFF') or (scanner_pids[ccx].PCMPID = 'FFFE') or (scanner_pids[ccx].PCMPID = 'FFFD') then
@@ -1268,9 +1017,6 @@ procedure TForm1.blockFEStringPacket(Sender: TObject; Data: string);
             Value.Caption := adreal;
           except
           end;
-
-        if logstatus = 1 then
-          // log_grid.Cells[ccx,scani.linecount]:=ADREAL;//cfinal; // put data in cell
       end;
     end;
   end;
@@ -1343,16 +1089,13 @@ procedure TForm1.blockFEStringPacket(Sender: TObject; Data: string);
         else
         begin
           ccfs := scanner_pids[rb].formula;
-          // ccfs:=uppercase(ccfs);
           for cca := 1 to scani.Pid_Count do
             if (Pos(UpperCase(Trim(scanner_pids[cca].mci)), UpperCase(Trim(ccfs))) <> 0) then
               if Trim(scanner_pids[cca].Value) <> '' then
                 ccfs := StringReplace(UpperCase(Trim(ccfs)), UpperCase(Trim(scanner_pids[cca].mci)), scanner_pids[cca].Value,
                   [rfReplaceAll, rfIgnoreCase]);
-          // addmemoline(ccfs);
           try
             cfinal := Form1.calculate(false, ccfs, 0, 0, 0, 0);
-            // cfinal:='111';
           except
             cfinal := '-666';
           end;
@@ -1391,9 +1134,7 @@ begin
   // possibly fix this to be a better way?
   begin
     FE_Counter := 0;
-    // SENDCOMMAND('046CFEF13F',0);
     sbar.Panels[6].Text := 'HEARTBEAT';
-    // if sendhb=true then sendhb:=false;
   end;
 end;
 
@@ -1433,25 +1174,21 @@ begin
   ShowMessage
     ('VIN Update Commands sent.  Please turn key off for 15 seconds to allow VIN to update. Do a PCM INFO to verify change.');
 
-  // 31 31 31 31 31               .l.ñ;..11111
 end;
 
 procedure TForm1.Button3Click(Sender: TObject);
 begin
   sendcommand('0B 6C 10 F1 AE 02 40 00 00 00 00 00', 100);
-  // showmessage('LTFT Clear Sent');
 end;
 
 procedure TForm1.Button4Click(Sender: TObject);
 begin
   sendcommand('0B6C10F1AE01000000000000', 100);
-  // showmessage('SES ON Sent');
 end;
 
 procedure TForm1.Button5Click(Sender: TObject);
 begin
   sendcommand('0B6C10F1AE01808000000000', 100);
-  // showmessage('SES OFF Sent');
 end;
 
 procedure TForm1.Button6Click(Sender: TObject);
@@ -1462,8 +1199,6 @@ end;
 procedure TForm1.wbfireClick(Sender: TObject);
 begin
   MTS.CurrentPort := portlist.ItemIndex;
-  { if assigned(portlist.Items.Objects[portlist.ItemIndex]) then
-    mts:=tmts(portlist.Items.Objects[portlist.ItemIndex]); }
 
   addmemoline('Starting WB on Selected Comport ' + portlist.Items[portlist.ItemIndex]);
   try
@@ -1492,7 +1227,6 @@ begin
     g := '0';
   end;
 
-  // addmemoline(Formula+ ' ' +g);
   calculate := g;
 end;
 
@@ -1590,7 +1324,6 @@ begin
     pid_grid_config.RowCount := 1;
     pid_grid_config.SaveToCSV('pidgrid.csv');
     pid_grid_config.LoadFromCSV('pidgrid.csv');
-    // application.Terminate;
   end;
 
   if FileExists('pids.csv') = false then
@@ -1635,7 +1368,6 @@ begin
         mci := UpperCase(PIDCSV.Cells[11, cx]);
         blockid := 0;
         PIDPos := 0;
-        // gridpos:=0;
         case NEWSTRTOINT(PIDCategoryID) of
           1:
             EnginePids.Items.add(LongName);
@@ -1665,11 +1397,9 @@ begin
         ad.Sorted := true;
         otherpids.Sorted := true;
       end;
-  // sbar.Panels[7].Text:='Disconnected';
   addmemoline('Loading CONFIG file');
   try
     scanini := TIniFile.Create(GetCurrentDir + '\' + // ChangeFileExt(
-      // Application.ExeName,'.ini'));    // HAD TO ADD THE \ ?
       'uvscan.ini'); // HAD TO ADD THE \ ?
     cfg.WB := scanini.ReadInteger('COMPORT', 'WB', 0);
     cfg.WBCOMPORT := scanini.ReadInteger('COMPORT', 'WBCOMM', 1);
@@ -1700,7 +1430,6 @@ begin
     SENDCOMMANDS.COMMAND1 := scanini.ReadString('EXTRA', 'SCANCOMMANDSEND1', '');
     SENDCOMMANDS.command2 := scanini.ReadString('EXTRA', 'SCANCOMMANDSEND2', '');
 
-    cfg.PAUSEBUTTON := scanini.ReadInteger('EXTRA', 'PAUSEBUTTON', VK_F4);
     cfg.Font := scanini.ReadString('PIDGRID', 'FONT', 'ARIAL');
     cfg.fontsize := scanini.ReadString('PIDGRID', 'FONTSIZE', '8');
     cfg.fontcolor := scanini.ReadString('PIDGRID', 'FONTCOLOR', '000000');
@@ -1727,15 +1456,9 @@ begin
 
     cfg.savepath := scanini.ReadString('EXTRA', 'SAVEPATH', '');
 
-    // if cfg.savepath then
     if (cfg.savepath[Length(cfg.savepath)] <> '\') and (cfg.savepath[Length(cfg.savepath)] <> '"') then
       cfg.savepath := cfg.savepath + '\';
 
-    // statusmemo.lines.add(cfg.savepath);
-
-    // cfg.savepath:=(IncludeTrailingPathDelimiter(cfg.savepath));
-
-    // autoname.INCREMENTAL:=false;
     t := TFont.Create;
     t.Name := cfg.Font;
     t.Size := NEWSTRTOINT(cfg.fontsize);
@@ -1761,22 +1484,18 @@ begin
   end;
   try
     pid_grid.FixedFont := t;
-    // pidgriddebug.fixedfont:=t;
   finally
   end;
   try
     pid_grid.Font := t;
-    // pidgriddebug.font:=t;
   finally
   end;
   try
     pid_grid.Bands.PrimaryColor := hextotcolor(cfg.primary);
-    // pidgriddebug.Bands.PrimaryColor:=hextotcolor(cfg.primary);
   finally
   end;
   try
     pid_grid.Bands.SecondaryColor := hextotcolor(cfg.secondary);
-    // pidgriddebug.bands.SecondaryColor:=hextotcolor(cfg.secondary);
   finally
   end;
 
@@ -1851,10 +1570,6 @@ begin
   closewindows;
   CheckBox1.Checked := false;
   LASTLEFT := 0;
-  // pp.Clear;
-  // try
-  // comport.DonePort;
-  // comport.Open:=false;
   if cfg.WB = 1 then
   begin
     try
@@ -1878,7 +1593,6 @@ begin
 
   delayticks(10, false);
   sbar.Panels[3].Text := 'NOT CONNECTED';
-  // finally
   scannerrunning := false;
   VrTimer1.Enabled := false;
   ConnectAVT.Enabled := true;
@@ -1897,7 +1611,6 @@ begin
   BLOCKF8.Enabled := false;
   BLOCKF7.Enabled := false;
   sendhb := false;
-  // end;
 
   comport.Open := false;
   if cfg.WB = 1 then
@@ -1910,38 +1623,27 @@ begin
   addmemoline('-- ' + currentdtc + ' DTC COUNT SET HEX :: ' + stringtohex(Data));
   dtc_ago.Enabled := false;
   dtc_find.Enabled := true;
-  // dtccount:=(data[8]);
   DTCCOUNT := NEWSTRTOINT((stringtohex(Data[8])));
-  // dtc_ago.Enabled:=false;
 end;
 
 procedure TForm1.dtc_findStringPacket(Sender: TObject; Data: string);
-
-  function getstatus(sc: Char): string;
-  begin
-  end;
-
 var
   DESCRIPTION, dtccode: string;
-  statusbit: Char;
   X, Y: Integer;
 begin
   addmemoline('-- ' + currentdtc + ' DTC CODE DATA HEX :: ' + stringtohex(Data));
 
   dtccode := '0000';
   DESCRIPTION := 'Unknown?';
-  statusbit := #0;
 
   dtccode := Data[7] + Data[8];
   dtccode := stringtohex(dtccode);
-  statusbit := Data[9];
   // temp fix
   dtccode := 'P' + dtccode;
 
   if (dtccode) = 'P0000' then
   begin
     addmemoline('-- ' + currentdtc + ' DTC CODES ENDED');
-    // dtc_find.Enabled:=false;
     Exit;
   end;
 
@@ -1950,19 +1652,12 @@ begin
       DESCRIPTION := dtclist.Cells[1, X];
   addmemoline('DTC Code    : ' + dtccode);
   addmemoline('Description : ' + DESCRIPTION);
-  // addmemoline('Status      : '+getstatus(statusbit));
 end;
 
 procedure TForm1.dtc_findTimeout(Sender: TObject);
 begin
   Form1.dtc_ago.Enabled := true;
   Form1.dtc_find.Enabled := false;
-end;
-
-procedure TForm1.togglecomport(force: Boolean);
-var
-  cport: Boolean;
-begin
 end;
 
 procedure TForm1.pcminfobClick(Sender: TObject);
@@ -1974,7 +1669,6 @@ begin
     ShowMessage('Please stop your scan log first.');
     Exit;
   end;
-  initbuffer(false);
   PCMINFO(false);
 end;
 
@@ -2057,83 +1751,17 @@ begin
   scani.PID_Strings.Free;
   scani.fakepids.Free;
   scani.ADPORTS.Free;
-  csv.Free;
-
-  // finally
-
-  // end;
 end;
-
-procedure PostKeyEx32(Key: Word; const Shift: TShiftState; specialkey: Boolean);
-{ ************************************************************
-  * Procedure PostKeyEx32
-  *
-  * Parameters:
-  *  key    : virtual keycode of the key to send. For printable
-  *           keys this is simply the ANSI code (Ord(character)).
-  *  shift  : state of the modifier keys. This is a set, so you
-  *           can set several of these keys (shift, control, alt,
-  *           mouse buttons) in tandem. The TShiftState type is
-  *           declared in the Classes Unit.
-  *  specialkey: normally this should be False. Set it to True to
-  *           specify a key on the numeric keypad, for example.
-  * Description:
-  *  Uses keybd_event to manufacture a series of key events matching
-  *  the passed parameters. The events go to the control with focus.
-  *  Note that for characters key is always the upper-case version of
-  *  the character. Sending without any modifier keys will result in
-  *  a lower-case character, sending it with [ssShift] will result
-  *  in an upper-case character!
-  ************************************************************ }
-type
-  TShiftKeyInfo = record
-    Shift: Byte;
-    vkey: Byte;
-  end;
-
-  byteset = set of 0 .. 7;
-const
-  shiftkeys: array [1 .. 3] of TShiftKeyInfo = ((Shift: Ord(ssCtrl); vkey: VK_CONTROL), (Shift: Ord(ssShift); vkey: VK_SHIFT),
-    (Shift: Ord(ssAlt); vkey: VK_MENU));
-var
-  flag: DWORD;
-  bShift: byteset absolute Shift;
-  i: Integer;
-begin
-  for i := 1 to 3 do
-  begin
-    if shiftkeys[i].Shift in bShift then
-      keybd_event(shiftkeys[i].vkey, MapVirtualKey(shiftkeys[i].vkey, 0), 0, 0);
-  end; { For }
-  if specialkey then
-    flag := KEYEVENTF_EXTENDEDKEY
-  else
-    flag := 0;
-  keybd_event(Key, MapVirtualKey(Key, 0), flag, 0);
-  flag := flag or KEYEVENTF_KEYUP;
-  keybd_event(Key, MapVirtualKey(Key, 0), flag, 0);
-  for i := 3 downto 1 do
-  begin
-    if shiftkeys[i].Shift in bShift then
-      keybd_event(shiftkeys[i].vkey, MapVirtualKey(shiftkeys[i].vkey, 0), KEYEVENTF_KEYUP, 0);
-  end; { For }
-end; { PostKeyEx32 }
 
 procedure TForm1.FormCreate(Sender: TObject);
 var
   kid, i: Integer;
 begin
-  // pid_grid.grad
-  // hide;
 
   GetSystemInfo(sysinfo);
 
   if (sysinfo.dwNumberOfProcessors >= 2) then
     setprocessaffinitymask(GetCurrentProcess, 1);
-
-  // if dsiaeroisenabled then dsiaerodisable;
-
-  // dsiaerodisable;
 
   pid_grid.PopupMenu := pidpop;
 
@@ -2142,8 +1770,6 @@ begin
   big_done := false;
   group := 1;
   FillChar(PIDCOUNTER, SizeOf(PIDCOUNTER), #0);
-  // Application.OnMessage := AppMessage;
-  // form1.Caption := form1.Caption + ' ' + versionid;
   intportcount := MTS.PortCount;
 
   if (intportcount <> 0) then // exit;
@@ -2189,25 +1815,13 @@ begin
   FindModules.StartString := hextostring(FindModules.StartString);
   dtc_ago.StartString := hextostring(dtc_ago.StartString);
   dtc_find.StartString := hextostring(dtc_find.StartString);
-  // pidgriddebug.ColWidths[0]:=150;
-  // pidgriddebug.ColWidths[1]:=150;
-
-  // tabsheet8.Brush.Color:=clblack;
 
   HOTKEY1 := GlobalAddAtom('F8LOG');
 
   RegisterHotKey(Form1.Handle, HOTKEY1, 0, vk_F8);
 
-  { timestamp:=tstringlist.Create;
-    timestamp.clear;
-    Timestamp.Add('Timestamp');
-  }
-
   pid_grid.FixedCols := 0;
 
-  { pid_grid.Cells[0,1]:='<blink><i><u><b>test</b></u></i><br>poop</blink>';
-    pid_grid.Cells[1,1]:='This is a <FONT face="Arial" size="12" color="clred">test</FONT>  ';
-    pid_grid.Cells[0,1]:='<IMG src="c:\test.jpg">'; }
   if DirectoryExists('backup') = false then
   begin
     addmemoline('');
@@ -2219,16 +1833,6 @@ begin
   if comport.Open then
     comport.Open := false;
 
-
-  // var I: Integer;
-  // begin
-
-  // BuildInputCharts;
-end;
-
-procedure TForm1.FormMouseDown(Sender: TObject; Button: TMouseButton; Shift: TShiftState; X, Y: Integer);
-begin
-  // pid_grid.SelectRows(pid_grid.RowCount-1,1);
 end;
 
 procedure TForm1.FormShow(Sender: TObject);
@@ -2282,8 +1886,6 @@ begin
   Delete(Data, 1, 6);
   Delete(Data, 3, 1);
   Data := stringtohex(Data);
-  // t:=getpidbyid(data);
-  // STATUSMEMO.Lines.ADD('PID PASSED : '+t.LongName+' : '+data);
   nextpidavail := true;
   Inc(pid_passed);
 end;
@@ -2302,19 +1904,11 @@ begin
   Delete(Data, 1, 7);
   Delete(Data, 3, 2);
   Data := stringtohex(Data);
-  // t:=getpidbyid(data);
   pidtfailed := true;
   statusmemo.Lines.add('PID FAILED: ' + t.LongName + ' : ' + Data);
   nextpidavail := true;
   Inc(pid_failed);
   pidtfailed := true;
-end;
-
-procedure TForm1.CHECKPID2Timeout(Sender: TObject);
-begin
-  statusmemo.Lines.add('TIMEOUT - Next PID Request!');
-  nextpidavail := true;
-  Inc(PID_TIMEOUTCOUNT);
 end;
 
 procedure TForm1.checkpid3StringPacket(Sender: TObject; Data: string);
@@ -2324,17 +1918,8 @@ begin
   Delete(Data, 1, 6);
   Delete(Data, 3, 2);
   Data := stringtohex(Data);
-  // t:=getpidbyid(data);
-  // STATUSMEMO.Lines.ADD('PID PASSED : '+t.LongName+' : '+data);
   nextpidavail := true;
   Inc(pid_passed);
-end;
-
-procedure TForm1.checkpid3Timeout(Sender: TObject);
-begin
-  statusmemo.Lines.add('TIMEOUT - Next PID Request!');
-  nextpidavail := true;
-  Inc(PID_TIMEOUTCOUNT);
 end;
 
 procedure TForm1.ClearCheckedPIDs1Click(Sender: TObject);
@@ -2410,7 +1995,6 @@ begin
     try
       MTS.Disconnect;
     except
-      //
     end;
   end;
 
@@ -2436,15 +2020,6 @@ begin
   try
     comport.initport;
     comport.Open := true;
-    { wx:=1;
-      repeat
-      sleep(500);
-      addmemoline('Waiting for COM to Open attempt #'+inttostr(wx));
-      application.processmessages;
-      if comport.dcd=true then wx:=19;
-      inc(wx);
-      until wx=20;
-    }
     sbar.Panels[3].Text := 'CONNECTED';
     addmemoline('Port INIT DONE');
     delayticks(10, true);
@@ -2598,7 +2173,6 @@ begin
     try
 {$I-} CloseFile(backupcsv); {$I+}
     except
-      /// /
     end;
     log_grid.Cells[0, 0] := 'Count';
     log_grid.ColCount := scani.Pid_Count + 1; // 1 for count/row
@@ -2613,11 +2187,6 @@ begin
   ToolBar1.Refresh;
 end;
 
-procedure TForm1.TabSheet7MouseDown(Sender: TObject; Button: TMouseButton; Shift: TShiftState; X, Y: Integer);
-begin
-  // pid_grid.SelectRows(pid_Grid.RowCount-1,1);
-end;
-
 procedure TForm1.TabSheet7Show(Sender: TObject);
 begin
   pid_grid.Row := 1;
@@ -2629,19 +2198,8 @@ procedure TForm1.Timer1Timer(Sender: TObject);
 var
   X: Integer;
 begin
-  // logstatus:=1;
-  // randomize;
-  // for x:=1 to pidcounter.count do pid_grid.Cells[1,x]:=inttostr(random(4000));
-  // checkline('TEST');
-  // sendhb:=true;
   DisconnectB.Enabled := true;
   Timer1.Enabled := false;
-end;
-
-procedure TForm1.Timer2Timer(Sender: TObject);
-begin
-  // pid_grid.SelectRows(pid_grid.RowCount-1,1);
-  // timer2.Enabled:=false;
 end;
 
 procedure TForm1.ScannerBClick(Sender: TObject);
@@ -2662,7 +2220,6 @@ procedure TForm1.ScannerBClick(Sender: TObject);
       pid_grid.FontSizes[0, cx] := 8;
       pid_grid.FontSizes[1, cx] := 8;
       pid_grid.FontSizes[2, cx] := 8;
-      // pid_grid.FontColors[0,cx]:=clblack;
       pid_grid.FontColors[1, cx] := clBlack;
       pid_grid.FontColors[2, cx] := clBlack;
 
@@ -2721,9 +2278,7 @@ procedure TForm1.ScannerBClick(Sender: TObject);
     cx: Byte; // dummy couter
     Count: Integer; // 64 counter
     PIDCode: string; // code string
-    // pg:tpidgauge;
     addfake, addad, dontsend: Boolean;
-    aam: TVrProgressBar;
   begin
     dontsend := false;
     addpid := true;
@@ -2784,25 +2339,15 @@ procedure TForm1.ScannerBClick(Sender: TObject);
       if (4 and scani.Pid_POS) > 0 then
         Inc(Count, 32);
       scani.PID_Strings.add('0A6C10F12C' + stringtohex(Chr(scani.currentblock)) + stringtohex(Chr(Count)) + PIDCode + 'FFFF');
-      // - ' + ap.DataLength);
       Inc(scani.Pid_Count);
       Inc(scani.bytecount, NEWSTRTOINT(AP.DataLength));
       scanner_pids[scani.Pid_Count] := AP;
       scanner_pids[scani.Pid_Count].blockid := scani.currentblock;
       scanner_pids[scani.Pid_Count].PIDPos := scani.Pid_POS;
       scanner_pids[scani.Pid_Count].gridline := scani.Pid_Count;
-      // scanner_pids[scani.Pid_Count].checklist:=t;
       Inc(scani.Pid_POS, NEWSTRTOINT(AP.DataLength));
       pid_grid.Cells[0, scani.Pid_Count] := AP.ShortName;
       pid_grid.Cells[2, scani.Pid_Count] := AP.units;
-
-      { scanner_pids[scani.pid_count].wfilter:=200000;
-        if odd(scani.pid_count) then
-        SCANNER_PIDS[SCANI.PID_COUNT].grcolor:=HEXTOTCOLOR(CFG.primary) ELSE
-        SCANNER_PIDS[SCANI.PID_COUNT].grcolor:=HEXTOTCOLOR(CFG.secondary);
-        SCANNER_PIDS[SCANI.PID_COUNT].gfcolor:=clblack;
-        SCANNER_PIDS[SCANI.PID_COUNT].wrcolor:=SCANNER_PIDS[SCANI.PID_COUNT].grcolor;
-        SCANNER_PIDS[SCANI.PID_COUNT].wfcolor:=SCANNER_PIDS[SCANI.PID_COUNT].gfcolor; }
 
       if scani.Pid_POS >= 7 then
       begin
@@ -2985,13 +2530,6 @@ procedure TForm1.ScannerBClick(Sender: TObject);
             gentypes.scanner_pids[X].wfilter := 200000;
           end;
 
-          { gentypes.scanner_pids[x].TOP:=strtoint(PID_GRID_CONFIG.cells[11,y]);
-            gentypes.scanner_pids[x].LEFT:=strtoint(PID_GRID_CONFIG.cells[12,y]);
-            gentypes.scanner_pids[x].WIDTH:=strtoint(PID_GRID_CONFIG.cells[13,y]);
-            gentypes.scanner_pids[x].HEIGHT:=strtoint(PID_GRID_CONFIG.cells[14,y]);
-            gentypes.scanner_pids[x].open:=strtoint(PID_GRID_CONFIG.cells[15,y]);
-          }
-
           with tform8(pp.list[scanner_pids[X].pidwindowindex]) do
             try
               begin
@@ -3011,14 +2549,6 @@ procedure TForm1.ScannerBClick(Sender: TObject);
             except
             end;
 
-          { with tform(pp.List[scanner_pids[x].pidwindowindex]) do
-            begin
-            color:=hextotcolor(pid_grid_config.cells[4,y]);
-            for z:=0 to controlcount-1 do
-            if controls[z] is tlabel then
-            tlabel(controls[z]).Font.Color:=
-            hextoTcolor(pid_grid_config.cells[5,y]);
-            end; }
         end;
 
     gridapply := false;
@@ -3050,17 +2580,12 @@ begin
   ToolBar1.GradientEndColor := $00ACB7BD;
   sendhb := false;
   pid_grid.zoomfactor := 0;
-  total_goodpids := 0;
   VrTimer1.Enabled := false;
   ScannerB.Enabled := false;
   STOPSCANNER.Enabled := false;
 rebuildlist:
   sentcommand := false;
-  /// ///////////
-  ///
   DisconnectB.Enabled := false;
-  /// //
-  ///
   BAD_PID := false;
   BADPID.Enabled := false;
   scani.fakepids.Clear;
@@ -3074,8 +2599,6 @@ rebuildlist:
   log_grid.Parent := Form1;
   log_grid.Visible := false;
   log_grid.hide;
-
-  // *** checkline was last thing you did
 
   savelist('uvscan_checklist.pid', EnginePids);
   savelist('uvscan_checklist.pid', TrannyPids);
@@ -3094,18 +2617,11 @@ rebuildlist:
   scani.Pid_Count := 0;
   scani.Pid_POS := 1;
 
-  // pid_grid.RowCount:=PIDCOUNTER.Count+pidcounter.f_count+fakepids.Count+2;
-  // pidgriddebug.RowCount:=PIDCOUNTER.Count+pidcounter.f_count+2;
-
   pid_grid.ColumnHeaders[0] := 'Title';
   pid_grid.ColumnHeaders[1] := 'Value';
   pid_grid.ColumnHeaders[2] := 'Type';
 
-  // LOG_GRID.ColCount:=PIDCOUNTER.Count+pidcounter.f_count+4;
-  // log_grid.ColCount:=pidcounter.count+2; // ROW COUNT / TIMER ?
-
   log_grid.ColCount := pid_grid.RowCount - 2;
-  // PIDCOUNTER.Count+pidcounter.f_count+fakepids.Count+1;
   // FIXXXXXX
 
   delayticks(5, false);
@@ -3164,7 +2680,6 @@ rebuildlist:
     Exit;
   end;
 
-  // addmemolineStrings(scani.PID_Strings);
   avtinit.Enabled := false;
   avtversion.Enabled := false;
   AVTVIN1.Enabled := false;
@@ -3210,12 +2725,6 @@ rebuildlist:
 
   delayticks(2, false);
 
-  { f bad_pid then begin;
-    bad_pid:=false;
-    addmemoline('PID failed. Unchecking it, and rebuilding List');
-    end;
-  }
-
   Startlogb.Enabled := true;
   pauseb.Enabled := true;
   if admode then
@@ -3248,33 +2757,12 @@ begin
       pbs.Caption := PIDCSV.Cells[5, X]; // addmemoline('size = '+pidcsv.cells[5,x]);
 end;
 
-procedure TForm1.pid_gridCellChanging(Sender: TObject; OldRow, OldCol, NewRow, NewCol: Integer; var Allow: Boolean);
-begin
-  try
-    rcolor := pid_grid.Colors[NewCol, NewRow];
-    fcolor := pid_grid.FontColors[NewCol, NewRow];
-  except
-  end;
-  // timer2.Enabled:=true;
-end;
-
 procedure TForm1.pid_gridKeyDown(Sender: TObject; var Key: Word; Shift: TShiftState);
 begin
   if Key = vk_f1 then
     SpeedButton1.Click;
   if Key = vk_f2 then
     SpeedButton2.Click;
-end;
-
-procedure TForm1.pid_gridMouseDown(Sender: TObject; Button: TMouseButton; Shift: TShiftState; X, Y: Integer);
-var
-  a, b: Integer;
-begin
-  if Button = mbRight then
-  begin
-    pid_grid.MouseToCell(X, Y, a, b);
-    // pid_grid.SelectRows(b,1);
-  end;
 end;
 
 procedure TForm1.portlistClick(Sender: TObject);
@@ -3349,37 +2837,11 @@ begin
   if dtcm.IMMOBILIZER then
     dtcrequest('C0', 'IMMOBILIZER');
 
-  { begin
-    DTC_AGO.StartString:='07006CF1105908'
-    dtc_ago.enabled:=true;
-    sendcommand('05 6C 10 F1 27 01',20);
-    sendcommand('07 6C 10 F1 19 08 FF FF   ',20);
-    sendcommand('07 6C 10 F1 19 08 FF 00   ',20);
-    addmemoline('PCM DTC Count : '+inttostr(dtccount));
-    dtc_ago.enabled:=false;
-    dtc_find.enabled:=true;
-    end; }
-
   // 07 00 6C F1 10 59 08
-
-
-  // form1.dtc_ago.Enabled:=true;
-
-  // sendcommand('05 6C 10 F1 27 01        ',20);
-
-  // sendcommand('07 6C 10 F1 19 08 FF FF   ',20);
-
-  // sendcommand('07 6C 10 F1 19 08 FF 00   ',20);
-
-
-  // addmemoline('DTC Count = '+inttostr(dtccount));
-  // form1.dtc_ago.Enabled:=false;
-  // form1.dtc_find.Enabled:=true;
 
   // check for 07 00 6C F1 10 59 08 01  ??  01 = # set ??
   // 08 00 6C F1 10 59 04 40 BB   04 40 = code bb = status
   // 08 00 6C F1 10 59s 00 00 FF   00 00 = end
-  // 05 00 6C F1 10 60   .`..lñ.Y.@»..lñ.Y..ÿ..lñ.`
 end;
 
 procedure TForm1.ResetallRows1Click(Sender: TObject);
@@ -3387,15 +2849,6 @@ var
   z, cx: Integer;
   yy: TColor;
 begin
-  { for cx:=0 to pid_grid.Zoomfactor-1 do pid_grid.Zoom(-1);
-
-    for CX:=0 TO PID_GRID.RowCount-2 DO
-    BEGIN
-    PID_GRID.RowHeights[CX]:=21;
-    if odd(cx) then
-    PID_GRID.RowColor[CX]:=HEXTOTCOLOR(CFG.primary) ELSE
-    PID_GRID.RowColor[CX]:=HEXTOTCOLOR(CFG.secondary);
-    END; }
   if pid_grid.zoomfactor <> 0 then
     for cx := 0 to pid_grid.zoomfactor - 1 do
       pid_grid.Zoom(-1);
@@ -3407,13 +2860,8 @@ begin
     pid_grid.FontSizes[0, cx] := 8;
     pid_grid.FontSizes[1, cx] := 8;
     pid_grid.FontSizes[2, cx] := 8;
-    // pid_grid.FontColors[0,cx]:=clblack;
     pid_grid.FontColors[1, cx] := clBlack;
     pid_grid.FontColors[2, cx] := clBlack;
-
-    { if odd(cx) then
-      PID_GRID.RowColor[CX]:=HEXTOTCOLOR(CFG.primary) ELSE
-      PID_GRID.RowColor[CX]:=HEXTOTCOLOR(CFG.secondary); }
 
     if Odd(cx) then
       yy := hextotcolor(cfg.primary)
@@ -3436,14 +2884,6 @@ begin
         end;
       except
       end;
-    { with tform(pp.List[scanner_pids[cx].pidwindowindex]) do
-      begin
-      color:=yy;//pid_grid.rowcolor[cx];
-      for z:=0 to controlcount-1 do
-      if controls[z] is tlabel then
-      tlabel(controls[z]).Font.Color:=
-      clblack;
-      end; }
   end;
 end;
 
@@ -3518,10 +2958,8 @@ procedure TForm1.add_pidlist(t: pid_Rec; b: Byte);
     X: Integer;
   begin
     X := TCheckListBox(a).Items.add(txt);
-    // TCheckListbox(a).Selected[tchecklistbox(a).Items.Count-1]:=true;
     if bx = 2 then
     begin
-      // statusmemo.lines.add('*********************** ack');
       if X = 0 then
         X := 1;
 
@@ -3588,11 +3026,6 @@ begin
   ad.Repaint;
   ACCPids.Repaint;
   otherpids.Repaint;
-end;
-
-procedure TForm1.EnginePidsClickCheck(Sender: TObject);
-begin
-  addpidtolist(EnginePids);
 end;
 
 procedure TForm1.estVehicleforPIDS1Click(Sender: TObject);
@@ -3665,7 +3098,6 @@ begin
   otherpids.Sorted := false;
   PID_TIMEOUTCOUNT := 0;
 
-  // sbar.Panels[6].Text:='0/'+newinttostr(length(availablepids));;
   et := Now;
 
   st := Now;
@@ -3673,8 +3105,6 @@ begin
   repeat
     sbar.Panels[6].Text := IntToStr(cx) + '/' + IntToStr(Length(availablepids));
     ;
-
-    // if gentypes.TimeDiff(et,st)>=6 then timedout:=true;
 
     statusmemo.Lines.add(FloatToStr(Tdiff(st, et)));
 
@@ -3702,7 +3132,6 @@ begin
 
       begin
         add_pidlist(availablepids[cx], o);
-        // statusmemo.Lines.add('FAKE/AD PID SKIPPED : '+AVAILABLEPIDS[CX].LONGNAME);
         Inc(pid_fake);
         Inc(cx);
         nextpidavail := true;
@@ -3719,11 +3148,8 @@ begin
             Insert('0', PIDCode, 1);
         end;
 
-        // statusmemo.lines.add('');
-        // add_pidlist(availablepids[cx]);
         add_pidlist(availablepids[cx], o);
         statusmemo.Lines.add('Requesting PID : ' + availablepids[cx].LongName + ' : ' + IntToStr(cx));
-        // statusmemo.lines.add('');
         nextpidavail := false;
         st := Now;
 
@@ -3732,21 +3158,14 @@ begin
       end
       else
       begin;
-        // add_pidlist(availablepids[cx],2);
         Inc(cx);
         nextpidavail := true;
       end;
     end
     else
     begin
-      // add_pidlist(availablepids[cx],2);
       application.handlemessage;
     end;
-
-
-
-    // DELAYTICKS(2,TRUE);
-    // application.HandleMessage;
 
   until (timedout) or (piddone) or (PID_TIMEOUTCOUNT >= 3) or (cx >= Length(availablepids));
 
@@ -3784,14 +3203,6 @@ begin
   end;
 end;
 
-procedure TForm1.Exit1Click(Sender: TObject);
-var
-  t: TCloseAction;
-begin
-  t := cafree;
-  Form1.FormClose(Sender, t);
-end;
-
 procedure TForm1.SavePidList1Click(Sender: TObject);
 begin
   if pidlistsave.Execute then
@@ -3805,11 +3216,6 @@ begin
     savelist(pidlistsave.FileName, fakepids);
     savelist(pidlistsave.FileName, otherpids);
   end;
-end;
-
-procedure TForm1.otherpidsClickCheck(Sender: TObject);
-begin
-  addpidtolist(EnginePids);
 end;
 
 procedure TForm1.pausebClick(Sender: TObject);
@@ -3831,28 +3237,8 @@ begin
   end;
 end;
 
-procedure TForm1.ToolButton1Click(Sender: TObject);
-begin
-  script.ScriptCommands.Clear;
-  script.ScriptFile := 'test.uvs';
-  script.StartScript;
-end;
-
-procedure TForm1.ToolButton2Click(Sender: TObject);
-begin
-  // startlogb.Click;
-  // timer1.Enabled:=false;
-  // log_grid.SaveToCSV('c:\testy.csv');
-end;
-
-procedure TForm1.TrannyPidsClickCheck(Sender: TObject);
-begin
-  addpidtolist(EnginePids);
-end;
-
 procedure TForm1.VrTimer1Timer(Sender: TObject);
 begin
-  // SENDCOMMAND('046CFEF13F',0);
   comport.PutString(hextostring('046CFEF13F'));
 end;
 
@@ -3896,7 +3282,6 @@ begin
       try
 {$I-} CloseFile(backupcsv); {$I+}
       except
-        ///
       end;
     end;
 end;

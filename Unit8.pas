@@ -56,8 +56,6 @@ end;
 
 procedure TForm8.SaveLocations1Click(Sender: TObject);
 begin
-         //d/d
-         //d
 end;
 
 end.

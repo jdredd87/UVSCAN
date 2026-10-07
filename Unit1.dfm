@@ -19,7 +19,6 @@ object Form1: TForm1
   WindowState = wsMaximized
   OnClose = FormClose
   OnCreate = FormCreate
-  OnMouseDown = FormMouseDown
   OnShow = FormShow
   PixelsPerInch = 96
   TextHeight = 14
@@ -414,7 +413,6 @@ object Form1: TForm1
     object TabSheet7: TTabSheet
       Caption = 'Data Grid'
       ImageIndex = 1
-      OnMouseDown = TabSheet7MouseDown
       OnShow = TabSheet7Show
       DesignSize = (
         1070
@@ -458,12 +456,10 @@ object Form1: TForm1
         ScrollBars = ssBoth
         TabOrder = 0
         OnKeyDown = pid_gridKeyDown
-        OnMouseDown = pid_gridMouseDown
         ActiveRowShow = True
         ActiveRowColor = 4227327
         GridFixedLineColor = clNone
         HoverRowCells = [hcNormal, hcSelected]
-        OnCellChanging = pid_gridCellChanging
         ActiveCellFont.Charset = DEFAULT_CHARSET
         ActiveCellFont.Color = clDefault
         ActiveCellFont.Height = -11
@@ -1042,7 +1038,6 @@ object Form1: TForm1
     ComPort = comport
     PacketSize = 9
     OnStringPacket = AVTOSIDStringPacket
-    OnTimeout = AVTOSIDTimeout
     Left = 464
     Top = 104
   end
@@ -1159,11 +1154,6 @@ object Form1: TForm1
     Left = 448
     Top = 24
   end
-  object ApplicationEvents1: TApplicationEvents
-    OnActionExecute = ApplicationEvents1ActionExecute
-    Left = 416
-    Top = 24
-  end
   object dtc_ago: TApdDataPacket
     Enabled = False
     EndCond = [ecPacketSize]
@@ -1229,14 +1219,6 @@ object Form1: TForm1
     OnTimer = Timer1Timer
     Left = 384
     Top = 24
-  end
-  object script: TApdScript
-    ComPort = comport
-    DisplayToTerminal = False
-    OnScriptParseVariable = scriptScriptParseVariable
-    OnScriptUserFunction = scriptScriptUserFunction
-    Left = 648
-    Top = 216
   end
   object CHECKPID1: TApdDataPacket
     Enabled = False
