@@ -1,0 +1,102 @@
+PID.CSV Lay Out
+---------------------------
+
+**** Do not use  duplicates! Do not use the same Counter, names, or MCI codes.  ****
+
+Counter - Simple TAG ID to help keep them seperated 
+
+Long Name - Long Name for the PID 
+
+Desc - Description of the PID 
+
+Formula	- Math Formula for your PID.  
+	- Support Math Commands + - * /   << (shift left) >> (shift right) & (and)
+	- Any decimal points that are like  .45 needs to be 0.45
+	- Variables storing the PID's data are stored in such
+	  N0 and N1 store byte1
+	  N2 stores byte2
+	  N3 stores byte3
+	  N4 stores byte4
+	- Example Formula ( (N1*3) + (N2*2))  if N1 = 4 and N2 = 3 then the result would be 18
+
+Units - This is just a visual word. This will display on your scanner screen with its PID row/window while scanning.
+
+DataLength - How big the PID is coming from the PCM.
+
+PID 	- This is the actual PID code to send to the PCM.
+	- Other PID ID's for UVSCAN are
+	FPID - This assigns the PID to be a Fake PID
+	FFFD - Analog Digital Port 3
+	FFFE - Analog Digital Port 2
+	FFFF - Analog Digital Port 1	
+
+Group - Unused currently, but future of this is for when PIDS can be seperated for different PCM OSID groups.
+
+ShortName - Short Display name for the PID
+
+Results 	- Allows to modify the final value of your PID's result for different formatting.
+	- *F converts Celsius to Fahrenheit
+	- *C converts Fahrenheit to Celsius
+	- %f , will convert 123.45678 to 123.45
+	- %d , will convert 123.45678 to 123
+	- %o , will convert 0 to OFF , 1 to ON
+	- %y , will convert 0 to NO , 1 to YES
+
+PidCat 	- Category for which the PID is put under.
+	1 - Engine
+	2 - Tranny
+	3 - Indicators
+	4 - Body
+	5 - Accessories
+	6 - Fake 
+	7 - Other
+
+txtMci 	- MCI codes are variables for the Fake PID systems.
+	- This allows data from any PID to be used in a formula.
+	- MCI Codes need to start with % and end %
+	- Example : %RPM%
+	- Example Formula for a Fake Pid : %AD1% * 3.008 + 7.35
+	- This will take the results from your Analog Digital Port1 reading %AD% 
+	- and calculate it for a wideband style reading.
+	- These following Pids are preset
+	%RUNTIME% - how long the scanning of the vehicle has gone
+	%LOGTIME% - how long the current scan/save has gone
+ 
+**** Do not use  duplicates! Do not use the same Counter, names, or MCI codes.  ****
+**** If you remove/or add a pid to this list, delete your uvscan_checklist.pid file, otherwise these changes won't show ****
+
+
+--------------------------------------
+PIDGRID.CSV File Layout
+
+The Pidgrid.csv file contains the info for your PIDs on how they display on the scanner row listing and pid windows.
+
+COUNT - The PIDS Counter ID
+NAME - Name of the PID (takes the short name)
+ROWHEIGHT - Height of the the PID row
+FONTSIZE - Font size of the PID row
+ROW COLOR - Row Color
+FONT COLOR - Font Color
+FORMULA - Over ride Formula 	
+RESULT - Over ride Result	
+WARNING COLOR - Color to set row/window on warning
+WARNING FONT COLOR - Color to set font on row/window on warning
+WARNING FILTER - The value to set warning. Anything equal to over this will set off the warning.
+
+---------------------------------------
+UVSCAN_CHECKLIST.PID file layout
+
+[EnginePids]
+AFR (Commanded)=1
+ECT (ENGINE COOLANT TEMPERATURE)=0
+ENGINE SPEED=1
+
+Based off the pids LongName. 1 = Checked , 0=Unchecked
+
+-------------------------------------------
+DTCS.CSV file layout
+
+Column A is the DTC code
+Column B is the DTC description
+
+

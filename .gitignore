@@ -1,0 +1,31 @@
+# Delphi IDE / compiler output
+__history/
+__recovery/
+Win32/
+Win64/
+*.dcu
+*.dcp
+*.bpl
+*.exe
+*.dll
+*.ocx
+*.map
+*.drc
+*.rsm
+*.tds
+*.local
+*.identcache
+*.dsk
+*.stat
+*.~*
+*.bak
+
+# Runtime output
+backup/
+*.log
+
+# OS / archives
+Thumbs.db
+Desktop.ini
+*.rar
+*.zip
