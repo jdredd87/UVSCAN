@@ -152,7 +152,7 @@ procedure TPidJsonTests.EditingHelpers;
 var
   A, B: TPidCatalog;
   P: TPidDef;
-  Problems: TArray<string>;
+  Problems: TArray<TPidProblem>;
 begin
   A := TPidCatalog.Create;
   B := TPidCatalog.Create;
@@ -174,7 +174,9 @@ begin
     P.Mci := 'TWO';
     B.Add(P);
     Problems := B.Validate;
-    Assert.AreEqual(2, Integer(Length(Problems)), string.Join(sLineBreak, Problems)); // bad formula + duplicate MCI
+    Assert.AreEqual(2, Integer(Length(Problems))); // bad formula + duplicate MCI
+    Assert.AreEqual(2, Problems[0].Index, 'problems point at the entry');
+    Assert.IsTrue(Problems[0].Text.StartsWith('ID 10 "Three"'), Problems[0].Text);
     Assert.IsTrue(P.FormulaError <> '');
     P.FormulaText := '%ONE% * 2';
     P.Mci := 'THREE';

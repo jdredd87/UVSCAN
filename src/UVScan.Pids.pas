@@ -62,10 +62,19 @@ type
     function ToJson: TJSONObject;
   end;
 
+  TPidProblem = record
+    Index: Integer;   // entry the problem belongs to, -1 for the whole file
+    Text: string;
+  end;
+
   TPidCatalog = class
   private
     FItems: TObjectList<TPidDef>;
     FWarnings: TStringList;
+    FProblems: TList<TPidProblem>;
+    FEntry: Integer;
+    procedure Problem(P: TPidDef; const Where, Text: string);
+    function GetProblems: TArray<TPidProblem>;
     function GetCount: Integer;
     function GetItem(Index: Integer): TPidDef;
     function Accept(P: TPidDef; const Where: string): Boolean;
@@ -84,13 +93,16 @@ type
     procedure Delete(Index: Integer);
     function IndexOf(P: TPidDef): Integer;
     function NextFreeId: Integer;
-    { Problems that would be reported when this catalog is saved and reloaded. }
-    function Validate: TArray<string>;
+    { Problems that would be reported when this catalog is saved and reloaded;
+      Index refers to this catalog's items. }
+    function Validate: TArray<TPidProblem>;
     function FindById(Id: Integer): TPidDef;
     function FindByMci(const Mci: string): TPidDef;
     property Count: Integer read GetCount;
     property Items[Index: Integer]: TPidDef read GetItem; default;
+    { Problem texts from the last load (same as Problems[].Text). }
     property Warnings: TStringList read FWarnings;
+    property Problems: TArray<TPidProblem> read GetProblems;
   end;
 
 const
@@ -267,12 +279,15 @@ begin
   inherited;
   FItems := TObjectList<TPidDef>.Create(True);
   FWarnings := TStringList.Create;
+  FProblems := TList<TPidProblem>.Create;
+  FEntry := -1;
 end;
 
 destructor TPidCatalog.Destroy;
 begin
   FItems.Free;
   FWarnings.Free;
+  FProblems.Free;
   inherited;
 end;
 
@@ -306,32 +321,31 @@ begin
   try
     if P.LongName = '' then
     begin
-      FWarnings.Add(Where + ': missing name');
+      Problem(P, Where, 'missing name');
       Exit;
     end;
     if FindById(P.Id) <> nil then
     begin
-      FWarnings.Add(Format('%s (%s): duplicate id %d', [Where, P.LongName, P.Id]));
+      Problem(P, Where, Format('ID %d is already used by "%s"', [P.Id, FindById(P.Id).LongName]));
       Exit;
     end;
     if (P.Kind = pkVehicle) and not (P.DataLength in [1..4]) then
     begin
-      FWarnings.Add(Format('%s (%s): unsupported data length %d', [Where, P.LongName, P.DataLength]));
+      Problem(P, Where, Format('bytes must be 1-4 (is %d)', [P.DataLength]));
       Exit;
     end;
     if (P.Kind = pkAnalog) and not (P.AnalogChannel in [1..3]) then
     begin
-      FWarnings.Add(Format('%s (%s): analog channel must be 1-3', [Where, P.LongName]));
+      Problem(P, Where, 'analog channel must be 1-3');
       Exit;
     end;
     if (P.Mci <> '') and (FindByMci(P.Mci) <> nil) then
-      FWarnings.Add(Format('%s (%s): MCI "%s" is already used by "%s"',
-        [Where, P.LongName, P.Mci, FindByMci(P.Mci).LongName]));
+      Problem(P, Where, Format('MCI "%s" is already used by "%s"', [P.Mci, FindByMci(P.Mci).LongName]));
     try
       P.Formula;
     except
       on E: EFormulaError do
-        FWarnings.Add(Format('%s (%s): %s', [Where, P.LongName, E.Message]));
+        Problem(P, Where, 'formula: ' + E.Message);
     end;
     FItems.Add(P);
     Result := True;
@@ -373,7 +387,7 @@ begin
     K := KeyIndex(CategoryKeys, JStr(E, 'category', 'other'));
     if K < 0 then
     begin
-      FWarnings.Add(Format('%s (%s): unknown category "%s", using "other"', [Where, Result.LongName, JStr(E, 'category')]));
+      Problem(Result, Where, Format('unknown category "%s", using "other"', [JStr(E, 'category')]));
       K := Ord(pcOther);
     end;
     Result.Category := TPidCategory(K);
@@ -403,7 +417,7 @@ begin
   except
     on Ex: EConvertError do
     begin
-      FWarnings.Add(Format('%s (%s): %s', [Where, Result.LongName, Ex.Message]));
+      Problem(Result, Where, Ex.Message);
       FreeAndNil(Result);
     end;
   end;
@@ -418,26 +432,57 @@ var
 begin
   FItems.Clear;
   FWarnings.Clear;
+  FProblems.Clear;
+  FEntry := -1;
   if JInt(Root, 'version', PidFileVersion) > PidFileVersion then
-    FWarnings.Add('pids.json was written by a newer UVScan; unknown fields are ignored');
+    Problem(nil, '', 'pids.json was written by a newer UVScan; unknown fields are ignored');
   Arr := JArr(Root, 'pids');
   if Arr = nil then
   begin
-    FWarnings.Add('pids.json has no "pids" array');
+    Problem(nil, '', 'pids.json has no "pids" array');
     Exit;
   end;
   for I := 0 to Arr.Count - 1 do
   begin
-    Where := Format('pids[%d]', [I]);
+    FEntry := I;
+    Where := Format('entry %d', [I + 1]);
     if not (Arr.Items[I] is TJSONObject) then
     begin
-      FWarnings.Add(Where + ': not an object');
+      Problem(nil, Where, 'not an object');
       Continue;
     end;
     P := ParseJsonPid(TJSONObject(Arr.Items[I]), Where);
     if P <> nil then
       Accept(P, Where);
   end;
+  FEntry := -1;
+end;
+
+{ Records a problem for the entry being loaded (FEntry) as
+  'ID 27 "FC Relay 1": text', falling back to the entry number. }
+procedure TPidCatalog.Problem(P: TPidDef; const Where, Text: string);
+var
+  Who: string;
+  Item: TPidProblem;
+begin
+  if (P <> nil) and (P.LongName <> '') and (P.Id >= 0) then
+    Who := Format('ID %d "%s"', [P.Id, P.LongName])
+  else if (P <> nil) and (P.LongName <> '') then
+    Who := Format('"%s" (%s)', [P.LongName, Where])
+  else
+    Who := Where;
+  if Who <> '' then
+    Item.Text := Who + ': ' + Text
+  else
+    Item.Text := Text;
+  Item.Index := FEntry;
+  FProblems.Add(Item);
+  FWarnings.Add(Item.Text);
+end;
+
+function TPidCatalog.GetProblems: TArray<TPidProblem>;
+begin
+  Result := FProblems.ToArray;
 end;
 
 procedure TPidCatalog.LoadFromJsonText(const Text: string);
@@ -484,6 +529,7 @@ var
 begin
   FItems.Clear;
   FWarnings.Clear;
+  FProblems.Clear;
   for P in Source.FItems do
   begin
     Copy_ := TPidDef.Create;
@@ -517,7 +563,7 @@ begin
       Result := P.Id + 1;
 end;
 
-function TPidCatalog.Validate: TArray<string>;
+function TPidCatalog.Validate: TArray<TPidProblem>;
 var
   Root: TJSONObject;
   Check: TPidCatalog;
@@ -526,7 +572,7 @@ begin
   Check := TPidCatalog.Create;
   try
     Check.LoadFromJson(Root);
-    Result := Check.Warnings.ToStringArray;
+    Result := Check.Problems; // indexes match this catalog's order
   finally
     Check.Free;
     Root.Free;

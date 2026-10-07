@@ -9,7 +9,21 @@ unit UVScan.LegacyImport;
   PID: hex number, FPID (calculated) or FFFF/FFFE/FFFD (analog input 1/2/3).
   PidCat: 1 engine, 2 transmission, 3 indicators, 4 body, 5 accessories,
           6 calculated, 7 analog, anything else other.
-  group: the old app only loaded group 1; other rows import as disabled. }
+  group: the old app only loaded group 1; other rows import as disabled.
+  Spreadsheet programs drop empty trailing cells, so rows may be short:
+  missing trailing columns count as empty (at least 9 are needed).
+
+  Merging: an imported PID matches one you already have when it reads the
+  same thing (PID code for vehicle PIDs, channel for analog inputs) and
+  either has the same name or the same formula (spaces ignored). Ids are not
+  used for matching because other files were numbered independently, and
+  names alone are not enough (old files have two different "1-2 Solenoid"
+  PIDs, and call ENGINE SPEED "Engine Speed (RPM)"). Only PIDs that were in
+  the list before the merge can match.
+  An added PID whose MCI is already in use loses its MCI, so formulas keep
+  using the PID you already had. Imported PIDs keep their id when it is free and get the next
+  free one otherwise; updated PIDs keep their existing id, so scan lists
+  that refer to them stay valid. }
 
 interface
 
@@ -21,6 +35,8 @@ type
 
   TMergeResult = record
     Added, Updated, Skipped: Integer;
+    Renumbered: Integer;   // added PIDs whose id was taken and got a new one
+    MciCleared: TArray<string>; // added PIDs whose MCI was already in use: 'Name (MCI)'
   end;
 
 { Reads a legacy PIDS.csv into Catalog (replacing its contents). Problems with
@@ -28,15 +44,17 @@ type
 procedure ImportLegacyPidsCsv(const FileName: string; Catalog: TPidCatalog);
 procedure ImportLegacyPidsCsvLines(Lines: TStrings; Catalog: TPidCatalog);
 
-{ Merges Source into Target, matching PIDs by id. Source is not changed. }
+{ Merges Source into Target (see the matching rules above). Source is not changed. }
 function MergeCatalog(Target, Source: TPidCatalog; Mode: TMergeMode): TMergeResult;
 
 function ParseCsvLine(const Line: string): TArray<string>;
+{ The PID in Catalog that P would merge with, or nil. }
+function FindMatchingPid(Catalog: TPidCatalog; P: TPidDef): TPidDef;
 
 implementation
 
 uses
-  System.JSON, System.Generics.Collections;
+  System.JSON, System.Character, System.Generics.Collections;
 
 function ParseCsvLine(const Line: string): TArray<string>;
 var
@@ -87,6 +105,9 @@ begin
     Fields.Free;
   end;
 end;
+
+const
+  MinColumns = 9; // Counter .. shortname
 
 function CategoryKey(const S: string): string;
 begin
@@ -146,11 +167,14 @@ begin
       if Trim(Lines[I]) = '' then
         Continue;
       F := ParseCsvLine(Lines[I]);
-      if Length(F) < 12 then
+      if Length(F) < MinColumns then
       begin
-        Skipped.Add(Format('Line %d: expected 12 columns, found %d', [I + 1, Length(F)]));
+        Skipped.Add(Format('Line %d: only %d columns, at least %d are needed - skipped',
+          [I + 1, Length(F), MinColumns]));
         Continue;
       end;
+      while Length(F) < 12 do
+        F := F + [''];
       Id := StrToIntDef(Trim(F[0]), -1);
       if Id < 0 then
       begin
@@ -199,10 +223,74 @@ begin
   end;
 end;
 
-function MergeCatalog(Target, Source: TPidCatalog; Mode: TMergeMode): TMergeResult;
+function SourceKey(P: TPidDef): string;
+begin
+  Result := KindKeys[P.Kind];
+  case P.Kind of
+    pkVehicle: Result := Result + '|' + IntToHex(P.PidNumber, 4) + '|' + IntToStr(P.DataLength);
+    pkAnalog: Result := Result + '|' + IntToStr(P.AnalogChannel);
+  end;
+end;
+
+function NameKey(P: TPidDef): string;
+begin
+  Result := SourceKey(P) + '|n|' + LowerCase(Trim(P.LongName));
+end;
+
+{ '' when there is no formula to compare. }
+function FormulaKey(P: TPidDef): string;
+var
+  C: Char;
+  F: string;
+begin
+  F := '';
+  for C in UpperCase(P.FormulaText) do
+    if not C.IsWhiteSpace then
+      F := F + C;
+  if F = '' then
+    Result := ''
+  else
+    Result := SourceKey(P) + '|f|' + F;
+end;
+
+function FindMatchingPid(Catalog: TPidCatalog; P: TPidDef): TPidDef;
 var
   I: Integer;
-  S, T, P: TPidDef;
+begin
+  for I := 0 to Catalog.Count - 1 do
+    if (NameKey(Catalog[I]) = NameKey(P)) or
+      ((FormulaKey(P) <> '') and (FormulaKey(Catalog[I]) = FormulaKey(P))) then
+      Exit(Catalog[I]);
+  Result := nil;
+end;
+
+function MergeCatalog(Target, Source: TPidCatalog; Mode: TMergeMode): TMergeResult;
+var
+  I, KeepId: Integer;
+  S, T: TPidDef;
+  Clashing: TArray<TPidDef>;
+  Existing: TDictionary<string, TPidDef>;
+
+  procedure AddNew(S: TPidDef; Renumber: Boolean);
+  var
+    P: TPidDef;
+  begin
+    P := TPidDef.Create;
+    P.Assign(S);
+    if Renumber then
+    begin
+      P.Id := Target.NextFreeId;
+      Inc(Result.Renumbered);
+    end;
+    if (P.Mci <> '') and (Target.FindByMci(P.Mci) <> nil) then
+    begin
+      Result.MciCleared := Result.MciCleared + [Format('%s (%%%s%%)', [P.LongName, P.Mci])];
+      P.Mci := '';
+    end;
+    Target.Add(P);
+    Inc(Result.Added);
+  end;
+
 begin
   Result := Default(TMergeResult);
   if Mode = mmReplace then
@@ -211,25 +299,48 @@ begin
     Result.Added := Source.Count;
     Exit;
   end;
+  Clashing := nil;
+  // Match only against what was there before, so rows of the same file never match each other.
+  Existing := TDictionary<string, TPidDef>.Create;
+  try
+  for I := 0 to Target.Count - 1 do
+  begin
+    Existing.TryAdd(NameKey(Target[I]), Target[I]);
+    if FormulaKey(Target[I]) <> '' then
+      Existing.TryAdd(FormulaKey(Target[I]), Target[I]);
+  end;
   for I := 0 to Source.Count - 1 do
   begin
     S := Source[I];
-    T := Target.FindById(S.Id);
+    if not Existing.TryGetValue(NameKey(S), T) then
+      if (FormulaKey(S) = '') or not Existing.TryGetValue(FormulaKey(S), T) then
+        T := nil;
     if T = nil then
     begin
-      P := TPidDef.Create;
-      P.Assign(S);
-      Target.Add(P);
-      Inc(Result.Added);
+      // New PIDs whose id is free go in first; clashing ones are numbered
+      // afterwards so they cannot take an id a later import still needs.
+      if Target.FindById(S.Id) <> nil then
+      begin
+        Clashing := Clashing + [S];
+        Continue;
+      end;
+      AddNew(S, False);
     end
     else if Mode = mmAddAndUpdate then
     begin
+      KeepId := T.Id;
       T.Assign(S);
+      T.Id := KeepId;
       Inc(Result.Updated);
     end
     else
       Inc(Result.Skipped);
   end;
+  finally
+    Existing.Free;
+  end;
+  for S in Clashing do
+    AddNew(S, True);
 end;
 
 end.

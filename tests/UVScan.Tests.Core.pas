@@ -46,6 +46,8 @@ type
     [Test] procedure PrecedenceAndUnaryMinus;
     [Test] procedure DivisionByZeroIsNaN;
     [Test] procedure RejectsGarbage;
+    [Test] procedure Conditional;
+    [Test] procedure ExplainsMissingPercent;
   end;
 
   [TestFixture]
@@ -347,6 +349,50 @@ begin
   Assert.WillRaise(Compile('(N0 + 1'), EFormulaError);
   Assert.WillRaise(Compile('N0 $ 1'), EFormulaError);
   Assert.WillRaise(Compile('%RPM'), EFormulaError);
+end;
+
+procedure TFormulaTests.Conditional;
+var
+  F: TFormula;
+begin
+  // From an old UVSCAN file: crank sensor period -> rpm, 0 when no signal.
+  F := TFormula.Create('(((N1 << 8) + N2) ? 1310720 / ((N1 << 8) + N2) : 0)');
+  try
+    Assert.AreEqual(Double(0), F.Evaluate([0, 0], []), 0, 'no division by zero taken');
+    Assert.AreEqual(Double(1310720 / 256), F.Evaluate([1, 0], []), 1e-9);
+  finally
+    F.Free;
+  end;
+  F := TFormula.Create('N0 > 10 ? N0 > 100 ? 2 : 1 : 0');
+  try
+    Assert.AreEqual(Double(0), F.Evaluate([5], []), 0);
+    Assert.AreEqual(Double(1), F.Evaluate([50], []), 0);
+    Assert.AreEqual(Double(2), F.Evaluate([200], []), 0);
+  finally
+    F.Free;
+  end;
+  try
+    TFormula.Create('N0 ? 1').Free;
+    Assert.Fail('"N0 ? 1" should not compile');
+  except
+    on EFormulaError do
+      ;
+  end;
+end;
+
+procedure TFormulaTests.ExplainsMissingPercent;
+var
+  Msg: string;
+begin
+  Msg := '';
+  try
+    TFormula.Create('(%MAFGmPerSec% * 1000) / ((((%RPM / 60) / 2) * 6) + 0.000001)').Free;
+  except
+    on E: EFormulaError do
+      Msg := E.Message;
+  end;
+  Assert.IsTrue(Pos('Missing closing % after %RPM', Msg) > 0, Msg);
+  Assert.IsTrue(Pos('%RPM%', Msg) > 0, Msg);
 end;
 
 { TPidCatalogTests }

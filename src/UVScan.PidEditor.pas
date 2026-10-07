@@ -59,6 +59,8 @@ type
     edtTestInput: TEdit;
     lblTestResultCaption: TLabel;
     lblTestResult: TLabel;
+    pnlProblems: TPanel;
+    lbProblems: TListBox;
     pnlBottom: TPanel;
     lblProblems: TLabel;
     btnSave: TButton;
@@ -74,6 +76,7 @@ type
     procedure FieldChanged(Sender: TObject);
     procedure edtTestInputChange(Sender: TObject);
     procedure lblProblemsClick(Sender: TObject);
+    procedure lbProblemsClick(Sender: TObject);
     procedure btnSaveClick(Sender: TObject);
     procedure btnImportClick(Sender: TObject);
     procedure btnDefaultsClick(Sender: TObject);
@@ -84,7 +87,7 @@ type
     FLoading: Boolean;
     FModified: Boolean;
     FSaved: Boolean;
-    FProblems: TArray<string>;
+    FProblems: TArray<TPidProblem>;
     procedure AfterBulkChange;
     procedure AddChoice(Task: TTaskDialog; const Caption, Hint: string; Result: Integer);
     procedure FillList;
@@ -521,26 +524,63 @@ begin
 end;
 
 procedure TPidEditorForm.UpdateProblems;
+var
+  Pr: TPidProblem;
+  Top: Integer;
 begin
   FProblems := FWork.Validate;
+  Top := lbProblems.TopIndex;
+  lbProblems.Items.BeginUpdate;
+  try
+    lbProblems.Items.Clear;
+    for Pr in FProblems do
+      lbProblems.Items.Add(Pr.Text);
+  finally
+    lbProblems.Items.EndUpdate;
+  end;
+  if Top < lbProblems.Items.Count then
+    lbProblems.TopIndex := Top;
+  pnlProblems.Visible := Length(FProblems) > 0;
   if Length(FProblems) = 0 then
   begin
     lblProblems.Font.Color := clGreen;
     lblProblems.Caption := Format('%d PIDs, no problems', [FWork.Count]);
-    lblProblems.Cursor := crDefault;
   end
   else
   begin
     lblProblems.Font.Color := clRed;
-    lblProblems.Caption := Format('%d problem(s) - click to see them', [Length(FProblems)]);
-    lblProblems.Cursor := crHandPoint;
+    lblProblems.Caption := Format('%d PIDs, %d problem(s) to fix before saving - click one above to go to the PID',
+      [FWork.Count, Length(FProblems)]);
   end;
 end;
 
 procedure TPidEditorForm.lblProblemsClick(Sender: TObject);
 begin
-  if Length(FProblems) > 0 then
-    MessageDlg(string.Join(sLineBreak, FProblems), mtWarning, [mbOK], 0);
+  if pnlProblems.Visible and (lbProblems.Items.Count > 0) then
+    lbProblems.SetFocus;
+end;
+
+procedure TPidEditorForm.lbProblemsClick(Sender: TObject);
+var
+  I: Integer;
+  P: TPidDef;
+begin
+  I := lbProblems.ItemIndex;
+  if (I < 0) or (I > High(FProblems)) or (FProblems[I].Index < 0) or (FProblems[I].Index >= FWork.Count) then
+    Exit;
+  P := FWork[FProblems[I].Index];
+  if ItemFor(P) = nil then
+  begin
+    edtFilter.Text := ''; // the PID is filtered out of the list
+    FillList;
+  end;
+  Select(P);
+  if Pos('formula', FProblems[I].Text) > 0 then
+    edtFormula.SetFocus
+  else if Pos('MCI', FProblems[I].Text) > 0 then
+    edtMci.SetFocus
+  else
+    edtName.SetFocus;
 end;
 
 { Add / duplicate / delete }
@@ -647,15 +687,26 @@ begin
   B.ModalResult := Result;
 end;
 
+function Lines(const Items: TArray<string>; MaxLines: Integer): string;
+var
+  I: Integer;
+begin
+  Result := '';
+  for I := 0 to Min(High(Items), MaxLines - 1) do
+    Result := Result + Items[I] + sLineBreak;
+  if Length(Items) > MaxLines then
+    Result := Result + Format('... and %d more', [Length(Items) - MaxLines]);
+end;
+
 procedure TPidEditorForm.btnImportClick(Sender: TObject);
 var
   Dlg: TOpenDialog;
   Imported: TPidCatalog;
   Task: TTaskDialog;
-  NewCount, I: Integer;
+  NewCount, Disabled, I: Integer;
   Mode: TMergeMode;
   R: TMergeResult;
-  Msg: string;
+  Summary: string;
 begin
   Dlg := TOpenDialog.Create(Self);
   Imported := TPidCatalog.Create;
@@ -678,31 +729,38 @@ begin
     if Imported.Count = 0 then
     begin
       MessageDlg('No PIDs found in ' + Dlg.FileName + '.' + sLineBreak + sLineBreak +
-        string.Join(sLineBreak, Imported.Warnings.ToStringArray), mtWarning, [mbOK], 0);
+        Lines(Imported.Warnings.ToStringArray, 15), mtWarning, [mbOK], 0);
       Exit;
     end;
 
     NewCount := 0;
+    Disabled := 0;
     for I := 0 to Imported.Count - 1 do
-      if FWork.FindById(Imported[I].Id) = nil then
+    begin
+      if FindMatchingPid(FWork, Imported[I]) = nil then
         Inc(NewCount);
+      if not Imported[I].Enabled then
+        Inc(Disabled);
+    end;
 
     Task.Caption := 'Import PIDs';
+    Task.MainIcon := tdiInformation;
     Task.Title := Format('%d PIDs read from %s', [Imported.Count, ExtractFileName(Dlg.FileName)]);
-    Task.Text := Format('%d have IDs that are not in the current list, %d have IDs that are.',
-      [NewCount, Imported.Count - NewCount]);
+    Task.Text := Format('%d are new to your list; %d match a PID you already have (same PID and name or formula).',
+      [NewCount, Imported.Count - NewCount]) + sLineBreak + 'Nothing is written until you press Save.';
     if Imported.Warnings.Count > 0 then
-      Task.Text := Task.Text + sLineBreak + Format('%d row(s) had problems; they are listed after the import.',
-        [Imported.Warnings.Count]);
-    Task.Text := Task.Text + sLineBreak + sLineBreak + 'Nothing is written until you press Save.';
+    begin
+      Task.ExpandButtonCaption := Format('%d note(s) about this file', [Imported.Warnings.Count]);
+      Task.ExpandedText := Lines(Imported.Warnings.ToStringArray, 25);
+    end;
     Task.CommonButtons := [tcbCancel];
     Task.Flags := [tfUseCommandLinks, tfAllowDialogCancellation];
-    AddChoice(Task, 'Merge: add new PIDs only',
-      'Keep every current PID as it is; add PIDs whose ID is new.', 101);
-    AddChoice(Task, 'Merge: add new and update existing',
-      'Add new PIDs; PIDs with the same ID are overwritten by the imported ones.', 102);
-    AddChoice(Task, 'Replace all',
-      'Throw away the current list and use only the imported PIDs.', 100);
+    AddChoice(Task, 'Add the new PIDs',
+      'Keep every PID you have as it is; add the ones you do not have yet.', 101);
+    AddChoice(Task, 'Add new PIDs and update matching ones',
+      'Matching PIDs are replaced by the imported definition (they keep their ID).', 102);
+    AddChoice(Task, 'Replace my list with this file',
+      'Use only the imported PIDs.', 100);
     if not Task.Execute then
       Exit;
     case Task.ModalResult of
@@ -715,18 +773,32 @@ begin
 
     R := MergeCatalog(FWork, Imported, Mode);
     AfterBulkChange;
-    case Mode of
-      mmReplace: Msg := Format('Replaced the list with %d imported PIDs.', [R.Added]);
+
+    if Mode = mmReplace then
+      Summary := Format('Your list now has the %d imported PIDs.', [R.Added])
     else
-      Msg := Format('Added %d, updated %d, kept %d unchanged.', [R.Added, R.Updated, R.Skipped]);
+    begin
+      Summary := Format('Added %d PIDs', [R.Added]);
+      if R.Updated > 0 then
+        Summary := Summary + Format(', updated %d', [R.Updated]);
+      if R.Skipped > 0 then
+        Summary := Summary + Format(', left %d you already had unchanged', [R.Skipped]);
+      Summary := Summary + '.';
+      if R.Renumbered > 0 then
+        Summary := Summary + sLineBreak + Format('%d imported PIDs got a new ID because theirs was already taken.',
+          [R.Renumbered]);
+      if Length(R.MciCleared) > 0 then
+        Summary := Summary + sLineBreak + sLineBreak + Format('%d imported PIDs used an MCI name you already have, ' +
+          'so their MCI was removed (formulas keep using your existing PID):', [Length(R.MciCleared)]) +
+          sLineBreak + Lines(R.MciCleared, 10);
     end;
-    if Imported.Warnings.Count > 0 then
-      Msg := Msg + sLineBreak + sLineBreak + 'Rows with problems:' + sLineBreak +
-        string.Join(sLineBreak, Imported.Warnings.ToStringArray);
+    if Disabled > 0 then
+      Summary := Summary + sLineBreak + Format('%d were disabled in the old file (group not 1) and stay disabled.', [Disabled]);
     if Length(FProblems) > 0 then
-      Msg := Msg + sLineBreak + sLineBreak + Format('%d problem(s) must be fixed before saving (see the bottom left).',
+      Summary := Summary + sLineBreak + sLineBreak +
+        Format('%d problem(s) need fixing before you can save; they are listed at the bottom of the editor.',
         [Length(FProblems)]);
-    MessageDlg(Msg, mtInformation, [mbOK], 0);
+    MessageDlg(Summary, mtInformation, [mbOK], 0);
   finally
     Task.Free;
     Imported.Free;
@@ -758,8 +830,9 @@ begin
   UpdateProblems;
   if Length(FProblems) > 0 then
   begin
-    MessageDlg('Fix these problems before saving:' + sLineBreak + sLineBreak +
-      string.Join(sLineBreak, FProblems), mtWarning, [mbOK], 0);
+    MessageDlg(Format('There are %d problem(s) to fix first. They are listed at the bottom of this window; ' +
+      'click one to go to that PID.', [Length(FProblems)]), mtWarning, [mbOK], 0);
+    lbProblems.SetFocus;
     Exit;
   end;
   try

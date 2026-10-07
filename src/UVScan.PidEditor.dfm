@@ -2,7 +2,7 @@ object PidEditorForm: TPidEditorForm
   Left = 0
   Top = 0
   Caption = 'PID definitions'
-  ClientHeight = 560
+  ClientHeight = 660
   ClientWidth = 1090
   Color = clBtnFace
   Constraints.MinHeight = 520
@@ -362,6 +362,7 @@ object PidEditorForm: TPidEditorForm
       Height = 30
       AutoSize = False
       Caption = 'Formula OK'
+      ShowAccelChar = False
       WordWrap = True
     end
     object lblFormat: TLabel
@@ -468,6 +469,7 @@ object PidEditorForm: TPidEditorForm
         Height = 19
         AutoSize = False
         Caption = '-'
+        ShowAccelChar = False
         Font.Charset = DEFAULT_CHARSET
         Font.Color = clWindowText
         Font.Height = -14
@@ -477,9 +479,40 @@ object PidEditorForm: TPidEditorForm
       end
     end
   end
+  object pnlProblems: TPanel
+    Left = 0
+    Top = 502
+    Width = 1090
+    Height = 110
+    Align = alBottom
+    BevelOuter = bvNone
+    Padding.Left = 8
+    Padding.Right = 8
+    TabOrder = 3
+    Visible = False
+    object lbProblems: TListBox
+      Left = 8
+      Top = 0
+      Width = 1074
+      Height = 110
+      Hint = 'Click a problem to go to that PID'
+      Align = alClient
+      Font.Charset = DEFAULT_CHARSET
+      Font.Color = 160
+      Font.Height = -12
+      Font.Name = 'Segoe UI'
+      Font.Style = []
+      ItemHeight = 15
+      ParentFont = False
+      ParentShowHint = False
+      ShowHint = True
+      TabOrder = 0
+      OnClick = lbProblemsClick
+    end
+  end
   object pnlBottom: TPanel
     Left = 0
-    Top = 512
+    Top = 612
     Width = 1090
     Height = 48
     Align = alBottom
@@ -495,6 +528,7 @@ object PidEditorForm: TPidEditorForm
       Height = 15
       AutoSize = False
       Caption = 'No problems'
+      ShowAccelChar = False
       OnClick = lblProblemsClick
     end
     object btnSave: TButton

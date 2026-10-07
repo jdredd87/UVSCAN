@@ -6,9 +6,10 @@ unit UVScan.Formula;
   %NAME% references to other PIDs' MCI codes, parentheses, unary + -, and
   binary operators with C precedence:
     * /   then  + -   then  << >>   then  < <= > >=   then  = == <> !=
-    then  &   then  |
+    then  &   then  |   then  cond ? a : b   (non-zero cond picks a)
   Comparisons yield 1 or 0. Bitwise operators work on the truncated integer
-  value. Division by zero and missing values give NaN. }
+  value. Division by zero and missing values give NaN. MCI names are
+  letters, digits and _ between % signs. }
 
 interface
 
@@ -19,7 +20,7 @@ type
   EFormulaError = class(Exception);
 
   TFormulaOp = (foConst, foInput, foVar, foNeg, foAdd, foSub, foMul, foDiv,
-    foShl, foShr, foAnd, foOr, foLt, foLe, foGt, foGe, foEq, foNe);
+    foShl, foShr, foAnd, foOr, foLt, foLe, foGt, foGe, foEq, foNe, foCond);
 
   TFormulaInstr = record
     Op: TFormulaOp;
@@ -70,6 +71,7 @@ type
     procedure Next;
     procedure Emit(Op: TFormulaOp; Value: Double = 0; Index: Integer = 0);
     function IsOp(const S: string): Boolean;
+    procedure ParseConditional;
     procedure ParseOr;
     procedure ParseAnd;
     procedure ParseEquality;
@@ -165,14 +167,16 @@ begin
   if C = '%' then
   begin
     Inc(FPos);
-    while (FPos <= Length(FSrc)) and (FSrc[FPos] <> '%') do
+    while (FPos <= Length(FSrc)) and (FSrc[FPos].IsLetterOrDigit or (FSrc[FPos] = '_')) do
       Inc(FPos);
-    if FPos > Length(FSrc) then
-      Fail('Unterminated %NAME% reference');
-    Name := UpperCase(Trim(Copy(FSrc, Start + 1, FPos - Start - 1)));
-    Inc(FPos);
+    Name := Copy(FSrc, Start + 1, FPos - Start - 1);
     if Name = '' then
-      Fail('Empty %% reference');
+      Fail('"%" must be followed by an MCI name, e.g. %RPM%');
+    if (FPos > Length(FSrc)) or (FSrc[FPos] <> '%') then
+      raise EFormulaError.CreateFmt('Missing closing %% after %%%s in "%s" (should be %%%s%%)',
+        [Name, FSrc, Name]);
+    Name := UpperCase(Name);
+    Inc(FPos);
     FTok.Kind := tkVar;
     FTok.Text := Name;
     Exit;
@@ -200,7 +204,7 @@ begin
       Inc(FPos, 2);
       Exit;
     end;
-  if CharInSet(C, ['+', '-', '*', '/', '&', '|', '<', '>', '=']) then
+  if CharInSet(C, ['+', '-', '*', '/', '&', '|', '<', '>', '=', '?', ':']) then
   begin
     FTok.Kind := tkOp;
     FTok.Text := C;
@@ -218,9 +222,24 @@ end;
 procedure TParser.Parse;
 begin
   Next;
-  ParseOr;
+  ParseConditional;
   if FTok.Kind <> tkEnd then
     Fail('Unexpected input');
+end;
+
+procedure TParser.ParseConditional;
+begin
+  ParseOr;
+  if IsOp('?') then
+  begin
+    Next;
+    ParseConditional;
+    if not IsOp(':') then
+      Fail('Missing ":" in "condition ? a : b"');
+    Next;
+    ParseConditional;
+    Emit(foCond);
+  end;
 end;
 
 procedure TParser.ParseOr;
@@ -378,7 +397,7 @@ begin
     tkLParen:
       begin
         Next;
-        ParseOr;
+        ParseConditional;
         if FTok.Kind <> tkRParen then
           Fail('Missing ")"');
         Next;
@@ -447,6 +466,21 @@ begin
       foNeg:
         begin
           Stack[SP] := -Stack[SP];
+          Continue;
+        end;
+      foCond:
+        begin
+          // cond, a, b on the stack -> a if cond is non-zero, else b
+          B := Stack[SP];
+          A := Stack[SP - 1];
+          R := Stack[SP - 2];
+          Dec(SP, 2);
+          if IsNan(R) then
+            Stack[SP] := NaN
+          else if R <> 0 then
+            Stack[SP] := A
+          else
+            Stack[SP] := B;
           Continue;
         end;
     else

@@ -1,0 +1,274 @@
+Count,Long Name,Desc,Formula,Units,DataLength,PID,Group,shortname,Results,PidCat,txtMCI
+1,Fuel System Status,,N0,,2,3,1,Fuel S Status,,0,
+2,Engine Speed (RPM),,((N1 << 8) + N2) * 0.25,RPM,2,000C,1,RPM,,1,%RPM%
+3,MAF Flow Rate,,((N1 << 8) + N2)  / 100,g/s,2,10,1,MAF(g/s),,1,%MAFGmPerSec%
+4,Runtime Since Start,,((N1 * 256) + N2),,2,001E,1,Runtime,,1,
+5,Distance Traveled with MIL,,N1 * 256 + N2,km,2,21,1,MIL km,,1,
+6,Fuel Rail Pressure (Rel to MAP),,((N1 * 256) + N2) * 0.076,kPa,2,22,1,Fuel Pres Relative,,1,
+7,Fuel Rail Pressure (diesel),,((N1 * 256) + N2) * 10,kPa (gauge),2,23,1,Fuel Pres (Diesel),,1,
+8,Distance since codes cleared,,N1 * 256 + N2,km,2,31,1,Dist since Clear,,1,
+9,Evap. System Vapor Pressure,,((N1 * 256) + N2) / 4 - 8192,Pa,2,32,1,EVAP Pressure,,1,
+10,Catalyst Temperature B1S1,,((N1 * 256) + N2) / 10,Deg C,2,003C,1,Cat Temp B1S1,,1,
+11,Catalyst Temperature B2S1,,((N1 * 256) + N2) / 10,Deg C,2,003D,1,Cat Temp B2S1,,1,
+12,Catalyst Temperature B1S2,,((N1 * 256) + N2) / 10,Deg C,2,003E,1,Cat Temp B1S2,,1,
+13,Catalyst Temperature B2S2,,((N1 * 256) + N2) / 10,Deg C,2,003F,1,Cat Temp B2S2,,1,
+14,Control module voltage,,((N1 * 256) + N2) / 1000,Volts,2,42,1,Cntl Mod Volts,,1,
+15,Absolute Load %,,((N1 * 256) + N2 ) / 2.55,%,2,43,1,Abs. Load,,1,
+16,Command equivalence ratio,,((N1 * 256) + N2) * 0.0000305,,2,44,1,Command Equiv Ratio,,1,
+17,Time run with MIL on,,N1 * 256 + N2,Min,2,004D,1,Time Run with MIL,,0,
+18,Time since trouble codes cleared,,N1 * 256 + N2,Min,2,004E,1,Time Since MIL Cleared,,0,
+19,A/C Relay,,(((((N1 >> 0) & 1) << 1) + ((N2 >> 0) & 1)) & 3),,2,1108,1,A/C Relay,,4,
+20,Change Engine Oil Lamp Circuit Status,,((((N1 >> 0) & 2) + ((N2 >> 1) & 1)) & 3),,2,1108,1,OilLamp,,3,
+21,TCC Solenoid,,(((N1 >> 5) & 2) + ((N2 >> 6)) & 3),,2,1108,1,TCC,,2,
+22,Starter Enable Relay,,((N1 >> 1) & 2) + ((N2 >> 2) & 3),,2,1108,1,Starter,,3,
+23,Boost Solenoid PWM,,((N1 >> 4) & 2) + ((N2 >> 5) & 3),,2,1108,1,Boost Solenoid,,1,%BoostPWM%
+24,Driver Module 1 Status,,((N1 >> 6) & 2) + ((N2 >> 7) & 3),,2,1108,1,Driver1,,3,
+25,TCC Duty Cycle Open Short To Ground,,((N1 >> 6) & 1),,2,1108,1,TCC Short Gnd,,2,
+26,TC Duty Cycle short to Volts,,((N2 >> 6) & 1),,2,1108,1,TCC Short B+,,2,
+27,FC Relay 1,,(((((N1 >> 0) & 1) <<<< 1) + ((N2 >> 0) & 1)) & 3),,2,1109,1,FCRelay1,,3,
+28,FC Relay 2 and 3,,(((N1 >> 0) & 2) + ((N2 >> 1) & 1) & 3),,2,1109,1,FC Relay,,3,
+29,1-2 Solenoid,,(((N1 >> 3) & 2) + ((N2 >> 4)) & 3),,2,1109,1,1-2Solenoid,,2,
+30,2-3 Solenoid,,(((N1 >> 4) & 2) + ((N2 >> 5)) & 3),,2,1109,1,2-3Solenoid,,2,
+31,Driver Module 2 Status,,((N1 >> 6) & 2) + ((N2 >> 7) & 3),,2,1109,1,Driver2,,3,
+32,1-2 Solenoid Open/Short to Ground,,((N1 >> 4) & 1),,2,1109,1,1-2 Sol Short Gnd,,2
+33,2-3 Solenoid Short to GND,,((N1 >> 5) & 1),,2,1109,1,2-3 Sol short Gnd,,2
+34,1-2 Solenoid Short to Volts,,((N2 >> 4) & 1),,2,1109,1,1-2 Sol Short B+,,2
+35,2-3 Solenoid Short to B+,,((N2 >> 5) & 1),,2,1109,1,2-3 Sol Short B+,,2
+36,Cruise Inhibit,,(((N1 >> 0) & 2) + ((N2 >> 1) & 1) & 3),,2,110A,1,Cruise Inhibit,,3
+37,Generator Lamp Circuit Status,,(((N1 >> 1) & 2) + ((N2 >> 2)) & 3),,2,110A,1,Generator Circuit,,3
+38,EVAP Vent Solenoid ?,,(((N1 >> 3) & 2) + ((N2 >> 4)) & 3),,2,110A,1,Evap Solenoid,,5
+39,Fuel Pump Speed Control,,(((N1 >> 5) & 2) + ((N2 >> 6)) & 3),,2,110A,1,FP Speed,,1
+40,Driver Module 3 Status,,((N1 >> 6) & 2) + ((N2 >> 7) & 3),,2,110A,1,Driver3,,3
+41,2-3 Solenoid Short to GND,,((N1 >> 5) & 1),,2,110A,1,2-3 Sol short Gnd,,2
+42,2-3 Solenoid Short to B+,,((N2 >> 5) & 1),,2,110A,1,2-3 Sol Short B+,,2
+43,MIL Circuit,,(((((N1 >> 0) & 1) << 1) + ((N2 >> 0) & 1)) & 3),,2,110B,1,MIL Circuit,,3
+44,Low Oil Lamp Circuit Status,,(((N1 >> 0) & 2) + ((N2 >> 1) & 1) & 3),,2,110B,1,Oil Lamp Circuit,,3
+45,Evap Purge Solenoid Circuit,,(((N1 >> 4) & 2) + ((N2 >> 5)) & 3),,2,110B,1,EVAP Purge Circuit,,5
+46,Engine Hot Lamp Circuit Status,,(((N3 >> 1) & 2) + ((N2 >> 2)) & 3),,2,110B,1,Engine Hot Circuit,,3
+47,Driver Module 4 Status,,((N1 >> 6) & 2) + ((N2 >> 7) & 3),,2,110B,1,Driver 4,,3
+48,1-2 Solenoid Open/Short to Ground,,((N1 >> 4) & 1),,2,110B,1,1-2 Sol Short Gnd,,2,
+49,1-2 Solenoid Short to Volts,,((N2 >> 4) & 1),,2,110B,1,1-2 Sol Short B+,,2,
+50,Mass Airflow Sensor 1 (MAF),,N0 * 65536 / 512,g/sec,2,1140,7,MAF,,1,
+51,Injector PW,,((N1 << 8) + N2) / 65.535,ms,2,1193,1,Injector PW,,1,%InjectorPulseWidth%
+52,Run Time,,((N1 << 8) + N2),Seconds,2,11A1,1,Run Time,,1,
+53,Misfire Cyl. 5 History,,(N1 << 8) + N2,Count,2,11F8,1,Misfire Cyl. 5 History,,1,
+54,Misfire Cyl. 6 History,,(N1 << 8) + N2,Count,2,11F9,1,Misfire Cyl. 6 History,,1,
+55,Misfire Cyl. 1 History,,(N1 << 8) + N2,Count,2,1201,1,Misfire Cyl. 1 History,,1,
+56,Misfire Cyl. 2 History,,(N1 << 8) + N2,Count,2,1202,1,Misfire Cyl. 2 History,,1,
+57,Misfire Cyl. 3 History,,(N1 << 8) + N2,Count,2,1203,1,Misfire Cyl. 3 History,,1,
+58,Misfire Cyl. 4 History,,(N1 << 8) + N2,Count,2,1204,1,Misfire Cyl. 4 History,,1,
+59,Total Miles Since First Failure,,(N1 << 8) + N2,,2,1227,1,Miles Since Failure,,1,
+60,Total Misfire Passes Since First Failure,,(N1 << 8) + N2,,2,1228,1,Misfires Since Failure,,1,
+61,3X Crank Sensor,,(((N1 << 8) + N2) ? 1310720 / ((N1 << 8) + N2) : 0),Pulses,2,124F,1,3X Crank,,1,
+62,MAF Frequency,,((N1 << 8) + N2) / 2.048,Hz,2,1250,1,MAF Hertz,,1,%MAFHertz%
+63,18X Crank Sensor,,(((N1 << 8) + N2) ? (1310720 / (((N1 << 8) + N2) * 6)) : 0),Pulses,2,1256,1,18X Crank,,1,
+64,Fuel Tank Pressure,,-1 * (((((N1 << 8) + N2)) * 0.0009765625) * 1.868),mmHg,2,1297,1,Fuel Pressure,,1,
+65,Fuel Level,,((N1 << 8) + N2) * 0.01953125,%,2,12C5,1,Fuel Level,,1,
+66,ESC Minimum Learned Noise Voltage,,N0 / 256.4,Volts,2,1609,1,ESC Learned Noise,,1,
+67,Start Up IAT,,((N1 << 8) + N2) / 25.6,C,2,160A,1,Start IAT,,1,
+68,Start Up ECT,,((N1 << 8) + N2) / 25.6,C,2,160B,1,Start ECT,,1,
+69,Traction Control Desired Torque,,((N1 << 8) + N2) * 5 / 256,%,2,160C,1,Traction CTRL Torque,,5,
+70,Transmission ISS,,((N1 << 8) + N2) * 0.125,RPM,2,1941,1,ISS Speed,,2,
+71,Transmission OSS,,((N1 << 8) + N2) * 0.125,RPM,2,1942,1,OSS Speed,,2,
+72,TCC Slip Speed,,((N1 << 8) + N2) * 0.125,RPM,2,1991,1,TCC Slip RPM,,2,
+73,Engine Torque,,((N1 << 8) + N2) * 0.33895,N-m,2,19DE,1,Engine Torque,,1,
+74,Delivered Engine Torque,,N0 / 4,Ft/Lb,2,19DE,1,Torque ft/lb,,1,
+75,Engine Load,,N0 / 2.55,%,1,4,1,Engine Load,,1,%EngineLoad%
+76,Engine Coolant Temp (ECT),,N0 - 40,Deg C,1,5,1,ECT,,1,%ECT%
+77,Short Term Fuel Trim (STFT) Bank 1,,(N0 - 128) / 1.28,%,1,6,1,STFT B1,,1,%STFTB1%
+78,Long Term Fuel Trim (LTFT) Bank 1,,(N0 - 128) / 1.28,%,1,7,1,LTFT B1,,1,%LTFTB1%
+79,Short Term Fuel Trim (STFT) Bank 2,,(N0 - 128) / 1.28,%,1,8,1,STFT B2,,1,%STFTB2%
+80,Long Term Fuel Trim (LTFT) Bank 2,,(N0 - 128) / 1.28,%,1,9,1,LTFT B2,,1,%LTFTB2%
+81,Fuel Pressure (kPa),,N0 * 3,PSI,1,000A,1,Fuel Pressure kPa,,1,
+82,Fuel Pressure (PSI),,N0 * 3 * 0.14504,PSI,1,000A,1,Fuel Pressure PSI,,1,
+83,Boost,,(N0 - 100) * 0.147,PSI,1,000B,1,Boost,,1,%BoostPSI%
+84,MAP (inHg),,N0 * 0.29637275 + 29,inHg,1,000B,1,MAP(inHg),,1,%MAPInHg%
+85,MAP (Volts) ?,,0.53 * N0 - 0.55,Volts,1,000B,7,MAP(V) ?,,1,
+86,MAP (Volts),,5 * (0.005 * N0 - 0.04),Volts,1,000B,7,MAP(V),,1,
+87,MAP (kPa),,N0,kPa,1,000B,1,MAP(kPa),,1,%MAPkPa%
+88,Vehicle Speed (km/h),,N0,km/h,1,000D,1,km/h,,1,%KPH%
+89,Vehicle Speed (MPH),,N0 / 1.609,MPH,1,000D,1,MPH,,1,%MPH%
+90,Spark Advance,,N0 / 2 - 64,Degrees,1,000E,1,Spark,,1,%SparkAdvance%
+91,Intake Air Temp (IAT),,N0 - 40,Deg C,1,000F,1,IAT,,1,%IAT%
+92,TP Angle %,,N0 / 2.55,%,1,11,1,TP %,,1,%TPS%
+93,Secondary Air OFF,,((N0 >> 5) & 1),,1,12,1,AIR OFF,,1,
+94,Secondary Air Downstream Cat,,((N0 >> 6) & 1),,1,12,1,AIR DS Cat,,1,
+95,Secondary Air Upstream cat,,((N0 >> 7) & 1),,1,12,1,AIR US Cat,,1,
+96,Secondary Air Status,,N0,Bitmapped,1,12,1,AIR Status,,1
+97,HO2 B2S3 Present,,((N0 >> 1) & 1),,1,13,1,HO2 B2S3 Present,,1
+98,HO2 B2S2 Present,,((N0 >> 2) & 1),,1,13,1,HO2 B2S2 Present,,1
+99,HO2 B2S1 Present,,((N0 >> 3) & 1),,1,13,1,HO2 B2S1 Present,,1
+100,HO2 B1S4 Present,,((N0 >> 4) & 1),,1,13,1,HO2 B1S4 Present,,1
+101,HO2 B1S3 Present,,((N0 >> 5) & 1),,1,13,1,HO2 B1S3 Present,,1
+102,HO2 B1S2 Present,,((N0 >> 6) & 1),,1,13,1,HO2 B1S2 Present,,1
+103,HO2 B1S1 Present,,((N0 >> 7) & 1),,1,13,1,HO2 B1S1 Present,,1
+104,HO2 Sensor Location,,N0,Bitmapped,1,13,1,HO2 Sensor Locs,,1
+105,HO2 B2S4 Present,,N0 & 1,,1,13,1,HO2 B2S4 Present,,1
+106,O2 Voltage B1S1,,N0 * 0.005,Volts,1,14,1,O2 Volt B1S1,,1
+107,O2 Voltage B1S2,,N0 * 0.005,Volts,1,15,1,O2 Volt B1S2,,1
+108,O2 Voltage B1S3,,N0 * 0.005,Volts,1,16,1,O2 Volt B1S3,,1
+109,O2 Voltage B1S4,,N0 * 0.005,Volts,1,17,1,O2 Volt B1S4,,1
+110,O2 Voltage B2S1,,N0 * 0.005,Volts,1,18,1,O2 Volt B2S1,,1
+111,O2 Voltage B2S2,,N0 * 0.005,Volts,1,19,1,O2 Volt B2S2,,1
+112,O2 Voltage B2S3,,N0 * 0.005,Volts,1,001A,1,O2 Volt B2S3,,1
+113,O2 Voltage B2S4,,N0 * 0.005,Volts,1,001B,1,O2 Volt B2S4,,1
+114,OBD Type,,N0,Bitmapped,1,001C,1,OBD Type,,0
+115,O2 B2S3 Present,,((N0 >> 1) & 1),,1,001D,1,O2 B2S3 Present,,1
+116,O2 B2S2 Present,,((N0 >> 2) & 1),,1,001D,1,O2 B2S2 Present,,1
+117,O2 B2S1 Present,,((N0 >> 3) & 1),,1,001D,1,O2 B2S1 Present,,1
+118,O2 B1S4 Present,,((N0 >> 4) & 1),,1,001D,1,O2 B1S4 Present,,1
+119,O2 B1S3 Present,,((N0 >> 5) & 1),,1,001D,1,O2 B1S3 Present,,1
+120,O2 B1S2 Present,,((N0 >> 6) & 1),,1,001D,1,O2 B1S2 Present,,1
+121,O2 B1S1 Present,,((N0 >> 7) & 1),,1,001D,1,O2 B1S1 Present,,1
+122,O2 Sensor Location,,N0,Bitmapped,1,001D,1,O2 Sensor Locs,,1
+123,O2 B2S4 Present,,N0 & 1,,1,001D,1,O2 B2S4 Present,,1
+124,Auxillery Input Status,,N0,Bitmapped,1,001E,1,AUX Input Status,,0
+125,Commanded EGR,,N0 / 2.55,%,1,002C,1,Commanded EGR,,1
+126,EGR Error %,,N0 * 0.78125 - 100,%,1,002D,1,EGR Error,,1
+127,Commanded evaporative purge %,,N0 / 2.55,%,1,002E,1,Commanded EVAP Purge,,1
+128,Fuel Level Input %,,N0 / 2.55,%,1,002F,1,Fuel Level,,1
+129,# Warmups since codes cleared,,N0,,1,30,1,# Warmups,,1
+130,Barometric pressure (Absolute),,N0,kPa,1,33,1,Baro (Absolute),,1
+131,Monitor status this drive cycle ?,,N0,Bitmapped,1,41,1,Mon Status,,1
+132,Relative throttle position %,,N0 / 2.55,%,1,45,1,Rel TP,,1
+133,Ambient air temperature,,N0 - 40,Deg C,1,46,1,Ambient Air Temp,,1
+134,Absolute throttle position B,,N0 / 2.55,%,1,47,1,Abs. TP B,,1
+135,Absolute throttle position C,,N0 / 2.55,%,1,48,1,Abs. TP C,,1
+136,Absolute throttle position D,,N0 / 2.55,%,1,49,1,Abs. TP D,,1
+137,Absolute throttle position E,,N0 / 2.55,%,1,004A,1,Abs. TP E,,1
+138,Absolute throttle position F,,N0 / 2.55,%,1,004B,1,Abs. TP F,,1
+139,Commanded throttle actuator,,N0 / 2.55,%,1,004C,1,Command Throttle Acuator,,1
+140,Transmission Range Switch A,,N0 & 1,,1,1100,1,TR A,,2
+141,Transmission Range Switch B,,((N0 >> 1) & 1),,1,1100,1,TR B,,2
+142,Transmission Range Switch C,,((N0 >> 2) & 1),,1,1100,1,TR C,,2
+143,Transmission Range Switch P,,((N0 >> 3) & 1),,1,1100,1,TR P,,2
+144,Commanded Starter,,N0 & 15,,1,1100,1,Starter,,3
+145,Transmission Range,,N0 & 15,,1,1100,1,TR,,2
+146,Brake Switch,,((N0 >> 0) & 1),,1,1101,1,Brake,,3
+147,1-2 Solenoid,,((N0 >> 5) & 1),,1,1101,1,1-2 Sol.,,2
+148,2-3 Solenoid,,((N0 >> 6) & 1),,1,1101,1,2-3 Sol.,,2
+149,Hot Mode,,((N0 >> 0) & 1),,1,1102,1,Hot Mode,,2
+150,Cruise Control Enable,,((N0 >> 5) & 1),,1,1102,1,Cruise,,3
+151,Cruise Inhibit Command,,((N0 >> 6) & 1),,1,1102,1,Cruise Inhibit Command,,3
+152,Traction Control,,((N0 >> 7) & 1),,1,1102,1,TRAC,,3
+153,AC Requested Status,,N0 & 1,,1,1103,1,AC Requested Status,,4
+154,A/C Clutch,,((N0 >> 1) & 1),,1,1103,1,A/C Clutch,,4
+155,A/C Pressure Out Of Range,,((N0 >> 2) & 1),,1,1103,1,AC Pressure,,4
+156,Command Fan 1,,((N0 >> 6) & 1),,1,1103,1,Fan 1,,5
+157,Fans Low Speed,,((N0 >> 6) & 1),,1,1103,1,Fans Low,,5
+158,Command Fan 2,,((N0 >> 7) & 1),,1,1103,1,Fan 2,,5
+159,Fans High Speed,,((N0 >> 7) & 1),,1,1103,1,Fans High,,5
+160,MIL Indicator,,N0 & 1,,1,1104,1,MIL,,3,
+161,Engine Hot Lamp,,((N0 >> 1) & 1),,1,1104,1,Hot,,3,
+162,Low Oil Lamp,,((N0 >> 2) & 1),,1,1104,1,Low Oil,,3,
+163,Generator Indicator,,((N0 >> 3) & 1),,1,1104,1,Generator,,3,
+164,Change Oil Indicator,,((N0 >> 4) & 1),,1,1104,1,Change Oil,,3,
+165,Fuel Pump,,((N0 >> 5) & 1),,1,1104,1,Fump Pump,,1,
+166,Fuel Pump Speed,,((N0 >> 7) & 1),,1,1104,1,FP Speed,,1,
+167,HO2 Bank 1 Sensor 1 Status,,((N0 >> 1) & 1),,1,1105,1,HO2 B1S1,,1,
+168,Fuel Loop Status,,((N0 >> 3) & 1),,1,1105,1,Loop,,1,%FuelLoopStatus%
+169,Fuel Trim Learn,,((N0 >> 4) & 1),,1,1105,1,FT Learn,,1,%FuelTrimLearn%
+170,Rich/Lean Status,,((N0 >> 5) & 1),,1,1105,1,Rich/Lean,,1,
+171,TWC Protection,,N0 & 1,,1,1106,1,TWC,,5,
+172,Power Enrichment,,((N0 >> 2) & 1),,1,1106,1,PE,,3,%PowerEnrichment%
+173,Decel Fuel Mode,,((N0 >> 3) & 1),,1,1106,1,Decel Fuel,,3,
+174,Ignition Mode,,((N0 >> 6) & 1),,1,1106,1,Ignition Mode,,1,
+175,VTD Fuel Disable,,((N0 >> 7) & 1),,1,1106,1,VTD,,3,
+176,CMP Sensor Signal Present,,((N0 >> 1) & 1),,1,1107,1,CMP,,3,
+177,EVAP Vent Solenoid,,((N0 >> 2) & 1),,1,1107,1,EVAP Vent,,5,
+178,Command CGEN,,((N0 >> 5) & 1),,1,1107,1,GEN,,5,
+179,Engine Oil Level,,((N0 >> 6) & 1),,1,1107,1,Oil Level,,3,%EngineOilLevel%
+180,Throttle At Idle,,((N0 >> 7) & 1),,1,1107,1,Throttle,,1,
+181,Shift Mode,,((N0 >> 2) & 1),,1,110C,1,Perf Shift,,3,
+182,Fuel Pump Circuit History,,N0,,1,1114,1,FP Ckt History,,1,
+183,Fuel Pump Circuit Status,,N0,,1,1115,1,FP Ckt Status,,1,
+184,Cylinder 1 Injector Circuit Status,,N0,,1,111C,1,Cyl 1 Inj Status,,1,
+185,Cylinder 2 Injector Circuit Status,,N0,,1,111D,1,Cyl 2 Inj Status,,1,
+186,Cylinder 3 Injector Circuit Status,,N0,,1,111E,1,Cyl 3 Inj Status,,1,
+187,Cylinder 4 Injector Circuit Status,,N0,,1,111F,1,Cyl 4 Inj Status,,1,
+188,Cylinder 5 Injector Circuit Status,,N0,,1,1120,1,Cyl 5 Inj Status,,1,
+189,Cylinder 6 Injector Circuit Status,,N0,,1,1121,1,Cyl 6 Inj Status,,1,
+190,Cruise Inhibit Reason,,N0 & 255,,1,112B,1,Cruise Inhibit Reason,,3,
+191,Cylinder 1 Injector Circuit History,,N0,,1,112C,1,Cyl 1 Inj History,,1,
+192,Cylinder 2 Injector Circuit History,,N0,,1,112D,1,Cyl 2 Inj History,,1,
+193,Cylinder 3 Injector Circuit History,,N0,,1,112E,1,Cyl 3 Inj History,,1,
+194,Cylinder 4 Injector Circuit History,,N0,,1,112F,1,Cyl 4 Inj History,,1,
+195,Cylinder 5 Injector Circuit History,,N0,,1,1130,1,Cyl 5 Inj History,,1,
+196,Cylinder 6 Injector Circuit History,,N0,,1,1131,1,Cyl 6 Inj History,,1,
+197,IGNITION VOLTAGE ?,,N0 * 10,Volts,1,1141,7,IGN V ?,,1,
+198,Ignition 1 Voltage,,N0 / 10,V,1,1141,1,IGN V,,1,%IGV%
+199,MANIFOLD PRESSURE,,N0 * 2.71 - 28.00,KPA,1,1142,7,MAP,,1,
+200,TPS A/D,,N0 * 255 / 5,Volts,1,1143,7,TPS V,,1,
+201,TP Sensor Voltage,,N0 / 51,V,1,1143,1,TP V,,1,
+202,A/C PRESSURE A/D,,N0 * 255 / 5,Volts,1,1144,7,A/C V,,1,
+203,A/C High Side Pressure,,N0 / 51,V,1,1144,1,A/C V,,4,
+204,HO2 Bank 1 Sensor 1,,0.434 * N0 * 10,mV,1,1145,1,HO2 B1S1,,1,%HO1%
+205,HO2 Bank 1 Sensor 2,,0.434 * N0 * 10,mV,1,1146,1,HO2 B1S2,,1,
+206,HO2 Bank 2 Sensor 1,,0.434 * N0 * 10,mV,1,1148,7,HO2 B2S1,,1,
+207,HO2 Bank 2 Sensor 2,,0.434 * N0 * 10,mV,1,1149,7,HO2 B2S2,,1,
+208,Linier EGR Feedback  A/D,,N0 * 255 / 5,Volts,1,114B,7,EGR V,,1,
+209,EGR V,,N0 / 51,V,1,114B,1,EGR V,,1,
+210,FUEL TEMPERATURE A/D,,N0 + 40,C,1,114C,7,FUEL C,,1,
+211,ALTERNATOR F-TERMINAL A/D,,N0 * 2.56,%,1,114D,7,ALT,,1,
+212,Generator PWM,,N0 / 2.55,%,1,114D,1,Generator PWM,,1,
+213,FUEL TANK VACUUM PRESSURE A/D,,N0 * 255 / 5,Volts,1,114E,7,FUEL TANK V,,1,
+214,Fuel Tank Pressure Volt,,N0 / 51,V,1,114E,1,FT V,,1,
+215,HVAC Temp Sensor,,N0 + 40,C,1,114F,7,HVAC C,,1,
+216,FUEL PUMP VOLTAGE FEEDBACK A/D,,N0,Volts,1,1150,7,,,1,
+217,TP Angle % ?,,N0 / 2.55,%,1,1151,1,TP %,,1,
+218,EGR %,,N0 / 2.55,%,1,1152,1,EGR %,,1,
+219,Evap %,,N0 / 2.55,%,1,1170,1,Evap %,,5,
+220,EGR Duty Cycle,,N0 / 2.55,%,1,1171,1,EGR %,,1,
+221,IAC Position,,N0,,1,1172,1,IAC Position,,5,
+222,Boost Solenoid Command,,N0 / 2.55,%,1,1174,1,Boost %,,1,
+223,Traction Control %,,N0 / 2.55,%,1,1175,1,Traction %,,5,%TractionControlPercent%
+224,Engine Load ?,,N0 / 2.55,%,1,1188,1,Engine Load %,,1,
+225,Fuel Trim Cell,,N0,,1,1190,1,FT Cell,,1,%FuelTrimCell%
+226,ESC Noise Channel,,N0 / 51,Volts,1,1191,1,ESC Noise,,1,
+227,Desired Idle Speed,,N0 * 12.5,RPM,1,1192,1,Desired Idle,,1,
+228,Desired EGR %,,N0 / 2.55,%,1,119B,1,Desired EGR %,,1,
+229,Air Fuel Ratio (Commanded),,N0 / 10,:1,1,119E,1,A/F,,1,%AFRCommanded%
+230,Engine Oil %,,N0 / 2.55,%,1,119F,1,Engine Oil %,,1,
+231,ESC Active Counter,,N0,Counts,1,11A0,1,ESC Counter,,1,
+232,Knock Retard,,22.5 * N0 / 256,Degrees,1,11A6,1,KR,,1,%SparkKnockRetard%
+233,HO2 B1S1 Xcounts,,N0,,1,11AF,1,HO2 B1S1 X,,1,
+234,EGR Closed Valve Pintle Position,,N0 / 51,V,1,11BB,1,EGR Pintle V,,1,
+235,EGR Flow Test Count,,N0,,1,11BD,1,EGR Flow Count,,1,
+236,EGR Position Error,,(N0 - 128) / 1.28,V,1,11C1,1,EGR Error V,,1,
+237,O2 Heater Time to Activity Sensor 1,,N0,Seconds,1,11CA,1,O2 S1 Heater,,1,
+238,O2 Heater Time to Activity Sensor 2,,N0,Seconds,1,11CB,1,O2 S2 Heater,,1,
+239,Misfire Cyl. 5 Current,,N0,Count,1,11EA,1,Misfire Cyl. 5 Current,,1,
+240,Misfire Cyl. 6 Current,,N0,Count,1,11EB,1,Misfire Cyl. 6 Current,,1
+241,Total Misfires,,N0,Count,1,1200,1,Total Misfires,,1
+242,Misfire Cyl. 2 Current,,N0,Count,1,1205,1,Misfire Cyl. 2 Current,,1
+243,Misfire Cyl. 1 Current,,N0,Count,1,1206,1,Misfire Cyl. 1 Current,,1
+244,Misfire Cyl. 3 Current,,N0,Count,1,1207,1,Misfire Cyl. 3 Current,,1
+245,Misfire Cyl. 4 Current,,N0,Count,1,1208,1,Misfire Cyl. 4 Current,,1
+246,Barometer V,,5 * (0.005 * N0 - 0.04),V,1,1251,1,Baro V,,1
+247,Barometer kPa,,N0,kPa,1,1251,1,Baro kPa,,1
+248,EVAP Fault History,,((N0 >> 0) & 7),,1,12AB,1,EVAP Fault,,5
+249,TC Release Pressure ?,,N0  & 1,,1,1922,1,TCC Release Pressure ?,,2
+250,TC Release Pressure,,(N0 >> 7) & 1,,1,1922,1,TCC Release Pressure,,2
+251,Adaptable Shift,,N0 & 1,,1,1925,1,Adaptive Shift,,2
+252,Transmission Fluid Temp,,N0 - 40,C,1,1940,1,Trans Temp,,2
+253,TCC Duty Cycle,,N0 / 2.55,%,1,1970,1,TCC %,,2
+254,PC Solenoid Duty Cycle,,N0 / 2.55,%,1,1972,1,PC %,,2
+255,Last Shift Time,,N0 / 40,Seconds,1,1992,1,Shift Time,,2
+256,1-2 Shift Time,,N0 / 40,Seconds,1,1993,1,1-2 Time,,2,
+257,2-3 Shift Time,,N0 / 40,Seconds,1,1994,1,2-3 Time,,2,
+258,3-4 Shift Time,,N0 / 40,Seconds,1,1995,1,3-4 Time,,2,
+259,1-2 Shift Error,,N0 / 40,Seconds,1,1997,1,1-2 Error,,2,
+260,2-3 Shift Error,,N0 / 40,Seconds,1,1998,1,2-3 Error,,2,
+261,3-4 Shift Error,,N0 / 40,Seconds,1,1999,1,3-4 Error,,2,
+262,Current Gear,,N0,,1,199A,1,Gear,,2,%CurrentGear%
+263,Current TAP Cell,,N0,,1,199B,1,Tap Cell,,2,
+264,Current TAP Memory,,(N0 - 128) / 8,,1,199C,1,Tap Memory,,2,
+265,PC Solenoid Actual Current,,N0 * 0.0195,Amps,1,199E,1,PC Sol Amp,,2,
+266,PC Solenoid Reference Current,,N0 * 0.0195,Amps,1,199F,1,PC Sol Ref Amp,,2,
+267,Gear Ratio,,N0 * 0.01563,:1,1,19A1,1,Gear Ratio,,2,
+268,Transmission Temp Sensor Volts,,N0 / 51,Volts,1,19AD,1,TFT V,,2,
+269,AD3,,N0 / 51,Volts,0,FFFD,7,ADC Input 3,,0,%AD3%
+270,AD2,,N0 / 51,Volts,0,FFFE,7,ADC Input 2,,0,%AD2%
+271,AD1,,N0 / 51,Volts,0,FFFF,7,ADC Input 1,,0,%AD1%
+272,Air Fuel Ratio (Wideband),,%AD1 * 2 + 10,:1,0,FPID,1,,,0,%AFRWideband%
+273,Airflow mg/cyl,,(%MAFGmPerSec * 1000) / ((((%RPM / 60) / 2) * 6) + 0.000001),mg/cyl,0,FPID,1,MPC,,0,%MgPerCyl%

@@ -336,6 +336,7 @@ object MainForm: TMainForm
         Align = alClient
         Caption = 'Notice'
         Layout = tlCenter
+        ShowAccelChar = False
         OnClick = lblNoticeClick
       end
     end
