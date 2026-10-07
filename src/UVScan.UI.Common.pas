@@ -12,7 +12,7 @@ interface
 
 uses
   System.SysUtils, System.Classes, System.UITypes, System.Types,
-  FMX.Types, FMX.Controls, FMX.Forms, FMX.Graphics, FMX.ListBox, FMX.StdCtrls, FMX.Menus;
+  FMX.Types, FMX.Controls, FMX.Forms, FMX.Graphics, FMX.ListBox, FMX.StdCtrls, FMX.Menus, FMX.Objects;
 
 type
   TNamedColor = record
@@ -93,6 +93,14 @@ procedure ShowActionMenu(Form: TCustomForm; const Items: TArray<TActionItem>; co
 { ShowActionMenu with the visible items of a TPopupMenu. }
 procedure ShowMenuAsActions(Form: TCustomForm; Menu: TPopupMenu; const At: TPointF);
 
+const
+  IconBack = 'M15 4 L7 12 L15 20';
+  IconChevron = 'M9 5 L16 12 L9 19';
+
+{ A line icon (24 x 24 path data, e.g. IconBack) centred on Button, drawn in
+  the theme's text colour. }
+function AddLineIcon(Button: TControl; const PathData: string; Size: Single = 22): TPath;
+
 { Widens a button, check box or label so its text fits in the active style's
   font (styles differ: Win10Modern's text is bigger than the default's). }
 procedure FitTextWidth(C: TControl; MinWidth: Single = 0);
@@ -116,7 +124,7 @@ implementation
 
 uses
   System.Math, FMX.DialogService, FMX.Dialogs, FMX.Platform, FMX.TextLayout, FMX.Controls.Presentation,
-  FMX.Objects, FMX.Effects, UVScan.UI.Theme
+  FMX.Effects, UVScan.UI.Theme
   {$IFDEF ANDROID}, Androidapi.Helpers, Androidapi.JNI.App, Androidapi.JNI.GraphicsContentViewText,
   FMX.Helpers.Android{$ENDIF};
 
@@ -352,6 +360,24 @@ begin
     Items := Items + [It];
   end;
   ShowActionMenu(Form, Items, At);
+end;
+
+function AddLineIcon(Button: TControl; const PathData: string; Size: Single): TPath;
+begin
+  Result := TPath.Create(Button);
+  Result.Parent := Button;
+  Result.Stored := False;
+  Result.Align := TAlignLayout.Center;
+  Result.Width := Size;
+  Result.Height := Size;
+  Result.HitTest := False;
+  Result.WrapMode := TPathWrapMode.Fit;
+  Result.Data.Data := PathData;
+  Result.Fill.Kind := TBrushKind.None;
+  Result.Stroke.Color := Palette.Text;
+  Result.Stroke.Thickness := 2.2;
+  Result.Stroke.Cap := TStrokeCap.Round;
+  Result.Stroke.Join := TStrokeJoin.Round;
 end;
 
 procedure FitTextWidth(C: TControl; MinWidth: Single);

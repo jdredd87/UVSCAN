@@ -2,214 +2,355 @@ object GaugeEditorForm: TGaugeEditorForm
   Left = 0
   Top = 0
   Caption = 'Gauge'
-  ClientHeight = 430
-  ClientWidth = 660
+  ClientHeight = 720
+  ClientWidth = 440
   Position = OwnerFormCenter
   FormFactor.Width = 320
   FormFactor.Height = 480
   FormFactor.Devices = [Desktop]
-  DesignerMasterStyle = 0
   OnCreate = FormCreate
   OnResize = FormResize
-  object lytButtons: TLayout
-    Align = Bottom
-    Size.Width = 660
-    Size.Height = 50
+  DesignerMasterStyle = 0
+  object pnlBar: TRectangle
+    Align = Top
+    Sides = [Bottom]
+    Size.Width = 440.000000000000000000
+    Size.Height = 52.000000000000000000
     Size.PlatformDefault = False
-    Padding.Left = 12
-    Padding.Top = 10
-    Padding.Right = 12
-    Padding.Bottom = 12
-    object btnCancel: TButton
-      Align = Right
-      Position.X = 560
-      Position.Y = 10
-      Size.Width = 85
-      Size.Height = 26
+    object btnCancel: TSpeedButton
+      Hint = 'Cancel'
+      Align = Left
+      Size.Width = 48.000000000000000000
+      Size.Height = 52.000000000000000000
       Size.PlatformDefault = False
-      Text = 'Cancel'
-      Cancel = True
-      ModalResult = 2
+      ShowHint = True
+      OnClick = btnCancelClick
+    end
+    object lblTitle: TLabel
+      Align = Client
+      StyledSettings = [Family, FontColor]
+      Margins.Left = 6.000000000000000000
+      Position.X = 54.000000000000000000
+      Size.Width = 280.000000000000000000
+      Size.Height = 52.000000000000000000
+      Size.PlatformDefault = False
+      TextSettings.Font.Size = 19.000000000000000000
+      TextSettings.WordWrap = False
+      TextSettings.Trimming = Character
+      Text = 'Add gauge'
     end
     object btnOK: TButton
       Align = Right
-      Position.X = 470
-      Position.Y = 10
-      Size.Width = 85
-      Size.Height = 26
+      Margins.Top = 8.000000000000000000
+      Margins.Right = 8.000000000000000000
+      Margins.Bottom = 8.000000000000000000
+      Position.X = 336.000000000000000000
+      Size.Width = 96.000000000000000000
+      Size.Height = 36.000000000000000000
       Size.PlatformDefault = False
-      Margins.Right = 8
-      Text = 'OK'
-      Default = True
+      TabOrder = 0
+      Text = 'Save'
       OnClick = btnOKClick
     end
   end
-  object lytLeft: TLayout
-    Align = Left
-    Size.Width = 300
-    Size.Height = 360
+  object sbBody: TVertScrollBox
+    Align = Client
+    Size.Width = 440.000000000000000000
+    Size.Height = 728.000000000000000000
     Size.PlatformDefault = False
-    Margins.Left = 12
-    Margins.Top = 12
-    Margins.Right = 12
-    object rowPid: TLayout
+    TabOrder = 1
+    object pnlPreview: TRectangle
       Align = Top
-      Size.Width = 600
-      Size.Height = 32
+      Margins.Left = 8.000000000000000000
+      Margins.Top = 8.000000000000000000
+      Margins.Right = 8.000000000000000000
+      Position.Y = 0.000000000000000000
+      Size.Width = 404.000000000000000000
+      Size.Height = 270.000000000000000000
       Size.PlatformDefault = False
-      object lblPid: TLabel
+      Stroke.Kind = None
+      XRadius = 8.000000000000000000
+      YRadius = 8.000000000000000000
+    end
+    object rowPreview: TLayout
+      Align = Top
+      Margins.Left = 8.000000000000000000
+      Margins.Top = 4.000000000000000000
+      Margins.Right = 8.000000000000000000
+      Position.Y = 280.000000000000000000
+      Size.Width = 404.000000000000000000
+      Size.Height = 40.000000000000000000
+      Size.PlatformDefault = False
+      TabOrder = 0
+      object lblPreview: TLabel
         Align = Left
-        Size.Width = 40
-        Size.Height = 32
+        Margins.Left = 4.000000000000000000
+        Size.Width = 100.000000000000000000
+        Size.Height = 40.000000000000000000
         Size.PlatformDefault = False
-        Text = 'PID'
+        Text = 'Try a value'
       end
-      object cbPid: TComboBox
+      object tbPreview: TTrackBar
+        CanParentFocus = True
         Align = Client
-        Size.Width = 120
-        Size.Height = 24
+        Orientation = Horizontal
+        Size.Width = 300.000000000000000000
+        Size.Height = 40.000000000000000000
         Size.PlatformDefault = False
-        Margins.Top = 4
-        Margins.Bottom = 4
-        OnChange = cbPidChange
+        TabOrder = 0
+        Value = 50.000000000000000000
+        OnChange = SettingChange
       end
     end
-    object gbStyle: TGroupBox
+    object lblPidCap: TLabel
       Align = Top
-      Size.Width = 300
-      Size.Height = 60
+      Margins.Left = 12.000000000000000000
+      Margins.Top = 10.000000000000000000
+      Margins.Right = 12.000000000000000000
+      Position.Y = 324.000000000000000000
+      Size.Width = 404.000000000000000000
+      Size.Height = 28.000000000000000000
       Size.PlatformDefault = False
-      Margins.Top = 8
-      Padding.Left = 10
-      Padding.Top = 26
-      Padding.Right = 10
-      Padding.Bottom = 6
+      Text = 'PID'
+    end
+    object pnlPid: TRectangle
+      Align = Top
+      Margins.Left = 8.000000000000000000
+      Margins.Top = 4.000000000000000000
+      Margins.Right = 8.000000000000000000
+      Position.Y = 362.000000000000000000
+      Size.Width = 404.000000000000000000
+      Size.Height = 56.000000000000000000
+      Size.PlatformDefault = False
+      HitTest = True
+      XRadius = 8.000000000000000000
+      YRadius = 8.000000000000000000
+      Cursor = crHandPoint
+      OnClick = pnlPidClick
+      object lblPidName: TLabel
+        Align = Client
+        HitTest = False
+        Margins.Left = 12.000000000000000000
+        Margins.Right = 4.000000000000000000
+        Size.Width = 340.000000000000000000
+        Size.Height = 56.000000000000000000
+        Size.PlatformDefault = False
+        TextSettings.WordWrap = True
+        Text = 'Choose a PID'
+      end
+    end
+    object lblStyleCap: TLabel
+      Align = Top
+      Margins.Left = 12.000000000000000000
+      Margins.Top = 10.000000000000000000
+      Margins.Right = 12.000000000000000000
+      Position.Y = 422.000000000000000000
+      Size.Width = 404.000000000000000000
+      Size.Height = 28.000000000000000000
+      Size.PlatformDefault = False
       Text = 'Style'
     end
-    object gbSize: TGroupBox
+    object lyStyle: TLayout
       Align = Top
-      Size.Width = 300
-      Size.Height = 60
+      Margins.Left = 8.000000000000000000
+      Margins.Top = 4.000000000000000000
+      Margins.Right = 8.000000000000000000
+      Position.Y = 460.000000000000000000
+      Size.Width = 404.000000000000000000
+      Size.Height = 48.000000000000000000
       Size.PlatformDefault = False
-      Margins.Top = 8
-      Padding.Left = 10
-      Padding.Top = 26
-      Padding.Right = 10
-      Padding.Bottom = 6
+      TabOrder = 1
+    end
+    object lblSizeCap: TLabel
+      Align = Top
+      Margins.Left = 12.000000000000000000
+      Margins.Top = 10.000000000000000000
+      Margins.Right = 12.000000000000000000
+      Position.Y = 512.000000000000000000
+      Size.Width = 404.000000000000000000
+      Size.Height = 28.000000000000000000
+      Size.PlatformDefault = False
       Text = 'Size'
+    end
+    object lySize: TLayout
+      Align = Top
+      Margins.Left = 8.000000000000000000
+      Margins.Top = 4.000000000000000000
+      Margins.Right = 8.000000000000000000
+      Position.Y = 550.000000000000000000
+      Size.Width = 404.000000000000000000
+      Size.Height = 48.000000000000000000
+      Size.PlatformDefault = False
+      TabOrder = 2
+    end
+    object lblScaleCap: TLabel
+      Align = Top
+      Margins.Left = 12.000000000000000000
+      Margins.Top = 10.000000000000000000
+      Margins.Right = 12.000000000000000000
+      Position.Y = 602.000000000000000000
+      Size.Width = 404.000000000000000000
+      Size.Height = 28.000000000000000000
+      Size.PlatformDefault = False
+      Text = 'Scale'
     end
     object rowScale: TLayout
       Align = Top
-      Size.Width = 300
-      Size.Height = 32
+      Margins.Left = 8.000000000000000000
+      Margins.Top = 4.000000000000000000
+      Margins.Right = 8.000000000000000000
+      Position.Y = 640.000000000000000000
+      Size.Width = 404.000000000000000000
+      Size.Height = 44.000000000000000000
       Size.PlatformDefault = False
-      Margins.Top = 8
-      object lblScale: TLabel
+      TabOrder = 3
+      object lblFrom: TLabel
         Align = Left
-        Size.Width = 66
-        Size.Height = 32
+        Margins.Left = 4.000000000000000000
+        Size.Width = 54.000000000000000000
+        Size.Height = 44.000000000000000000
         Size.PlatformDefault = False
-        Text = 'Scale from'
+        Text = 'From'
       end
       object edtMin: TEdit
+        Touch.InteractiveGestures = [LongTap, DoubleTap]
         Align = Left
-        Size.Width = 64
-        Size.Height = 24
+        Margins.Top = 4.000000000000000000
+        Margins.Bottom = 4.000000000000000000
+        TabOrder = 0
+        KeyboardType = NumbersAndPunctuation
+        Position.X = 58.000000000000000000
+        Size.Width = 90.000000000000000000
+        Size.Height = 36.000000000000000000
         Size.PlatformDefault = False
-        Margins.Top = 4
-        Margins.Bottom = 4
         OnChangeTracking = SettingChange
       end
       object lblTo: TLabel
         Align = Left
-        Size.Width = 24
-        Size.Height = 32
+        Margins.Left = 8.000000000000000000
+        Position.X = 156.000000000000000000
+        Size.Width = 28.000000000000000000
+        Size.Height = 44.000000000000000000
         Size.PlatformDefault = False
         Text = 'to'
-        TextSettings.HorzAlign = Center
       end
       object edtMax: TEdit
+        Touch.InteractiveGestures = [LongTap, DoubleTap]
         Align = Left
-        Size.Width = 64
-        Size.Height = 24
+        Margins.Top = 4.000000000000000000
+        Margins.Bottom = 4.000000000000000000
+        TabOrder = 1
+        KeyboardType = NumbersAndPunctuation
+        Position.X = 192.000000000000000000
+        Size.Width = 90.000000000000000000
+        Size.Height = 36.000000000000000000
         Size.PlatformDefault = False
-        Margins.Top = 4
-        Margins.Bottom = 4
         OnChangeTracking = SettingChange
       end
       object btnSuggest: TButton
+        Hint = 'A scale that fits the PID'
         Align = Right
-        Size.Width = 56
-        Size.Height = 26
+        Margins.Top = 4.000000000000000000
+        Margins.Bottom = 4.000000000000000000
+        Position.X = 320.000000000000000000
+        Size.Width = 84.000000000000000000
+        Size.Height = 36.000000000000000000
         Size.PlatformDefault = False
-        Margins.Left = 6
-        Margins.Top = 3
-        Margins.Bottom = 3
+        TabOrder = 2
         Text = 'Auto'
-        Hint = 'Suggest a scale for this PID'
         ShowHint = True
         OnClick = btnSuggestClick
       end
     end
-    object lblHelp: TLabel
+    object lblAlertCap: TLabel
       Align = Top
-      Size.Width = 300
-      Size.Height = 90
+      Margins.Left = 12.000000000000000000
+      Margins.Top = 10.000000000000000000
+      Margins.Right = 12.000000000000000000
+      Position.Y = 688.000000000000000000
+      Size.Width = 404.000000000000000000
+      Size.Height = 28.000000000000000000
       Size.PlatformDefault = False
-      Margins.Top = 8
+      Text = 'Alert levels'
+    end
+    object lblAlerts: TLabel
+      Align = Top
+      Margins.Left = 12.000000000000000000
+      Margins.Top = 2.000000000000000000
+      Margins.Right = 12.000000000000000000
+      Position.Y = 726.000000000000000000
+      Size.Width = 404.000000000000000000
+      Size.Height = 40.000000000000000000
+      Size.PlatformDefault = False
       TextSettings.WordWrap = True
       TextSettings.VertAlign = Leading
-      Text = 
-        'The coloured bands, the card colour, flashing and sounds com' +
-        'e from the PID''s alert levels - the same ones the live grid ' +
-        'uses. Set them with Display && alerts (right-click a PID or ' +
-        'a gauge).'
+      Text = 'No alert levels'
+    end
+    object btnAlerts: TButton
+      Align = Top
+      Margins.Left = 8.000000000000000000
+      Margins.Top = 6.000000000000000000
+      Margins.Right = 8.000000000000000000
+      Margins.Bottom = 12.000000000000000000
+      Position.Y = 770.000000000000000000
+      Size.Width = 404.000000000000000000
+      Size.Height = 40.000000000000000000
+      Size.PlatformDefault = False
+      TabOrder = 4
+      Text = 'Edit alert levels...'
+      OnClick = btnAlertsClick
     end
   end
-  object lytRight: TLayout
-    Align = Client
-    Size.Width = 330
-    Size.Height = 360
+  object pnlPicker: TRectangle
+    Align = Contents
+    HitTest = True
+    Size.Width = 440.000000000000000000
+    Size.Height = 780.000000000000000000
     Size.PlatformDefault = False
-    Margins.Top = 12
-    Margins.Right = 12
-    object rowPreview: TLayout
-      Align = Bottom
-      Size.Width = 320
-      Size.Height = 32
+    Stroke.Kind = None
+    Visible = False
+    object pnlPickerBar: TRectangle
+      Align = Top
+      Sides = [Bottom]
+      Size.Width = 440.000000000000000000
+      Size.Height = 52.000000000000000000
       Size.PlatformDefault = False
-      object lblPreview: TLabel
+      object btnPickerBack: TSpeedButton
+        Hint = 'Back'
         Align = Left
-        Size.Width = 90
-        Size.Height = 32
+        Size.Width = 48.000000000000000000
+        Size.Height = 52.000000000000000000
         Size.PlatformDefault = False
-        Text = 'Preview value'
+        ShowHint = True
+        OnClick = btnPickerBackClick
       end
-      object tbPreview: TTrackBar
+      object edtPidSearch: TEdit
+        Touch.InteractiveGestures = [LongTap, DoubleTap]
         Align = Client
-        Size.Width = 200
-        Size.Height = 20
+        Margins.Left = 4.000000000000000000
+        Margins.Top = 8.000000000000000000
+        Margins.Right = 8.000000000000000000
+        Margins.Bottom = 8.000000000000000000
+        TabOrder = 0
+        Size.Width = 370.000000000000000000
+        Size.Height = 36.000000000000000000
         Size.PlatformDefault = False
-        Margins.Top = 6
-        Margins.Bottom = 6
-        Max = 100
-        OnChange = SettingChange
+        TextPrompt = 'Search PIDs...'
+        OnChangeTracking = edtPidSearchChange
       end
     end
-    object pnlPreview: TRectangle
+    object lyPickerList: TLayout
       Align = Client
-      Size.Width = 320
-      Size.Height = 320
+      Size.Width = 440.000000000000000000
+      Size.Height = 728.000000000000000000
       Size.PlatformDefault = False
-      Fill.Color = claWhite
-      Stroke.Color = xFFD8D8D8
-      OnResize = SettingChange
+      TabOrder = 1
     end
   end
   object tmrFlash: TTimer
     Interval = 500
     OnTimer = tmrFlashTimer
-    Left = 24
-    Top = 380
+    Left = 380
+    Top = 700
   end
 end

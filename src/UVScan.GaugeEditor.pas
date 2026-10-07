@@ -1,65 +1,105 @@
 unit UVScan.GaugeEditor;
 
-{ Add or edit one dashboard gauge: which PID, dial / bar / big number, size
-  and scale, with a live preview that uses the PID's alert levels. }
+{ Add or edit one dashboard gauge, as a page (full screen on a phone): a live
+  preview, the PID (picked from a searchable list), dial / bar / big number,
+  size, scale, and the PID's alert levels - the same levels the live grid
+  uses, edited with the Display & alerts editor. }
 
 interface
 
 uses
   System.SysUtils, System.Classes, System.Types, System.UITypes, System.Math,
-  FMX.Types, FMX.Controls, FMX.Forms, FMX.Graphics, FMX.StdCtrls, FMX.Edit, FMX.ListBox,
+  FMX.Types, FMX.Controls, FMX.Forms, FMX.Graphics, FMX.StdCtrls, FMX.Edit,
   FMX.Layouts, FMX.Objects, FMX.Controls.Presentation,
-  UVScan.Pids, UVScan.Display, UVScan.Gauge;
+  UVScan.Pids, UVScan.Display, UVScan.Gauge, UVScan.UI.DataGrid;
 
 type
   TGaugeEditorForm = class(TForm)
-    lytButtons: TLayout;
-    btnCancel: TButton;
+    pnlBar: TRectangle;
+    btnCancel: TSpeedButton;
+    lblTitle: TLabel;
     btnOK: TButton;
-    lytLeft: TLayout;
-    rowPid: TLayout;
-    lblPid: TLabel;
-    cbPid: TComboBox;
-    gbStyle: TGroupBox;
-    gbSize: TGroupBox;
+    sbBody: TVertScrollBox;
+    pnlPreview: TRectangle;
+    rowPreview: TLayout;
+    lblPreview: TLabel;
+    tbPreview: TTrackBar;
+    lblPidCap: TLabel;
+    pnlPid: TRectangle;
+    lblPidName: TLabel;
+    lblStyleCap: TLabel;
+    lyStyle: TLayout;
+    lblSizeCap: TLabel;
+    lySize: TLayout;
+    lblScaleCap: TLabel;
     rowScale: TLayout;
-    lblScale: TLabel;
+    lblFrom: TLabel;
     edtMin: TEdit;
     lblTo: TLabel;
     edtMax: TEdit;
     btnSuggest: TButton;
-    lblHelp: TLabel;
-    lytRight: TLayout;
-    rowPreview: TLayout;
-    lblPreview: TLabel;
-    tbPreview: TTrackBar;
-    pnlPreview: TRectangle;
+    lblAlertCap: TLabel;
+    lblAlerts: TLabel;
+    btnAlerts: TButton;
+    pnlPicker: TRectangle;
+    pnlPickerBar: TRectangle;
+    btnPickerBack: TSpeedButton;
+    edtPidSearch: TEdit;
+    lyPickerList: TLayout;
     tmrFlash: TTimer;
     procedure FormCreate(Sender: TObject);
     procedure FormResize(Sender: TObject);
-    procedure cbPidChange(Sender: TObject);
-    procedure SettingChange(Sender: TObject);
-    procedure btnSuggestClick(Sender: TObject);
+    procedure btnCancelClick(Sender: TObject);
     procedure btnOKClick(Sender: TObject);
+    procedure SettingChange(Sender: TObject);
+    procedure pnlPidClick(Sender: TObject);
+    procedure btnSuggestClick(Sender: TObject);
+    procedure btnAlertsClick(Sender: TObject);
+    procedure btnPickerBackClick(Sender: TObject);
+    procedure edtPidSearchChange(Sender: TObject);
     procedure tmrFlashTimer(Sender: TObject);
   private
     FCatalog: TPidCatalog;
     FSettings: TDisplaySettings;
     FGaugeView: TGaugeView;
-    FIds: TArray<Integer>;
+    FPidId: Integer;
+    FStyle: TGaugeStyle;
+    FSize: TGaugeSize;
     FLoading: Boolean;
     FFlashOn: Boolean;
-    FStyleButtons: TArray<TRadioButton>;
-    FSizeButtons: TArray<TRadioButton>;
+    FStyleChips: TArray<TRectangle>;
+    FSizeChips: TArray<TRectangle>;
+    FPickGrid: TDataGrid;
+    FPickRows: TArray<Integer>;      // PID id, or -(category + 1) for a group row
+    FOnAlertsChanged: TProc;
     function SelectedPid: TPidDef;
     function ReadGauge(out G: TGauge): Boolean;
     procedure UpdatePreview;
-    function AddRadios(Box: TGroupBox; const Captions: array of string; const Group: string): TArray<TRadioButton>;
+    procedure UpdatePid;
+    procedure UpdateAlerts;
+    procedure UpdateChips;
+    procedure FitLayout;
+    procedure ApplyPalette;
+    function AddChips(Parent: TLayout; const Captions: array of string; OnClick: TNotifyEvent): TArray<TRectangle>;
+    procedure LayoutChips(const Chips: TArray<TRectangle>; Parent: TLayout);
+    procedure StyleChipClick(Sender: TObject);
+    procedure SizeChipClick(Sender: TObject);
+    procedure SuggestForPid;
+    // PID picker
+    procedure ShowPicker(Show: Boolean);
+    procedure FillPicker;
+    procedure PickGetText(Sender: TObject; Col, Row: Integer; var Text: string);
+    procedure PickIsGroup(Sender: TObject; Row: Integer; var IsGroup: Boolean);
+    procedure PickSelect(Sender: TObject);
+    procedure FormKeyUp(Sender: TObject; var Key: Word; var KeyChar: WideChar; Shift: TShiftState);
   public
     { G = gauge to edit (or the PID to start from). OnDone (may be nil) runs
-      when the dialog closes: True and the edited gauge on OK. }
+      when the page closes: True and the edited gauge on Save. OnAlertsChanged
+      (may be nil) runs as soon as the PID's alert levels are changed - they
+      are shared with the live grid, so they count even if the gauge is not
+      saved. }
     class procedure Execute(const G: TGauge; Catalog: TPidCatalog; Settings: TDisplaySettings;
-      const Caption: string; const OnDone: TProc<Boolean, TGauge>);
+      const Caption: string; const OnDone: TProc<Boolean, TGauge>; const OnAlertsChanged: TProc = nil);
   end;
 
 { A starting scale for a PID: from its formula's output range (raw 00 / FF),
@@ -76,26 +116,12 @@ implementation
 {$R *.fmx}
 
 uses
-  System.StrUtils, UVScan.UI.Common;
+  System.StrUtils, UVScan.UI.Common, UVScan.UI.Theme, UVScan.DisplayEditor;
 
 const
-  NarrowWidth = 560;
-
-function RadioIndex(const Buttons: TArray<TRadioButton>): Integer;
-begin
-  for Result := 0 to High(Buttons) do
-    if Buttons[Result].IsChecked then
-      Exit;
-  Result := 0;
-end;
-
-procedure SetRadioIndex(const Buttons: TArray<TRadioButton>; Index: Integer);
-var
-  I: Integer;
-begin
-  for I := 0 to High(Buttons) do
-    Buttons[I].IsChecked := I = Index;
-end;
+  StyleChipCaptions: array[TGaugeStyle] of string = ('Dial', 'Bar', 'Number');
+  SizeChipCaptions: array[TGaugeSize] of string = ('Small', 'Medium', 'Large');
+  ChipGap = 8;
 
 procedure SuggestScale(P: TPidDef; Settings: TDisplaySettings; out MinValue, MaxValue: Double);
 var
@@ -184,31 +210,26 @@ end;
 { TGaugeEditorForm }
 
 class procedure TGaugeEditorForm.Execute(const G: TGauge; Catalog: TPidCatalog; Settings: TDisplaySettings;
-  const Caption: string; const OnDone: TProc<Boolean, TGauge>);
+  const Caption: string; const OnDone: TProc<Boolean, TGauge>; const OnAlertsChanged: TProc);
 var
   F: TGaugeEditorForm;
-  I: Integer;
 begin
   F := TGaugeEditorForm.Create(Application);
   F.Caption := Caption;
+  F.lblTitle.Text := Caption;
   F.FCatalog := Catalog;
   F.FSettings := Settings;
+  F.FOnAlertsChanged := OnAlertsChanged;
   F.FLoading := True;
-  for I := 0 to Catalog.Count - 1 do
-    if Catalog[I].Enabled or (Catalog[I].Id = G.PidId) then
-    begin
-      F.cbPid.Items.Add(Catalog[I].LongName + IfThen(Catalog[I].Units <> '', '  (' + Catalog[I].Units + ')', ''));
-      F.FIds := F.FIds + [Catalog[I].Id];
-    end;
-  F.cbPid.ItemIndex := -1;
-  for I := 0 to High(F.FIds) do
-    if F.FIds[I] = G.PidId then
-      F.cbPid.ItemIndex := I;
-  SetRadioIndex(F.FStyleButtons, Ord(G.Style));
-  SetRadioIndex(F.FSizeButtons, Ord(G.Size));
+  F.FPidId := G.PidId;
+  F.FStyle := G.Style;
+  F.FSize := G.Size;
   F.edtMin.Text := FormatFloat('0.###', G.MinValue);
   F.edtMax.Text := FormatFloat('0.###', G.MaxValue);
   F.FLoading := False;
+  F.UpdateChips;
+  F.UpdatePid;
+  F.UpdateAlerts;
   F.UpdatePreview;
   ShowDialog(F,
     procedure(R: TModalResult)
@@ -223,76 +244,199 @@ begin
     end);
 end;
 
-function TGaugeEditorForm.AddRadios(Box: TGroupBox; const Captions: array of string;
-  const Group: string): TArray<TRadioButton>;
+procedure TGaugeEditorForm.FormCreate(Sender: TObject);
+var
+  L: TLabel;
+  S: TGaugeStyle;
+  Z: TGaugeSize;
+  Caps: array of string;
+begin
+  FLoading := True;
+  OnKeyUp := FormKeyUp;
+  btnCancel.Text := '';
+  btnPickerBack.Text := '';
+  AddLineIcon(btnCancel, IconBack);
+  AddLineIcon(btnPickerBack, IconBack);
+  AddLineIcon(pnlPid, IconChevron, 18).Align := TAlignLayout.Right;
+  for L in [lblPidCap, lblStyleCap, lblSizeCap, lblScaleCap, lblAlertCap] do
+  begin
+    L.StyledSettings := L.StyledSettings - [TStyledSetting.Style];
+    L.TextSettings.Font.Style := [TFontStyle.fsBold];
+  end;
+  Caps := nil;
+  for S := Low(TGaugeStyle) to High(TGaugeStyle) do
+    Caps := Caps + [StyleChipCaptions[S]];
+  FStyleChips := AddChips(lyStyle, Caps, StyleChipClick);
+  Caps := nil;
+  for Z := Low(TGaugeSize) to High(TGaugeSize) do
+    Caps := Caps + [SizeChipCaptions[Z]];
+  FSizeChips := AddChips(lySize, Caps, SizeChipClick);
+
+  FGaugeView := TGaugeView.Create(Self);
+  FGaugeView.Parent := pnlPreview;
+  FGaugeView.HitTest := False;
+
+  FPickGrid := TDataGrid.Create(Self);
+  FPickGrid.Parent := lyPickerList;
+  FPickGrid.Align := TAlignLayout.Client;
+  FPickGrid.ShowHeader := False;
+  FPickGrid.AddColumn('PID', 200, gaLeft, True);
+  FPickGrid.AddColumn('Units', 90);
+  FPickGrid.SetColumnWrap(0, True);
+  FPickGrid.AutoHeights := True;
+  if IsMobile then
+  begin
+    FPickGrid.RowHeight := 44;
+    FPickGrid.FontSize := 15;
+  end
+  else
+    FPickGrid.RowHeight := 30;
+  FPickGrid.OnGetText := PickGetText;
+  FPickGrid.OnIsGroupRow := PickIsGroup;
+  FPickGrid.OnSelect := PickSelect;
+
+  ApplyPalette;
+  FLoading := False;
+end;
+
+procedure TGaugeEditorForm.ApplyPalette;
+var
+  P: TPalette;
+  R: TRectangle;
+begin
+  P := Palette;
+  for R in [pnlBar, pnlPickerBar] do
+  begin
+    R.Fill.Color := P.Bar;
+    R.Stroke.Color := P.BarLine;
+  end;
+  pnlPicker.Fill.Color := P.Back;
+  pnlPreview.Fill.Color := P.Panel;
+  pnlPid.Fill.Color := P.Bar;
+  pnlPid.Stroke.Color := P.BarLine;
+  lblAlerts.StyledSettings := lblAlerts.StyledSettings - [TStyledSetting.FontColor];
+  lblAlerts.TextSettings.FontColor := P.Muted;
+end;
+
+{ Chips: a row of big tap targets, one of them selected. }
+function TGaugeEditorForm.AddChips(Parent: TLayout; const Captions: array of string;
+  OnClick: TNotifyEvent): TArray<TRectangle>;
 var
   I: Integer;
-  B: TRadioButton;
+  R: TRectangle;
+  L: TLabel;
 begin
   Result := nil;
   for I := 0 to High(Captions) do
   begin
-    B := TRadioButton.Create(Self);
-    B.Parent := Box;
-    B.Position.X := I * 100; // Align = Left keeps them in this order
-    B.Align := TAlignLayout.Left;
-    B.Width := 92;
-    B.Text := Captions[I];
-    B.GroupName := Group;
-    B.OnChange := SettingChange;
-    Result := Result + [B];
+    R := TRectangle.Create(Self);
+    R.Parent := Parent;
+    R.Stored := False;
+    R.XRadius := 8;
+    R.YRadius := 8;
+    R.HitTest := True;
+    R.Cursor := crHandPoint;
+    R.Tag := I;
+    R.OnClick := OnClick;
+    L := TLabel.Create(Self);
+    L.Parent := R;
+    L.Stored := False;
+    L.Align := TAlignLayout.Client;
+    L.HitTest := False;
+    L.StyledSettings := L.StyledSettings - [TStyledSetting.FontColor, TStyledSetting.Style];
+    L.TextSettings.HorzAlign := TTextAlign.Center;
+    L.TextSettings.WordWrap := False;
+    L.Text := Captions[I];
+    Result := Result + [R];
   end;
 end;
 
-procedure TGaugeEditorForm.FormCreate(Sender: TObject);
+procedure TGaugeEditorForm.LayoutChips(const Chips: TArray<TRectangle>; Parent: TLayout);
 var
-  S: TGaugeStyle;
-  Z: TGaugeSize;
-  StyleCaps, SizeCaps: array of string;
-  Id: string;
+  I: Integer;
+  W: Single;
 begin
-  FLoading := True;
-  for S := Low(TGaugeStyle) to High(TGaugeStyle) do
-    StyleCaps := StyleCaps + [GaugeStyleCaptions[S]];
-  for Z := Low(TGaugeSize) to High(TGaugeSize) do
-    SizeCaps := SizeCaps + [GaugeSizeCaptions[Z]];
-  // Radio groups are global in FMX: give this window its own names.
-  Id := IntToHex(NativeInt(Self), SizeOf(Pointer) * 2);
-  FStyleButtons := AddRadios(gbStyle, StyleCaps, 'GaugeStyle' + Id);
-  FSizeButtons := AddRadios(gbSize, SizeCaps, 'GaugeSize' + Id);
-  SetRadioIndex(FStyleButtons, 0);
-  SetRadioIndex(FSizeButtons, 1);
-  lblHelp.StyledSettings := lblHelp.StyledSettings - [TStyledSetting.FontColor];
-  lblHelp.TextSettings.FontColor := $FF707070;
-  FGaugeView := TGaugeView.Create(Self);
-  FGaugeView.Parent := pnlPreview;
-  FGaugeView.HitTest := False;
-  tbPreview.Value := 50;
-  FLoading := False;
+  if (Length(Chips) = 0) or (Parent.Width < 20) then
+    Exit;
+  W := (Parent.Width - ChipGap * (Length(Chips) - 1)) / Length(Chips);
+  for I := 0 to High(Chips) do
+    Chips[I].SetBounds(I * (W + ChipGap), 0, W, Parent.Height);
+end;
+
+procedure TGaugeEditorForm.UpdateChips;
+
+  procedure Paint(const Chips: TArray<TRectangle>; Selected: Integer);
+  var
+    I: Integer;
+    P: TPalette;
+    L: TLabel;
+  begin
+    P := Palette;
+    for I := 0 to High(Chips) do
+    begin
+      L := TLabel(Chips[I].Controls[0]);
+      if I = Selected then
+      begin
+        Chips[I].Fill.Color := P.Accent;
+        Chips[I].Stroke.Color := P.Accent;
+        L.TextSettings.FontColor := ContrastColor(P.Accent);
+        L.TextSettings.Font.Style := [TFontStyle.fsBold];
+      end
+      else
+      begin
+        Chips[I].Fill.Color := P.Bar;
+        Chips[I].Stroke.Color := P.BarLine;
+        L.TextSettings.FontColor := P.Text;
+        L.TextSettings.Font.Style := [];
+      end;
+    end;
+  end;
+
+begin
+  Paint(FStyleChips, Ord(FStyle));
+  Paint(FSizeChips, Ord(FSize));
+end;
+
+procedure TGaugeEditorForm.StyleChipClick(Sender: TObject);
+begin
+  FStyle := TGaugeStyle(TControl(Sender).Tag);
+  UpdateChips;
+  UpdatePreview;
+end;
+
+procedure TGaugeEditorForm.SizeChipClick(Sender: TObject);
+begin
+  FSize := TGaugeSize(TControl(Sender).Tag);
+  UpdateChips;
+  UpdatePreview;
 end;
 
 procedure TGaugeEditorForm.FormResize(Sender: TObject);
 begin
-  if ClientWidth < NarrowWidth then
-  begin
-    lytLeft.Align := TAlignLayout.Top;
-    lytLeft.Height := 340;
-    lytLeft.Margins.Right := 0;
-  end
-  else
-  begin
-    lytLeft.Align := TAlignLayout.Left;
-    lytLeft.Width := 300;
-    lytLeft.Margins.Right := 12;
-  end;
-  if FGaugeView <> nil then
-    UpdatePreview;
+  FitLayout;
+end;
+
+{ Sizes that depend on the width: chips, the wrapped PID name and alert
+  summary, and the preview (as tall as a medium gauge, or less on a small
+  window). }
+procedure TGaugeEditorForm.FitLayout;
+begin
+  if FGaugeView = nil then
+    Exit;
+  LayoutChips(FStyleChips, lyStyle);
+  LayoutChips(FSizeChips, lySize);
+  if pnlPid.Width > 50 then
+    pnlPid.Height := Max(52, WrappedTextHeight(lblPidName, pnlPid.Width - 50) + 20);
+  if lblAlerts.Width > 50 then
+    lblAlerts.Height := WrappedTextHeight(lblAlerts, lblAlerts.Width) + 4;
+  pnlPreview.Height := EnsureRange(ClientHeight * 0.36, 180, 300);
+  UpdatePreview;
 end;
 
 function TGaugeEditorForm.SelectedPid: TPidDef;
 begin
-  if (FCatalog <> nil) and (cbPid.ItemIndex >= 0) and (cbPid.ItemIndex <= High(FIds)) then
-    Result := FCatalog.FindById(FIds[cbPid.ItemIndex])
+  if FCatalog <> nil then
+    Result := FCatalog.FindById(FPidId)
   else
     Result := nil;
 end;
@@ -307,16 +451,61 @@ begin
     (G.MaxValue > G.MinValue);
   if P <> nil then
     G.PidId := P.Id;
-  G.Style := TGaugeStyle(RadioIndex(FStyleButtons));
-  G.Size := TGaugeSize(RadioIndex(FSizeButtons));
+  G.Style := FStyle;
+  G.Size := FSize;
 end;
 
-procedure TGaugeEditorForm.cbPidChange(Sender: TObject);
+procedure TGaugeEditorForm.UpdatePid;
+var
+  P: TPidDef;
+begin
+  P := SelectedPid;
+  if P = nil then
+    lblPidName.Text := 'Choose a PID'
+  else
+    lblPidName.Text := P.LongName + IfThen(P.Units <> '', '   (' + P.Units + ')', '');
+  FitLayout;
+end;
+
+procedure TGaugeEditorForm.UpdateAlerts;
+var
+  P: TPidDef;
+  D: TPidDisplay;
+  L: TDisplayLevel;
+  S, Line: string;
+begin
+  P := SelectedPid;
+  if P = nil then
+    D := nil
+  else
+    D := FSettings.Find(P.Id);
+  if (D = nil) or (Length(D.Levels) = 0) then
+    S := 'None. Alert levels colour the gauge''s scale and card and can flash or sound when a value goes ' +
+      'too high or too low.'
+  else
+  begin
+    S := '';
+    for L in D.Levels do
+    begin
+      Line := L.Name + '   ' + L.Describe;
+      if L.RowColor <> NoColor then
+        Line := Line + '  ' + #$00B7 + '  ' + ColorName(L.RowColor);
+      if L.Flash then
+        Line := Line + '  ' + #$00B7 + '  flashes';
+      if L.Sound <> asNone then
+        Line := Line + '  ' + #$00B7 + '  sound';
+      S := S + IfThen(S <> '', sLineBreak, '') + Line;
+    end;
+  end;
+  lblAlerts.Text := S;
+  btnAlerts.Enabled := P <> nil;
+  FitLayout;
+end;
+
+procedure TGaugeEditorForm.SuggestForPid;
 var
   A, B: Double;
 begin
-  if FLoading then
-    Exit;
   SuggestScale(SelectedPid, FSettings, A, B);
   FLoading := True;
   try
@@ -330,7 +519,7 @@ end;
 
 procedure TGaugeEditorForm.btnSuggestClick(Sender: TObject);
 begin
-  cbPidChange(nil);
+  SuggestForPid;
 end;
 
 procedure TGaugeEditorForm.SettingChange(Sender: TObject);
@@ -352,9 +541,9 @@ begin
     Exit;
   Ok := ReadGauge(G);
   if Ok or (SelectedPid = nil) then
-    C := TAlphaColors.Black
+    C := Palette.Text
   else
-    C := TAlphaColors.Red;
+    C := Palette.Bad;
   edtMin.StyledSettings := edtMin.StyledSettings - [TStyledSetting.FontColor];
   edtMax.StyledSettings := edtMax.StyledSettings - [TStyledSetting.FontColor];
   edtMin.TextSettings.FontColor := C;
@@ -367,9 +556,9 @@ begin
     Exit;
   end;
   Sz := TGaugeView.PreferredSize(G.Style, G.Size);
-  // Shrink to fit the preview area, keeping the shape.
-  AvailW := pnlPreview.Width - 8;
-  AvailH := pnlPreview.Height - 8;
+  // Fit the preview area, keeping the shape.
+  AvailW := pnlPreview.Width - 16;
+  AvailH := pnlPreview.Height - 16;
   if (AvailW > 20) and (AvailH > 20) and ((Sz.Width > AvailW) or (Sz.Height > AvailH)) then
   begin
     V := Min(AvailW / Sz.Width, AvailH / Sz.Height);
@@ -392,6 +581,25 @@ begin
     UpdatePreview;
 end;
 
+procedure TGaugeEditorForm.btnAlertsClick(Sender: TObject);
+var
+  P: TPidDef;
+begin
+  P := SelectedPid;
+  if P = nil then
+    Exit;
+  TDisplayEditorForm.Execute(P, FSettings,
+    procedure(Ok: Boolean)
+    begin
+      if not Ok then
+        Exit;
+      UpdateAlerts;
+      UpdatePreview;
+      if Assigned(FOnAlertsChanged) then
+        FOnAlertsChanged();
+    end);
+end;
+
 procedure TGaugeEditorForm.btnOKClick(Sender: TObject);
 var
   G: TGauge;
@@ -402,6 +610,146 @@ begin
     Exit;
   end;
   ModalResult := mrOk;
+end;
+
+procedure TGaugeEditorForm.btnCancelClick(Sender: TObject);
+begin
+  ModalResult := mrCancel;
+end;
+
+procedure TGaugeEditorForm.FormKeyUp(Sender: TObject; var Key: Word; var KeyChar: WideChar; Shift: TShiftState);
+begin
+  if (Key = vkHardwareBack) or (Key = vkEscape) then
+  begin
+    Key := 0;
+    if pnlPicker.Visible then
+      ShowPicker(False)
+    else
+      ModalResult := mrCancel;
+  end;
+end;
+
+{ PID picker }
+
+procedure TGaugeEditorForm.pnlPidClick(Sender: TObject);
+begin
+  ShowPicker(True);
+end;
+
+procedure TGaugeEditorForm.btnPickerBackClick(Sender: TObject);
+begin
+  ShowPicker(False);
+end;
+
+procedure TGaugeEditorForm.ShowPicker(Show: Boolean);
+var
+  I: Integer;
+begin
+  if Show then
+  begin
+    FLoading := True;
+    try
+      edtPidSearch.Text := '';
+    finally
+      FLoading := False;
+    end;
+    pnlPicker.Visible := True;
+    pnlPicker.BringToFront;
+    FillPicker;
+    for I := 0 to High(FPickRows) do
+      if FPickRows[I] = FPidId then
+        FPickGrid.ScrollIntoView(I);
+    if not IsMobile then
+      edtPidSearch.SetFocus; // a phone would pop its keyboard over the list
+  end
+  else
+    pnlPicker.Visible := False;
+end;
+
+procedure TGaugeEditorForm.FillPicker;
+var
+  Cat: TPidCategory;
+  I: Integer;
+  P: TPidDef;
+  Filter: string;
+  Added: Boolean;
+begin
+  FPickRows := nil;
+  Filter := LowerCase(Trim(edtPidSearch.Text));
+  for Cat := Low(TPidCategory) to High(TPidCategory) do
+  begin
+    Added := False;
+    for I := 0 to FCatalog.Count - 1 do
+    begin
+      P := FCatalog[I];
+      if not (P.Enabled or (P.Id = FPidId)) or (P.Category <> Cat) then
+        Continue;
+      if (Filter <> '') and (Pos(Filter, LowerCase(P.LongName + ' ' + P.ShortName + ' ' + P.PidCode + ' ' +
+        P.Units)) = 0) then
+        Continue;
+      if not Added then
+      begin
+        FPickRows := FPickRows + [-(Ord(Cat) + 1)];
+        Added := True;
+      end;
+      FPickRows := FPickRows + [P.Id];
+    end;
+  end;
+  FPickGrid.OnSelect := nil;
+  try
+    FPickGrid.RowCount := Length(FPickRows);
+    FPickGrid.ItemIndex := -1;
+    FPickGrid.AutoRowHeights;
+  finally
+    FPickGrid.OnSelect := PickSelect;
+  end;
+  FPickGrid.Refresh;
+end;
+
+procedure TGaugeEditorForm.edtPidSearchChange(Sender: TObject);
+begin
+  if not FLoading then
+    FillPicker;
+end;
+
+procedure TGaugeEditorForm.PickGetText(Sender: TObject; Col, Row: Integer; var Text: string);
+var
+  P: TPidDef;
+begin
+  if (Row < 0) or (Row > High(FPickRows)) then
+    Exit;
+  if FPickRows[Row] < 0 then
+  begin
+    if Col = 0 then
+      Text := CategoryNames[TPidCategory(-FPickRows[Row] - 1)];
+    Exit;
+  end;
+  P := FCatalog.FindById(FPickRows[Row]);
+  if P = nil then
+    Exit;
+  if Col = 0 then
+    Text := P.LongName
+  else
+    Text := P.Units;
+end;
+
+procedure TGaugeEditorForm.PickIsGroup(Sender: TObject; Row: Integer; var IsGroup: Boolean);
+begin
+  IsGroup := (Row >= 0) and (Row <= High(FPickRows)) and (FPickRows[Row] < 0);
+end;
+
+procedure TGaugeEditorForm.PickSelect(Sender: TObject);
+var
+  Row: Integer;
+begin
+  Row := FPickGrid.ItemIndex;
+  if (Row < 0) or (Row > High(FPickRows)) or (FPickRows[Row] < 0) then
+    Exit;
+  FPidId := FPickRows[Row];
+  ShowPicker(False);
+  SuggestForPid;
+  UpdatePid;
+  UpdateAlerts;
 end;
 
 end.

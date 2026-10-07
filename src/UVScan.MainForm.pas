@@ -306,6 +306,9 @@ type
     FPidsDocked: Boolean;            // wide window: the PID list sits beside the pages
     FChromeReady: Boolean;
     FThemeSub: TMessageSubscriptionId;
+    FAddGauge: TCircle;              // the round + on the Gauges page
+    FDashEmpty: TLabel;              // shown when there are no gauges
+    FDashSpacer: TLayout;            // keeps the + clear of the last gauge
     procedure CreateGrids;
     procedure BuildChrome;
     procedure ArrangeLayout;
@@ -317,6 +320,7 @@ type
     procedure ShowPage(Page: TTabItem);
     function CurrentPage: TTabItem;
     procedure UpdateAppBar;
+    procedure PlaceAddGauge;
     procedure NavClick(Sender: TObject);
     procedure NavPaint(Sender: TObject; Canvas: TCanvas; const ARect: TRectF);
     procedure AddPageMenuItem(const Text: string; Handler: TNotifyEvent; Enabled: Boolean = True;
@@ -691,6 +695,38 @@ begin
   AddMore('Settings', 'Theme, alert sounds, log folder, stream speed', tiSettings);
   AddMore('Messages', 'Connection log and raw traffic', tiMessages);
 
+  // Gauges page: a round + to add a gauge, and a hint while there are none.
+  FAddGauge := TCircle.Create(Self);
+  FAddGauge.Parent := tiDashboard;
+  FAddGauge.Stored := False;
+  FAddGauge.SetBounds(0, 0, 56, 56);
+  FAddGauge.Stroke.Kind := TBrushKind.None;
+  FAddGauge.HitTest := True;
+  FAddGauge.Cursor := crHandPoint;
+  FAddGauge.Hint := 'Add a gauge';
+  FAddGauge.ShowHint := True;
+  FAddGauge.OnClick := btnAddGaugeClick;
+  Icon := AddIcon(FAddGauge);
+  Icon.Data.Data := 'M12 5 L12 19 M5 12 L19 12';
+  Icon.Fill.Kind := TBrushKind.None;
+  Icon.Stroke.Thickness := 2.6;
+  FDashEmpty := TLabel.Create(Self);
+  FDashEmpty.Parent := tiDashboard;
+  FDashEmpty.Stored := False;
+  FDashEmpty.Align := TAlignLayout.Center;
+  FDashEmpty.SetBounds(0, 0, 300, 120);
+  FDashEmpty.HitTest := False;
+  FDashEmpty.StyledSettings := FDashEmpty.StyledSettings - [TStyledSetting.Size];
+  FDashEmpty.TextSettings.Font.Size := 16;
+  FDashEmpty.TextSettings.HorzAlign := TTextAlign.Center;
+  FDashEmpty.TextSettings.WordWrap := True;
+  FDashEmpty.Text := 'No gauges yet.' + sLineBreak + 'Tap + to add one.';
+  FDashEmpty.Visible := False;
+  FDashSpacer := TLayout.Create(Self);
+  FDashSpacer.Parent := sbDash;
+  FDashSpacer.Stored := False;
+  FDashSpacer.HitTest := False;
+
   FPageMenu := TPopupMenu.Create(Self);
   FPageMenu.Parent := Self;
   tiConnect.Text := 'Connection';
@@ -787,6 +823,8 @@ begin
   end;
   UpdateAppBar;
   TThread.ForceQueue(nil, FitFlowHeights); // a page has no layout until it is shown
+  if Page = tiDashboard then
+    TThread.ForceQueue(nil, PlaceAddGauge);
 end;
 
 procedure TMainForm.UpdateAppBar;
@@ -802,6 +840,16 @@ begin
   btnMenu.Visible := (P = tiLive) or (P = tiDashboard) or (P = tiPids) or (P = tiMessages) or (P = tiConnect);
   for I := 0 to 4 do
     FNavButtons[I].Repaint;
+end;
+
+{ The round + sits bottom right on the Gauges page, over the gauges. }
+procedure TMainForm.PlaceAddGauge;
+begin
+  if (FAddGauge = nil) or (sbDash.Height < 100) then
+    Exit;
+  FAddGauge.Position.Point := TPointF.Create(sbDash.Position.X + sbDash.Width - FAddGauge.Width - 20,
+    sbDash.Position.Y + sbDash.Height - FAddGauge.Height - 20);
+  FAddGauge.BringToFront;
 end;
 
 procedure TMainForm.NavClick(Sender: TObject);
@@ -1038,6 +1086,12 @@ begin
   Bar(pnlStatus);
   Icon(btnBack);
   Icon(btnMenu);
+  if FAddGauge <> nil then
+  begin
+    FAddGauge.Fill.Color := P.Accent;
+    TPath(FAddGauge.Controls[0]).Stroke.Color := ContrastColor(P.Accent);
+    Muted(FDashEmpty);
+  end;
   pnlCtlWarn.Fill.Color := P.PanelWarn;
   pnlCtlRun.Fill.Color := P.Panel;
   Muted(lblLiveHint);
@@ -3644,6 +3698,8 @@ begin
   finally
     sbDash.EndUpdate;
   end;
+  if FDashEmpty <> nil then
+    FDashEmpty.Visible := FGaugeViews.Count = 0;
   if FGaugeViews.Count = 0 then
     lblDashHint.Text := IfThen(IsMobile, 'No gauges yet: press Add gauge, or long-press a PID.',
       'No gauges yet: press Add gauge, or right-click a PID and choose Add to dashboard.')
@@ -3664,6 +3720,7 @@ var
 const
   Gap = 12;
 begin
+  PlaceAddGauge;
   if (FGaugeViews = nil) or (FGaugeViews.Count = 0) then
     Exit;
   Avail := sbDash.Width - 16;
@@ -3686,6 +3743,11 @@ begin
     View.SetBounds(X, Y, Sz.cx, Sz.cy);
     X := X + Sz.cx + Gap;
     RowH := Max(RowH, Sz.cy);
+  end;
+  // Room below the last row so the + button does not cover a gauge.
+  if FAddGauge <> nil then
+  begin
+    FDashSpacer.SetBounds(0, Y + RowH, 1, FAddGauge.Height + 40);
   end;
 end;
 
@@ -3762,7 +3824,7 @@ begin
       SaveDisplay;
       BuildDashboard;
       ShowPage(tiDashboard);
-    end);
+    end, DisplayChanged);
 end;
 
 procedure TMainForm.EditGauge(Index: Integer);
@@ -3777,7 +3839,7 @@ begin
       FDisplay.Gauges[Index] := NewGauge;
       SaveDisplay;
       BuildDashboard;
-    end);
+    end, DisplayChanged);
 end;
 
 procedure TMainForm.MoveGauge(Delta: Integer);
