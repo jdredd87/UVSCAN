@@ -1195,7 +1195,7 @@ object MainForm: TMainForm
                 Margins.Top = 8.000000000000000000
                 Margins.Right = 8.000000000000000000
                 Size.Width = 755.000000000000000000
-                Size.Height = 80.000000000000000000
+                Size.Height = 118.000000000000000000
                 Size.PlatformDefault = False
                 Text = 'Appearance'
                 TabOrder = 0
@@ -1221,13 +1221,24 @@ object MainForm: TMainForm
                   TabOrder = 0
                   OnChange = cbThemeChange
                 end
+                object chkKeepAwake: TCheckBox
+                  IsChecked = True
+                  Position.X = 12.000000000000000000
+                  Position.Y = 76.000000000000000000
+                  Size.Width = 320.000000000000000000
+                  Size.Height = 30.000000000000000000
+                  Size.PlatformDefault = False
+                  TabOrder = 1
+                  Text = 'Keep the screen on while UVScan is open'
+                  OnChange = chkKeepAwakeChange
+                end
               end
               object gbAlerts: TGroupBox
                 Align = Top
                 Margins.Left = 8.000000000000000000
                 Margins.Top = 8.000000000000000000
                 Margins.Right = 8.000000000000000000
-                Position.Y = 88.000000000000000000
+                Position.Y = 126.000000000000000000
                 Size.Width = 755.000000000000000000
                 Size.Height = 72.000000000000000000
                 Size.PlatformDefault = False
@@ -1252,7 +1263,7 @@ object MainForm: TMainForm
                 Margins.Left = 8.000000000000000000
                 Margins.Top = 8.000000000000000000
                 Margins.Right = 8.000000000000000000
-                Position.Y = 168.000000000000000000
+                Position.Y = 206.000000000000000000
                 Size.Width = 755.000000000000000000
                 Size.Height = 70.000000000000000000
                 Size.PlatformDefault = False
@@ -1291,7 +1302,7 @@ object MainForm: TMainForm
                 Margins.Left = 8.000000000000000000
                 Margins.Top = 8.000000000000000000
                 Margins.Right = 8.000000000000000000
-                Position.Y = 246.000000000000000000
+                Position.Y = 284.000000000000000000
                 Size.Width = 755.000000000000000000
                 Size.Height = 80.000000000000000000
                 Size.PlatformDefault = False

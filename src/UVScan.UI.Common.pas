@@ -99,6 +99,12 @@ procedure FitTextWidth(C: TControl; MinWidth: Single = 0);
 { Height a word-wrapped label needs at Width (in the active style's font). }
 function WrappedTextHeight(L: TLabel; Width: Single): Single;
 
+{ Keeps the screen on and the device awake while UVScan is open (On), or lets
+  it sleep again. Android: the window's keep-screen-on flag (no permission,
+  and it only applies while UVScan is on screen). Windows: tells the system
+  the display and the PC are in use. }
+procedure KeepAwake(On: Boolean);
+
 { True on phones and tablets: windows are full screen, no mouse hover. }
 function IsMobile: Boolean;
 
@@ -110,7 +116,39 @@ implementation
 
 uses
   System.Math, FMX.DialogService, FMX.Dialogs, FMX.Platform, FMX.TextLayout, FMX.Controls.Presentation,
-  FMX.Objects, FMX.Effects, UVScan.UI.Theme;
+  FMX.Objects, FMX.Effects, UVScan.UI.Theme
+  {$IFDEF ANDROID}, Androidapi.Helpers, Androidapi.JNI.App, Androidapi.JNI.GraphicsContentViewText,
+  FMX.Helpers.Android{$ENDIF};
+
+{$IFDEF MSWINDOWS}
+// Declared here: Winapi.Windows in the uses would hide FMX's TBitmap.
+const
+  ES_SYSTEM_REQUIRED = $00000001;
+  ES_DISPLAY_REQUIRED = $00000002;
+  ES_CONTINUOUS = $80000000;
+
+function SetThreadExecutionState(esFlags: Cardinal): Cardinal; stdcall; external 'kernel32.dll';
+{$ENDIF}
+
+procedure KeepAwake(On: Boolean);
+begin
+  {$IFDEF ANDROID}
+  CallInUIThread(
+    procedure
+    begin
+      if On then
+        TAndroidHelper.Activity.getWindow.addFlags(TJWindowManager_LayoutParams.JavaClass.FLAG_KEEP_SCREEN_ON)
+      else
+        TAndroidHelper.Activity.getWindow.clearFlags(TJWindowManager_LayoutParams.JavaClass.FLAG_KEEP_SCREEN_ON);
+    end);
+  {$ENDIF}
+  {$IFDEF MSWINDOWS}
+  if On then
+    SetThreadExecutionState(ES_CONTINUOUS or ES_DISPLAY_REQUIRED or ES_SYSTEM_REQUIRED)
+  else
+    SetThreadExecutionState(ES_CONTINUOUS);
+  {$ENDIF}
+end;
 
 function IsMobile: Boolean;
 begin

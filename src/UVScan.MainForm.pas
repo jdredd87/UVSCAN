@@ -61,6 +61,7 @@ type
     gbAppearance: TGroupBox;
     lblTheme: TLabel;
     cbTheme: TComboBox;
+    chkKeepAwake: TCheckBox;
     gbAlerts: TGroupBox;
     chkSound: TCheckBox;
     gbStream: TGroupBox;
@@ -185,6 +186,7 @@ type
     procedure pnlStatusClick(Sender: TObject);
     procedure lbMoreItemClick(const Sender: TCustomListBox; const Item: TListBoxItem);
     procedure cbThemeChange(Sender: TObject);
+    procedure chkKeepAwakeChange(Sender: TObject);
     procedure btnRefreshPortsClick(Sender: TObject);
     procedure btnConnectClick(Sender: TObject);
     procedure btnDisconnectClick(Sender: TObject);
@@ -983,6 +985,14 @@ begin
   SaveSettings;
 end;
 
+procedure TMainForm.chkKeepAwakeChange(Sender: TObject);
+begin
+  if not FChromeReady then
+    Exit;
+  KeepAwake(chkKeepAwake.IsChecked);
+  SaveSettings;
+end;
+
 procedure TMainForm.ThemeChanged(const Sender: TObject; const M: TMessage);
 begin
   ApplyPalette;
@@ -1128,6 +1138,7 @@ begin
   Wide(lblRaw, gbAdvanced);
   Wide(chkTrace, gbAdvanced);
   Wide(chkSound, gbAlerts);
+  Wide(chkKeepAwake, gbAppearance);
   Wide(lblDiscoverHelp, gbDiscover);
   lblDiscoverHelp.WordWrap := True;
   // Advanced: caption, then the frame row, then the trace box, one under another.
@@ -1273,6 +1284,7 @@ procedure TMainForm.FormDestroy(Sender: TObject);
 begin
   FClosing := True;
   TMessageManager.DefaultManager.Unsubscribe(TThemeChangedMessage, FThemeSub);
+  KeepAwake(False);
   tmrRefresh.Enabled := False;
   FEngine.Free; // stops the scan, closes the port, waits for the thread
   FCatalog.Free;
@@ -1434,6 +1446,8 @@ begin
   chkSound.IsChecked := FSettings.AlertSounds;
   chkMinMax.IsChecked := FSettings.ShowMinMax;
   cbTheme.ItemIndex := Ord(ThemeModeFromKey(FSettings.Theme));
+  chkKeepAwake.IsChecked := FSettings.KeepScreenOn;
+  KeepAwake(FSettings.KeepScreenOn);
   for N in FSettings.SelectedPids do
     if (FCatalog.FindById(N) <> nil) and FCatalog.FindById(N).Enabled and not FSelected.Contains(N) then
       FSelected.Add(N);
@@ -1466,6 +1480,7 @@ begin
   FSettings.LiveZoom := FZoom;
   FSettings.ShowMinMax := chkMinMax.IsChecked;
   FSettings.Theme := ThemeKeys[TThemeMode(Max(0, cbTheme.ItemIndex))];
+  FSettings.KeepScreenOn := chkKeepAwake.IsChecked;
   FSettings.SelectedPids := FSelected.ToArray;
   if cbLists.ItemIndex > 0 then
     FSettings.ActiveList := ComboText(cbLists)

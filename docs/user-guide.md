@@ -40,7 +40,7 @@ Windows and Android share one layout:
 
 On a wide Windows window (about 1000 pixels and up) the PID list stays docked on the left beside the pages (drag the splitter to size it) and the *Live* and *Gauges* pages show their buttons in a bar; on a phone or a narrow window those buttons are in the **⋮** menu.
 
-**Themes** (*More → Settings → Theme*): **System default** follows the light / dark setting of Windows or the phone; or pick **Light** or **Dark**. They are Delphi's own styles (Win10Modern on Windows, the Android styles on a phone).
+**Themes** (*More → Settings → Theme*): **System default** follows the light / dark setting of Windows or the phone; or pick **Light** or **Dark**. They are Delphi's own styles (Win10Modern on Windows, the Android styles on a phone). **Keep the screen on while UVScan is open** (same page, on by default) stops the phone or PC from going to sleep or blanking the screen.
 
 ## Connecting
 

@@ -8,7 +8,7 @@ unit UVScan.Settings;
     "logging":    { "folder": "C:\\Users\\me\\Documents\\UVScan Logs" },
     "advanced":   { "trace": false, "alertSounds": true },
     "liveGrid":   { "zoom": 100, "showMinMax": true },
-    "appearance": { "theme": "system" },
+    "appearance": { "theme": "system", "keepScreenOn": true },
     "window":     { "left": 100, "top": 80, "width": 1180, "height": 720,
                     "maximized": false, "pidPanelWidth": 400 } }
 
@@ -42,6 +42,7 @@ type
     LiveZoom: Integer;      // live data grid zoom, percent
     ShowMinMax: Boolean;    // live data grid min / max columns
     Theme: string;          // 'system', 'light' or 'dark'
+    KeepScreenOn: Boolean;  // no sleep / screen saver while UVScan is open
     Window: TWindowSettings;
     constructor Create;
     procedure ResetToDefaults;
@@ -110,6 +111,7 @@ begin
   LiveZoom := 100;
   ShowMinMax := True;
   Theme := 'system';
+  KeepScreenOn := True;
   Window := Default(TWindowSettings);
 end;
 
@@ -152,6 +154,7 @@ begin
 
   Sec := TJSONObject.Create;
   Sec.AddPair('theme', Theme);
+  Sec.AddPair('keepScreenOn', TJSONBool.Create(KeepScreenOn));
   Result.AddPair('appearance', Sec);
 
   if Window.Saved then
@@ -217,7 +220,10 @@ begin
 
   Sec := JObj(Root, 'appearance');
   if Sec <> nil then
+  begin
     Theme := LowerCase(JStr(Sec, 'theme', Theme));
+    KeepScreenOn := JBool(Sec, 'keepScreenOn', KeepScreenOn);
+  end;
 
   Sec := JObj(Root, 'window');
   if Sec <> nil then
