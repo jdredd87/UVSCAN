@@ -105,6 +105,7 @@ type
     procedure SaveBounds(const Ctls: array of TControl);
     procedure RestoreBounds;
     procedure StackDetail;
+    procedure LayoutWideDetail;
     procedure SetDetailMode(Value: Boolean);
     procedure DetailBackClick(Sender: TObject);
     procedure FormKeyUp(Sender: TObject; var Key: Word; var KeyChar: WideChar; Shift: TShiftState);
@@ -411,6 +412,103 @@ begin
   end;
 end;
 
+{ Wide window: caption left of each field, all captions as wide as the
+  widest; two short fields share a line. Sizes follow the active style's text
+  (Win10Modern's fields are taller than the design's). }
+procedure TPidEditorForm.LayoutWideDetail;
+var
+  H, X, R, Y, Half, CapW: Single;
+  L: TLabel;
+
+  procedure Cap(Lbl: TLabel; AX: Single);
+  begin
+    Lbl.SetBounds(AX, Y, Lbl.Width, H);
+  end;
+
+  procedure Field(C: TControl; AX, AW: Single);
+  begin
+    C.Anchors := [TAnchorKind.akLeft, TAnchorKind.akTop]; // placed again on every resize
+    C.SetBounds(AX, Y, Max(40, AW), H);
+  end;
+
+  // a help text right of a field, wrapping in what is left of the line
+  function Help(Lbl: TLabel; AX: Single): Single;
+  begin
+    Lbl.Anchors := [TAnchorKind.akLeft, TAnchorKind.akTop];
+    Lbl.WordWrap := True;
+    Lbl.TextSettings.VertAlign := TTextAlign.Center;
+    Result := Max(H, WrappedTextHeight(Lbl, R - AX) + 4);
+    Lbl.SetBounds(AX, Y, R - AX, Result);
+  end;
+
+begin
+  H := 30;
+  if IsMobile then
+    H := 40;
+  CapW := 0;
+  for L in [lblId, lblName, lblShortName, lblDescription, lblKind, lblPid, lblFormula, lblFormat, lblMci, lblUnits,
+    lblCategory, lblBytes, lblChannel] do
+  begin
+    L.WordWrap := False;
+    L.TextSettings.VertAlign := TTextAlign.Center;
+    L.Anchors := [TAnchorKind.akLeft, TAnchorKind.akTop];
+    FitTextWidth(L);
+  end;
+  for L in [lblId, lblName, lblShortName, lblDescription, lblKind, lblPid, lblFormula, lblFormat, lblMci] do
+    CapW := Max(CapW, L.Width);
+  X := 16 + CapW + 10;
+  R := sbDetail.Width - 24;
+  if R < X + 260 then
+    R := X + 260;
+  Half := (R - X - 10) / 2;
+  Y := 10;
+  Cap(lblId, 16);
+  Field(edtId, X, 90);
+  chkEnabled.TextSettings.WordWrap := False;
+  FitTextWidth(chkEnabled);
+  Field(chkEnabled, X + 100, Min(chkEnabled.Width, R - X - 100));
+  Y := Y + H + 6;
+  Cap(lblName, 16);
+  Field(edtName, X, R - X);
+  Y := Y + H + 6;
+  Cap(lblShortName, 16);
+  Field(edtShortName, X, Half);
+  Cap(lblUnits, X + Half + 10);
+  Field(edtUnits, lblUnits.Position.X + lblUnits.Width + 6, R - (lblUnits.Position.X + lblUnits.Width + 6));
+  Y := Y + H + 6;
+  Cap(lblDescription, 16);
+  Field(edtDescription, X, R - X);
+  Y := Y + H + 6;
+  Cap(lblKind, 16);
+  Field(cbKind, X, Half);
+  Cap(lblCategory, X + Half + 10);
+  Field(cbCategory, lblCategory.Position.X + lblCategory.Width + 6, R - (lblCategory.Position.X + lblCategory.Width + 6));
+  Y := Y + H + 6;
+  Cap(lblPid, 16);
+  Field(edtPid, X, 90);
+  Cap(lblBytes, X + 100);
+  Field(cbBytes, lblBytes.Position.X + lblBytes.Width + 6, 70);
+  Cap(lblChannel, cbBytes.Position.X + 80);
+  Field(cbChannel, lblChannel.Position.X + lblChannel.Width + 6, 80);
+  Y := Y + H + 6;
+  Cap(lblFormula, 16);
+  Field(edtFormula, X, R - X);
+  Y := Y + H + 2;
+  lblFormulaStatus.Anchors := [TAnchorKind.akLeft, TAnchorKind.akTop];
+  lblFormulaStatus.WordWrap := True;
+  lblFormulaStatus.SetBounds(X, Y, R - X, Max(22, WrappedTextHeight(lblFormulaStatus, R - X) + 2));
+  Y := Y + lblFormulaStatus.Height + 8;
+  Cap(lblFormat, 16);
+  Field(cbFormat, X, 120);
+  Y := Y + Max(H, Help(lblFormatHelp, X + 130)) + 6;
+  Cap(lblMci, 16);
+  Field(edtMci, X, 160);
+  Y := Y + Max(H, Help(lblMciHelp, X + 170)) + 10;
+  gbTest.Anchors := [TAnchorKind.akLeft, TAnchorKind.akTop];
+  gbTest.SetBounds(16, Y, R - 16, gbTest.Height);
+  pnlDetail.Height := Y + gbTest.Height + 16;
+end;
+
 { Narrow window: every caption above its field, one under the other. }
 procedure TPidEditorForm.StackDetail;
 type
@@ -575,6 +673,7 @@ begin
     pnlList.Visible := True;
     sbDetail.Visible := True;
     RestoreBounds;
+    LayoutWideDetail;
     pnlList.Align := TAlignLayout.Left;
     pnlList.Width := 480;
     splMain.Visible := True;

@@ -257,7 +257,7 @@ begin
   btnPickerBack.Text := '';
   AddLineIcon(btnCancel, IconBack);
   AddLineIcon(btnPickerBack, IconBack);
-  AddLineIcon(pnlPid, IconChevron, 18).Align := TAlignLayout.Right;
+  AddChevron(pnlPid);
   for L in [lblPidCap, lblStyleCap, lblSizeCap, lblScaleCap, lblAlertCap] do
   begin
     L.StyledSettings := L.StyledSettings - [TStyledSetting.Style];

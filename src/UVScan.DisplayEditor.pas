@@ -387,8 +387,7 @@ begin
     else
       Swatch.Fill.Color := P.GridBack;
     Swatch.Stroke.Color := P.BarLine;
-    AddLineIcon(Card, IconChevron, 18).Align := TAlignLayout.Right;
-    TControl(Card.Controls[Card.ControlsCount - 1]).Margins.Rect := TRectF.Create(4, 0, 12, 0);
+    AddChevron(Card);
     // Name line and details in their own box: top-aligned controls would
     // otherwise take the card's full width before the swatch and the chevron.
     Texts := TLayout.Create(Card);

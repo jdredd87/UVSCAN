@@ -240,7 +240,8 @@ begin
     begin
       FKindButtons[I].Position.X := I * 170;
       FKindButtons[I].Align := TAlignLayout.Left;
-      FitTextWidth(FKindButtons[I], 120);
+      FKindButtons[I].Margins.Right := 12;
+      FitTextWidth(FKindButtons[I], 90);
     end;
   if Narrow then
     gbKind.Height := 28 + Length(FKindButtons) * 36 + 6

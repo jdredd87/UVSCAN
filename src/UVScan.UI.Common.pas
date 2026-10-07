@@ -12,7 +12,8 @@ interface
 
 uses
   System.SysUtils, System.Classes, System.UITypes, System.Types,
-  FMX.Types, FMX.Controls, FMX.Forms, FMX.Graphics, FMX.ListBox, FMX.StdCtrls, FMX.Menus, FMX.Objects, FMX.Controls.Presentation;
+  FMX.Types, FMX.Controls, FMX.Forms, FMX.Graphics, FMX.ListBox, FMX.StdCtrls, FMX.Menus, FMX.Objects, FMX.Controls.Presentation,
+  FMX.Layouts;
 
 type
   TNamedColor = record
@@ -100,6 +101,8 @@ const
 { A line icon (24 x 24 path data, e.g. IconBack) centred on Button, drawn in
   the theme's text colour. }
 function AddLineIcon(Button: TControl; const PathData: string; Size: Single = 22): TPath;
+{ A "more" chevron at the right end of a tappable row (any height). }
+function AddChevron(Row: TControl): TLayout;
 
 { Turns a dialog form into a page like the main window's: a top bar with a
   back arrow (= Cancel), Title, and OkButton moved into the bar as OkText.
@@ -531,6 +534,17 @@ begin
     end;
 end;
 
+function AddChevron(Row: TControl): TLayout;
+begin
+  Result := TLayout.Create(Row);
+  Result.Parent := Row;
+  Result.Stored := False;
+  Result.Align := TAlignLayout.Right;
+  Result.Width := 36;
+  Result.HitTest := False;
+  AddLineIcon(Result, IconChevron, 18);
+end;
+
 function AddLineIcon(Button: TControl; const PathData: string; Size: Single): TPath;
 begin
   Result := TPath.Create(Button);
@@ -574,8 +588,8 @@ begin
   finally
     Layout.Free;
   end;
-  if C is TCheckBox then
-    Extra := 34 // the box and the gap
+  if (C is TCheckBox) or (C is TRadioButton) then
+    Extra := 34 // the box (or circle) and the gap
   else if C is TButton then
     Extra := 28
   else
