@@ -409,10 +409,11 @@ begin
           end;
           FillCircle(CX, CY, D * 0.045, Pal.Needle);
           FillCircle(CX, CY, D * 0.018, Pal.Card);
-          // value and units in the open bottom of the dial
-          DrawStr(Shown, CX - R * 0.6, CY + R * 0.3, R * 1.2, R * 0.42, D * 0.14, True, Pal.Text,
+          // value and units in the open bottom of the dial, below the first and
+          // last tick labels (those reach about R * 0.55 below the centre)
+          DrawStr(Shown, CX - R * 0.6, CY + R * 0.52, R * 1.2, R * 0.42, D * 0.14, True, Pal.Text,
             TTextAlign.Center, True);
-          DrawStr(UnitLine, CX - R * 0.9, CY + R * 0.70, R * 1.8, R * 0.26, D * 0.05, False, Pal.Sub,
+          DrawStr(UnitLine, CX - R * 0.9, CY + R * 0.93, R * 1.8, R * 0.24, D * 0.05, False, Pal.Sub,
             TTextAlign.Center, True);
         end;
 

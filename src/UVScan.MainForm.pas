@@ -621,7 +621,7 @@ var
   Compact: Boolean;
   G: TDataGrid;
 begin
-  Compact := IsMobile or (ClientWidth < 700);
+  Compact := ClientWidth < 700;
   if FPageGridsSet and (Compact = FPageGridsCompact) then
     Exit;
   FPageGridsSet := True;
@@ -809,7 +809,7 @@ var
 begin
   if not FChromeReady then
     Exit;
-  Wide := (not IsMobile) and (ClientWidth >= WideLayoutWidth);
+  Wide := ClientWidth >= WideLayoutWidth; // a big window or a tablet held sideways
   if Wide and (pnlPids.Parent <> Self) then
   begin
     pnlPids.Parent := Self;
@@ -1389,6 +1389,15 @@ procedure TMainForm.FitFlowHeights;
         FitTextWidth(Flow.Controls[I], MinWidth);
   end;
 
+  procedure FitHint(L: TLabel; Bar: TControl);
+  begin
+    L.WordWrap := False;
+    L.TextSettings.Trimming := TTextTrimming.Character;
+    FitTextWidth(L);
+    if Bar.Width > 50 then
+      L.Width := Min(L.Width, Bar.Width - Bar.Padding.Left - Bar.Padding.Right - 4);
+  end;
+
   // Bar as tall as Flow's rows. The rows are worked out here from the widths
   // (as the flow layout will wrap them): the flow itself may not have been
   // laid out yet - on a page that was hidden while the window was resized,
@@ -1435,6 +1444,9 @@ begin
   if FClosing then
     Exit;
   FitWidths(pnlLiveFooter, 0);
+  // The hints: one line, as wide as their text; cut short only past the bar's width.
+  FitHint(lblLiveHint, pnlLiveFooter);
+  FitHint(lblDashHint, pnlDashBar);
   FitWidths(pnlDashBar, 0);
   FitWidths(pnlCtlBar, 70);
   FitWidths(flPidButtons, 90);
@@ -2762,7 +2774,10 @@ begin
   Need := Z(160) + Z(140) + Z(80) + 14;
   if chkMinMax.IsChecked then
     Need := Need + 2 * Z(100);
-  Result := IsMobile or ((grdLive.Width > 50) and (grdLive.Width < Need));
+  if grdLive.Width <= 50 then
+    Result := IsMobile // not laid out yet: a phone most likely is narrow
+  else
+    Result := grdLive.Width < Need;
 end;
 
 { After a resize: lay the live grid out again if it changes between compact

@@ -842,7 +842,10 @@ begin
   pnlLeft.Parent := Self;
   pnlLeft.Align := TAlignLayout.Left;
   pnlLeft.Padding.Rect := TRectF.Create(6, 0, 0, 4);
-  pnlLeft.Width := 340;
+  if IsMobile then
+    pnlLeft.Width := 430 // a tablet: bigger text
+  else
+    pnlLeft.Width := 340;
   pnlLeft.Position.X := 0;
   splLeft.Visible := True;
   splLeft.Position.X := pnlLeft.Width + 1;
@@ -866,6 +869,15 @@ begin
   LayoutChannelWide; // now that the list has its width again
 end;
 
+{ Row height of the wide layout: a tablet's controls are taller. }
+function WideRowHeight: Single;
+begin
+  if IsMobile then
+    Result := 40
+  else
+    Result := 30;
+end;
+
 { Wide: the bar and playback rows left to right, each control as wide as its
   text in the active style, wrapping to another line when the window is too
   narrow. A label stays on the line of the field after it. }
@@ -884,12 +896,12 @@ procedure TLogViewerForm.FlowWideBars;
   const
     Gap = 6;
     GroupGap = 14;
-    RowH = 30;
   var
     G: TArray<TControl>;
     C: TControl;
-    X, Y, GW: Single;
+    X, Y, GW, RowH: Single;
   begin
+    RowH := WideRowHeight;
     X := 8;
     Y := 5;
     for G in Groups do
@@ -898,7 +910,7 @@ procedure TLogViewerForm.FlowWideBars;
       for C in G do
         if C.Visible then
         begin
-          if (C is TLabel) or (C is TCheckBox) or (C is TCustomButton) then
+          if ((C is TLabel) or (C is TCheckBox) or (C is TCustomButton)) and (C <> lblTime) then
           begin
             if C is TLabel then
               TLabel(C).WordWrap := False;
@@ -933,6 +945,7 @@ begin
   S := lblTime.Text; // as wide as the longest time it will show
   lblTime.Text := '00:00.0 / 00:00.0';
   FitTextWidth(lblTime);
+  lblTime.Width := lblTime.Width + 12; // bold
   lblTime.Text := S;
   tbPos.Width := 300;
   cbMode.Width := 210;
@@ -944,11 +957,10 @@ end;
 
 { Wide: the channel box under the list, captions as wide as their text. }
 procedure TLogViewerForm.LayoutChannelWide;
-const
-  RowH = 30;
 var
-  W, Y, X, FW: Single;
+  W, Y, X, FW, RowH: Single;
 begin
+  RowH := WideRowHeight;
   W := pnlLeft.Width - pnlLeft.Padding.Left - pnlLeft.Padding.Right - 24;
   for var L in [lblColor, lblWidth, lblMin, lblMax] do
   begin
@@ -967,8 +979,8 @@ begin
   cbWidth.SetBounds(X + lblWidth.Width + 4, Y, cbWidth.Width, RowH);
   Y := Y + RowH + 6;
   FitTextWidth(chkAuto);
-  chkAuto.SetBounds(12, Y, Min(chkAuto.Width, W), 24);
-  Y := Y + 30;
+  chkAuto.SetBounds(12, Y, Min(chkAuto.Width, W), RowH - 6);
+  Y := Y + RowH;
   // Min [....] Max [....]
   FW := Max(60, (W - lblMin.Width - lblMax.Width - 4 * 2 - 12) / 2);
   lblMin.SetBounds(12, Y, lblMin.Width, RowH);
@@ -978,8 +990,8 @@ begin
   edtMax.SetBounds(X + lblMax.Width + 4, Y, FW, RowH);
   Y := Y + RowH + 6;
   FitTextWidth(chkLevelColors);
-  chkLevelColors.SetBounds(12, Y, Min(chkLevelColors.Width, W), 24);
-  Y := Y + 30;
+  chkLevelColors.SetBounds(12, Y, Min(chkLevelColors.Width, W), RowH - 6);
+  Y := Y + RowH;
   FitTextWidth(btnLevels, 120);
   btnLevels.SetBounds(12, Y, btnLevels.Width, RowH);
   Y := Y + RowH + 4;
