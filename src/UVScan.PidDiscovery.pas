@@ -63,6 +63,7 @@ type
     procedure UpdateControls;
     procedure UpdateTicked;
     function DefinedAs(Pid: Word): string;
+    procedure FormResize(Sender: TObject);
   public
     { The window while it is open (nil otherwise): the main form passes it
       every engine event. }
@@ -92,6 +93,8 @@ begin
   F.FEngine := Engine;
   F.FCatalog := Catalog;
   F.FFileName := FileName;
+  MakePage(F, 'Search PCM for PIDs', F.btnAdd, 'Add');
+  F.FormResize(nil);
   Current := F; // before showing: on Windows ShowModal only returns once closed
   Result := F;
   ShowDialog(F,
@@ -118,8 +121,81 @@ begin
   lvResults.OnGetText := ResultsGetText;
   lvResults.OnGetChecked := ResultsGetChecked;
   lvResults.OnToggleCheck := ResultsToggleCheck;
+  if IsMobile then
+  begin
+    // a phone: the PID number, size and value narrow, the name wraps
+    lvResults.SetColumnWidth(0, 104); // the check box and "$xxxx"
+    lvResults.SetColumnWidth(1, 56);
+    lvResults.SetColumnWidth(2, 84);
+    lvResults.SetColumnWrap(2, True);
+    lvResults.SetColumnWrap(3, True);
+    lvResults.AutoHeights := True;
+  end;
+  OnResize := FormResize;
+  pnlBottom.Padding.Rect := TRectF.Create(8, 6, 8, 4);
   UpdateControls;
   UpdateTicked;
+end;
+
+{ The search box: the options one under the other on a narrow window (each
+  wrapping), on one line each with the field and buttons beside the caption
+  on a wide one. The bottom buttons wrap as the width needs. }
+procedure TPidDiscoveryForm.FormResize(Sender: TObject);
+var
+  W, Y, X: Single;
+  Narrow: Boolean;
+begin
+  if lvResults = nil then
+    Exit;
+  W := gbSearch.Width - 28;
+  if W < 100 then
+    Exit;
+  Narrow := ClientWidth < 600;
+  Y := 26;
+  for var C in [chkSae, chkGm] do
+  begin
+    C.TextSettings.WordWrap := Narrow;
+    if Narrow then
+      C.SetBounds(14, Y, W, Max(30, WrappedTextHeight(C, W - 40) + 8))
+    else
+    begin
+      FitTextWidth(C);
+      C.SetBounds(14, Y, Min(C.Width, W), 24);
+    end;
+    Y := Y + C.Height + 4;
+  end;
+  lblMore.WordWrap := False;
+  FitTextWidth(lblMore);
+  FitTextWidth(btnStart, 90);
+  FitTextWidth(btnStop, 80);
+  if Narrow then
+  begin
+    lblMore.SetBounds(14, Y + 4, W, 24);
+    Y := Y + 30;
+    edtMore.SetBounds(14, Y, W, 38);
+    Y := Y + 46;
+    btnStart.SetBounds(14, Y, btnStart.Width, 40);
+    btnStop.SetBounds(14 + btnStart.Width + 8, Y, btnStop.Width, 40);
+    Y := Y + 50;
+  end
+  else
+  begin
+    lblMore.SetBounds(14, Y + 4, lblMore.Width, 26);
+    X := 14 + lblMore.Width + 6;
+    edtMore.SetBounds(X, Y + 4, 250, 28);
+    X := X + 250 + 10;
+    btnStart.SetBounds(X, Y + 4, btnStart.Width, 28);
+    btnStop.SetBounds(X + btnStart.Width + 6, Y + 4, btnStop.Width, 28);
+    Y := Y + 40;
+  end;
+  pbProgress.SetBounds(14, Y, W, 14);
+  Y := Y + 20;
+  lblStatus.WordWrap := True;
+  // room for two lines: the progress text changes while searching
+  lblStatus.SetBounds(14, Y, W, IfThen(Narrow, 52, 24));
+  Y := Y + lblStatus.Height + 8;
+  gbSearch.Height := Y;
+  FlowControls(pnlBottom, [btnTickNew, btnUntickAll, lblTicked], 90, 40);
 end;
 
 destructor TPidDiscoveryForm.Destroy;
@@ -281,6 +357,8 @@ begin
           F.Defined := 'new';
         FResults.Add(F);
         lvResults.RowCount := FResults.Count;
+        if lvResults.AutoHeights then
+          lvResults.AutoRowHeights(FResults.Count - 1); // the new row's name may wrap
         lvResults.ScrollIntoView(FResults.Count - 1);
         lvResults.Refresh;
       end;

@@ -42,6 +42,7 @@ type
     Stretch: Boolean;
     Visible: Boolean;
     Wrap: Boolean;          // word-wrap the text (give the row the height it needs)
+    Shrink: Boolean;        // a smaller font rather than cut text (numbers)
   end;
 
   TDataGrid = class(TControl)
@@ -70,6 +71,7 @@ type
     // colours
     FCheckColor: TAlphaColor;
     FAutoHeights: Boolean;
+    FReserveScroll: Boolean;
     FMeasure: TTextLayout;        // for WrappedTextHeight
     FLastAutoWidth: Single;
     FThemeSub: TMessageSubscriptionId;
@@ -117,7 +119,7 @@ type
     function ColumnWidths: TArray<Single>;
     function HeaderBorderAt(X, Y: Single): Integer;
     procedure DrawText(const R: TRectF; const S: string; Align: TGridAlign; Color: TAlphaColor; Size: Single;
-      Bold: Boolean; Wrap: Boolean = False);
+      Bold: Boolean; Wrap: Boolean = False; Shrink: Boolean = False);
     procedure DrawCheck(const R: TRectF; Checked: Boolean; Color: TAlphaColor);
     function CheckRect(const RowRect: TRectF): TRectF;
   protected
@@ -141,6 +143,9 @@ type
     procedure SetColumnWidth(Index: Integer; Width: Single);
     procedure SetColumnVisible(Index: Integer; Visible: Boolean);
     procedure SetColumnWrap(Index: Integer; Wrap: Boolean);
+    { Text too wide for the cell is drawn smaller (down to half size) instead
+      of being cut short - for values, where "13..." says nothing. }
+    procedure SetColumnShrink(Index: Integer; Shrink: Boolean);
     { Width a column gets now (stretch columns share what is left). }
     function ColumnWidth(Index: Integer): Single;
     { Height Text needs in column Index when wrapped (cell padding included). }
@@ -149,6 +154,9 @@ type
     procedure AutoRowHeights(FromRow: Integer = 0);
     { Redo AutoRowHeights whenever the width changes. }
     property AutoHeights: Boolean read FAutoHeights write FAutoHeights;
+    { Columns leave room for the vertical scroll bar even while it is hidden,
+      so wrapped row heights measured now still fit once it shows. }
+    property ReserveScrollBar: Boolean read FReserveScroll write FReserveScroll;
     { Rows that fit on screen from TopRow on (at least 1). }
     function VisibleRows: Integer;
     function RowAt(Y: Single): Integer;      // -1 = header / below the last row
@@ -225,6 +233,7 @@ const
   DragThreshold = 6;
   ResizeGrip = 4;
   MinColumnWidth = 24;
+  StretchMin = 100;
 
 { TDataGrid }
 
@@ -709,6 +718,12 @@ begin
   Repaint;
 end;
 
+procedure TDataGrid.SetColumnShrink(Index: Integer; Shrink: Boolean);
+begin
+  FColumns[Index].Shrink := Shrink;
+  Repaint;
+end;
+
 function TDataGrid.ColumnWidth(Index: Integer): Single;
 begin
   Result := ColumnWidths[Index];
@@ -760,13 +775,15 @@ begin
         Fixed := Fixed + FColumns[I].Width;
     end;
   Avail := Width;
-  if FScrollBar.Visible then
+  if FScrollBar.Visible or FReserveScroll then
     Avail := Avail - FScrollBar.Width;
   for I := 0 to High(FColumns) do
     if not FColumns[I].Visible then
       Result[I] := 0
     else if FColumns[I].Stretch then
-      Result[I] := Max(FColumns[I].Width, (Avail - Fixed) / Stretchers)
+      // fills what is left; on a narrow grid it gives up width (down to
+      // StretchMin) before the grid has to scroll sideways
+      Result[I] := Max(Min(FColumns[I].Width, StretchMin), (Avail - Fixed) / Stretchers)
     else
       Result[I] := FColumns[I].Width;
 end;
@@ -852,11 +869,48 @@ begin
   end;
 end;
 
+function LongestWord(const S: string): string;
+var
+  W: string;
+begin
+  Result := '';
+  for W in S.Split([' ']) do
+    if Length(W) > Length(Result) then
+      Result := W;
+end;
+
 procedure TDataGrid.DrawText(const R: TRectF; const S: string; Align: TGridAlign; Color: TAlphaColor;
-  Size: Single; Bold: Boolean; Wrap: Boolean);
+  Size: Single; Bold: Boolean; Wrap: Boolean; Shrink: Boolean);
+var
+  W: Single;
 begin
   if (S = '') or (R.Width <= 2) then
     Exit;
+  if Shrink then
+  begin
+    // measure at full size; too wide = draw it smaller to fit (wrapped text:
+    // its longest word, which cannot wrap)
+    FLayout.BeginUpdate;
+    try
+      FLayout.MaxSize := TPointF.Create(100000, R.Height * 4);
+      FLayout.Text := S;
+      if Wrap then
+        FLayout.Text := LongestWord(S);
+      FLayout.WordWrap := False;
+      FLayout.Font.Size := Size;
+      if FFontFamily <> '' then
+        FLayout.Font.Family := FFontFamily;
+      if Bold then
+        FLayout.Font.Style := [TFontStyle.fsBold]
+      else
+        FLayout.Font.Style := [];
+    finally
+      FLayout.EndUpdate;
+    end;
+    W := FLayout.TextWidth;
+    if W > R.Width then
+      Size := Max(Size / 2, Size * R.Width / W * 0.97);
+  end;
   FLayout.BeginUpdate;
   try
     FLayout.TopLeft := R.TopLeft;
@@ -1014,7 +1068,7 @@ begin
           if St.FontSize > 0 then
             H := St.FontSize;
           DrawText(TRectF.Create(CellR.Left + FCellPadding, CellR.Top, CellR.Right - FCellPadding, CellR.Bottom),
-            Text, FColumns[Col].Align, Fore, H, St.Bold, FColumns[Col].Wrap);
+            Text, FColumns[Col].Align, Fore, H, St.Bold, FColumns[Col].Wrap, FColumns[Col].Shrink);
           X := X + W[Col];
         end;
       end;

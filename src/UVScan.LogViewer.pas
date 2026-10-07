@@ -136,6 +136,7 @@ type
     procedure LayoutChannelBox;
     procedure LayoutStatus;
     procedure PaintTabs;
+    procedure ApplyPalette;
     procedure UpdateChannelButton;
     procedure TabClick(Sender: TObject);
     procedure TabsResize(Sender: TObject);
@@ -236,6 +237,7 @@ begin
     Viewer.FillViews(Viewer.FViews.LastView);
   end;
   Viewer.FillRecent;
+  Viewer.ApplyPalette; // the theme may have changed since it was last open
   if FileName <> '' then
     try
       Viewer.FData.LoadFromFile(FileName);
@@ -460,6 +462,33 @@ var
 begin
   for S in FOrig do
     S.Ctl.SetBounds(S.R.Left, S.R.Top, S.R.Width, S.R.Height);
+end;
+
+procedure TLogViewerForm.ApplyPalette;
+
+  procedure Icons(Parent: TFmxObject); // the back arrows
+  var
+    I: Integer;
+  begin
+    for I := 0 to Parent.ChildrenCount - 1 do
+    begin
+      if Parent.Children[I] is TPath then
+        TPath(Parent.Children[I]).Stroke.Color := Palette.Text;
+      Icons(Parent.Children[I]);
+    end;
+  end;
+
+var
+  Bar: TRectangle;
+begin
+  for Bar in [FTopBar, TRectangle(FChannelTitle.Parent)] do
+  begin
+    Bar.Fill.Color := Palette.Bar;
+    Bar.Stroke.Color := Palette.BarLine;
+    Icons(Bar);
+  end;
+  FChannelPage.Fill.Color := Palette.Back;
+  PaintTabs;
 end;
 
 procedure TLogViewerForm.PaintTabs;

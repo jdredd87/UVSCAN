@@ -274,6 +274,8 @@ type
     FPendingLog: TStringList;   // message lines waiting for the next timer tick
     FMessages: TStringList;     // what the Messages tab shows
     FShownRows: TArray<string>; // what each live row last showed (value|min|max)
+    FGridCompact: Boolean;      // live columns share the width (phone, narrow window)
+    FGridQueued: Boolean;
     FShownCycles: Int64;
     FDisplay: TDisplaySettings;      // display.json: PID looks, alert levels, gauges
     FAlerts: TAlertTracker;
@@ -357,6 +359,8 @@ type
     procedure SetZoom(Percent: Integer);
     procedure ZoomStep(Direction: Integer);
     procedure ApplyGridLayout;
+    procedure QueueGridLayout;
+    function LiveGridCompact: Boolean;
     function Z(N: Single): Single;
     // controls
     procedure LoadControls;
@@ -602,6 +606,13 @@ begin
     grdControls.SetColumnWrap(1, True);
     grdControls.SetColumnWrap(3, True);
     grdControls.AutoHeights := True;
+    grdDtcs.SetColumnWidth(0, 70);
+    grdDtcs.SetColumnWidth(1, 90);
+    grdDtcs.SetColumnWidth(3, 64);
+    grdDtcs.SetColumnWrap(1, True);
+    grdDtcs.SetColumnWrap(2, True);
+    grdDtcs.SetColumnWrap(3, True);
+    grdDtcs.AutoHeights := True;
   end;
 end;
 
@@ -1177,23 +1188,43 @@ begin
 end;
 
 { Settings and Tools rows: caption, a field filling the rest of the box, and a
-  button at the right end, so they fit a phone as well as a wide window. }
+  button at the right end, so they fit a phone as well as a wide window. A
+  narrow box puts the caption above the field. }
 procedure TMainForm.FitFormRows;
+const
+  RowTop = 32;
 
-  procedure Row(Cap: TLabel; Field, Btn: TControl; Box: TControl);
+  // Lays out a row at the top of Box; the result is where the next control goes.
+  function Row(Cap: TLabel; Field, Btn: TControl; Box: TControl): Single;
   var
     X, R: Single;
   begin
+    Result := RowTop + Field.Height + 8;
     if Box.Width < 50 then
       Exit; // not laid out yet
     X := 12;
+    Field.Position.Y := RowTop;
     if Cap <> nil then
     begin
       Cap.WordWrap := False;
       FitTextWidth(Cap);
       Cap.Position.X := 12;
-      X := 12 + Cap.Width + 12;
+      if Box.Width < 480 then
+      begin
+        Cap.Position.Y := RowTop - 2;
+        Cap.Height := 24;
+        Field.Position.Y := RowTop + 24;
+      end
+      else
+      begin
+        Cap.Height := 22;
+        Cap.Position.Y := RowTop + (Field.Height - Cap.Height) / 2;
+        X := 12 + Cap.Width + 12;
+      end;
     end;
+    if Btn <> nil then
+      Btn.Position.Y := Field.Position.Y;
+    Result := Field.Position.Y + Field.Height + 8;
     R := Box.Width - 12;
     if (Btn <> nil) and Btn.Visible then
     begin
@@ -1205,6 +1236,9 @@ procedure TMainForm.FitFormRows;
     Field.Width := Max(80, R - X);
   end;
 
+var
+  Y: Single;
+
   procedure Wide(C: TControl; Box: TControl);
   begin
     if Box.Width >= 50 then
@@ -1212,9 +1246,18 @@ procedure TMainForm.FitFormRows;
   end;
 
 begin
-  Row(lblTheme, cbTheme, nil, gbAppearance);
-  Row(lblLogFolderCaption, edtLogFolder, btnBrowseLogFolder, gbLogging);
-  Row(lblRate, cbRate, nil, gbStream);
+  Y := Row(lblTheme, cbTheme, nil, gbAppearance);
+  if gbAppearance.Width >= 50 then
+  begin
+    chkKeepAwake.Position.Y := Y;
+    gbAppearance.Height := Y + chkKeepAwake.Height + 10;
+  end;
+  Y := Row(lblLogFolderCaption, edtLogFolder, btnBrowseLogFolder, gbLogging);
+  if gbLogging.Width >= 50 then
+    gbLogging.Height := Y + 4;
+  Y := Row(lblRate, cbRate, nil, gbStream);
+  if gbStream.Width >= 50 then
+    gbStream.Height := Y + 4;
   Row(nil, edtNewVin, btnWriteVin, gbWriteVin);
   Row(nil, edtRaw, btnSendRaw, gbAdvanced);
   Wide(lblRaw, gbAdvanced);
@@ -1443,8 +1486,7 @@ begin
   if WindowState = TWindowState.wsNormal then
     FNormalBounds := TRect.Create(Left, Top, Left + Width, Top + Height);
   ArrangeLayout;
-  if IsMobile then
-    TThread.ForceQueue(nil, ApplyGridLayout);
+  QueueGridLayout;
   if FPidsDocked then
     pnlPids.Width := Min(pnlPids.Width, Max(200, ClientWidth - 400));
   TThread.ForceQueue(nil, FitFlowHeights);
@@ -2209,6 +2251,8 @@ begin
         if Length(Ev.Dtcs) = 0 then
           FDtcRows := [TArray<string>.Create('None', '', 'No trouble codes reported', '')];
         grdDtcs.RowCount := Length(FDtcRows);
+        if grdDtcs.AutoHeights then
+          grdDtcs.AutoRowHeights; // descriptions wrap on a phone
         grdDtcs.Refresh;
         ShowPage(tiVehicle);
       end;
@@ -2577,7 +2621,7 @@ begin
     if (D <> nil) and (D.FontSize > 0) then
       grdLive.RowHeights[I] := Z(D.FontSize * PtToDip + 12);
     // A wrapped PID name may need more lines than that.
-    if IsMobile then
+    if FGridCompact then
     begin
       grdLive.RowHeights[I] := Max(grdLive.RowHeights[I],
         grdLive.WrappedTextHeight(ColName, PidName(FLiveIds[I]), grdLive.FontSize));
@@ -2635,6 +2679,34 @@ begin
 end;
 
 { Column widths, row heights and fonts follow the zoom. }
+{ True when the live columns share the grid's width: always on a phone, and
+  on a window too narrow for the usual widths at this zoom. }
+function TMainForm.LiveGridCompact: Boolean;
+var
+  Need: Single;
+begin
+  Need := Z(160) + Z(140) + Z(80) + 14;
+  if chkMinMax.IsChecked then
+    Need := Need + 2 * Z(100);
+  Result := IsMobile or ((grdLive.Width > 50) and (grdLive.Width < Need));
+end;
+
+{ After a resize: lay the live grid out again if it changes between compact
+  and normal (or is compact: its columns follow the width). Once per burst. }
+procedure TMainForm.QueueGridLayout;
+begin
+  if FGridQueued then
+    Exit;
+  FGridQueued := True;
+  TThread.ForceQueue(nil,
+    procedure
+    begin
+      FGridQueued := False;
+      if FGridCompact or LiveGridCompact then
+        ApplyGridLayout;
+    end);
+end;
+
 procedure TMainForm.ApplyGridLayout;
 var
   W: Single;
@@ -2647,10 +2719,16 @@ begin
   grdLive.HeaderHeight := Z(26);
   grdLive.FontSize := Z(13);
   grdLive.CellPadding := Z(6);
-  if IsMobile then
+  FGridCompact := LiveGridCompact;
+  grdLive.ReserveScrollBar := FGridCompact; // wrapped names keep fitting when it shows
+  grdLive.SetColumnShrink(ColUnits, FGridCompact); // "Degrees" smaller rather than cut
+  grdLive.SetColumnShrink(ColValue, True); // a long value gets smaller, not cut
+  grdLive.SetColumnShrink(ColMin, True);
+  grdLive.SetColumnShrink(ColMax, True);
+  if FGridCompact then
   begin
-    // A phone: the columns share the screen width whatever the zoom (zoom only
-    // changes the text), and PID names wrap rather than being cut short.
+    // A phone or narrow window: the columns share the width whatever the zoom
+    // (zoom only changes the text), and PID names wrap rather than being cut.
     W := grdLive.Width - 14;
     if W < 100 then
       W := 380;
@@ -2672,6 +2750,8 @@ begin
   end
   else
   begin
+    grdLive.SetColumnWrap(ColName, False);
+    grdLive.SetColumnWrap(ColUnits, False);
     grdLive.SetColumnWidth(ColName, Z(160));
     grdLive.SetColumnWidth(ColValue, Z(140));
     grdLive.SetColumnWidth(ColUnits, Z(80));
