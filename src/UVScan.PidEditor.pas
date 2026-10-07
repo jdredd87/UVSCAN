@@ -6,24 +6,25 @@ unit UVScan.PidEditor;
 interface
 
 uses
-  Winapi.Windows, Winapi.Messages, System.SysUtils, System.Classes, System.Math,
-  System.UITypes, System.StrUtils, Vcl.Graphics, Vcl.Controls, Vcl.Forms, Vcl.Dialogs,
-  Vcl.StdCtrls, Vcl.ExtCtrls, Vcl.ComCtrls,
-  UVScan.Pids;
+  System.SysUtils, System.Classes, System.Math, System.UITypes, System.StrUtils, System.Types,
+  FMX.Types, FMX.Controls, FMX.Forms, FMX.Graphics, FMX.StdCtrls, FMX.Edit, FMX.ListBox,
+  FMX.Layouts, FMX.Controls.Presentation, FMX.ComboEdit,
+  UVScan.Pids, UVScan.UI.DataGrid;
 
 type
   TPidEditorForm = class(TForm)
-    pnlList: TPanel;
+    pnlList: TLayout;
     edtFilter: TEdit;
-    lvList: TListView;
-    pnlListButtons: TPanel;
+    pnlGrid: TLayout;
+    pnlListButtons: TLayout;
     btnAdd: TButton;
     btnDuplicate: TButton;
     btnDelete: TButton;
     btnImport: TButton;
     btnDefaults: TButton;
     splMain: TSplitter;
-    pnlDetail: TPanel;
+    sbDetail: TVertScrollBox;
+    pnlDetail: TLayout;
     lblId: TLabel;
     edtId: TEdit;
     chkEnabled: TCheckBox;
@@ -49,7 +50,7 @@ type
     edtFormula: TEdit;
     lblFormulaStatus: TLabel;
     lblFormat: TLabel;
-    cbFormat: TComboBox;
+    cbFormat: TComboEdit;
     lblFormatHelp: TLabel;
     lblMci: TLabel;
     edtMci: TEdit;
@@ -59,40 +60,44 @@ type
     edtTestInput: TEdit;
     lblTestResultCaption: TLabel;
     lblTestResult: TLabel;
-    pnlProblems: TPanel;
+    pnlProblems: TLayout;
     lbProblems: TListBox;
-    pnlBottom: TPanel;
+    pnlBottom: TLayout;
     lblProblems: TLabel;
     btnSave: TButton;
     btnCancel: TButton;
     procedure FormCreate(Sender: TObject);
     procedure FormDestroy(Sender: TObject);
     procedure FormCloseQuery(Sender: TObject; var CanClose: Boolean);
+    procedure FormResize(Sender: TObject);
     procedure edtFilterChange(Sender: TObject);
-    procedure lvListSelectItem(Sender: TObject; Item: TListItem; Selected: Boolean);
     procedure btnAddClick(Sender: TObject);
     procedure btnDuplicateClick(Sender: TObject);
     procedure btnDeleteClick(Sender: TObject);
     procedure FieldChanged(Sender: TObject);
     procedure edtTestInputChange(Sender: TObject);
     procedure lblProblemsClick(Sender: TObject);
-    procedure lbProblemsClick(Sender: TObject);
+    procedure lbProblemsItemClick(const Sender: TCustomListBox; const Item: TListBoxItem);
     procedure btnSaveClick(Sender: TObject);
     procedure btnImportClick(Sender: TObject);
     procedure btnDefaultsClick(Sender: TObject);
   private
+    lvList: TDataGrid;
+    FRows: TArray<TPidDef>;    // the PIDs the list shows (filtered)
     FWork: TPidCatalog;
     FFileName: string;
     FCurrent: TPidDef;
     FLoading: Boolean;
     FModified: Boolean;
     FSaved: Boolean;
+    FDiscardOk: Boolean;
+    FNarrow: Boolean;
     FProblems: TArray<TPidProblem>;
+    procedure ListGetText(Sender: TObject; Col, Row: Integer; var Text: string);
+    procedure ListSelect(Sender: TObject);
     procedure AfterBulkChange;
-    procedure AddChoice(Task: TTaskDialog; const Caption, Hint: string; Result: Integer);
     procedure FillList;
-    function ItemFor(P: TPidDef): TListItem;
-    procedure UpdateItem(Item: TListItem; P: TPidDef);
+    function RowOf(P: TPidDef): Integer;
     procedure Select(P: TPidDef);
     procedure ShowCurrent;
     procedure ApplyFields;
@@ -101,44 +106,207 @@ type
     procedure UpdateTest;
     procedure UpdateProblems;
     procedure SetDetailEnabled(Value: Boolean);
+    procedure ImportFile(const FileName: string);
+    procedure CloseDiscarding;
   public
-    { Edits a copy of Catalog; on Save writes FileName. Returns True if saved. }
-    class function Execute(Catalog: TPidCatalog; const FileName: string; const Filter: string = ''): Boolean;
+    { Edits a copy of Catalog; on Save writes FileName. OnDone (always called
+      when the window closes) gets True if saved. }
+    class procedure Execute(Catalog: TPidCatalog; const FileName: string; const Filter: string;
+      const OnDone: TProc<Boolean>);
   end;
 
 implementation
 
-{$R *.dfm}
+{$R *.fmx}
 
 uses
-  UVScan.Formula, UVScan.LegacyImport, UVScan.Defaults;
+  FMX.Dialogs, FMX.Memo, FMX.Memo.Types,
+  UVScan.Formula, UVScan.LegacyImport, UVScan.Defaults, UVScan.UI.Common;
 
 const
   KindCaptions: array[TPidKind] of string = ('Vehicle PID', 'Calculated', 'Analog input');
+  ColorError = $FFE00000;
+  ColorGrey = $FF808080;
+  ColorWarn = $FFE07000;
+  ColorGood = $FF008000;
+  NarrowWidth = 760;
 
-class function TPidEditorForm.Execute(Catalog: TPidCatalog; const FileName: string; const Filter: string): Boolean;
+procedure SetLabelColor(L: TLabel; C: TAlphaColor);
+begin
+  L.StyledSettings := L.StyledSettings - [TStyledSetting.FontColor];
+  L.TextSettings.FontColor := C;
+end;
+
+function ComboText(C: TComboBox): string;
+begin
+  if C.ItemIndex >= 0 then
+    Result := C.Items[C.ItemIndex]
+  else
+    Result := '';
+end;
+
+{ A question with a few big answer buttons (what a Windows task dialog with
+  command links did). OnChoice gets the chosen Result, or -1 for Cancel. }
+type
+  TChoice = record
+    Caption, Hint: string;
+    Result: Integer;
+  end;
+
+  { Remembers which answer button was pressed. }
+  TChoiceClicker = class(TComponent)
+  public
+    Picked: Integer;
+    procedure Click(Sender: TObject);
+  end;
+
+procedure TChoiceClicker.Click(Sender: TObject);
+begin
+  Picked := TButton(Sender).Tag;
+  (Owner as TCommonCustomForm).ModalResult := mrOk;
+end;
+
+function Choice(const Caption, Hint: string; Value: Integer): TChoice;
+begin
+  Result.Caption := Caption;
+  Result.Hint := Hint;
+  Result.Result := Value;
+end;
+
+procedure ChooseOption(const Caption, Title, Text, Notes, NotesCaption: string; const Choices: array of TChoice;
+  const OnChoice: TProc<Integer>);
+var
+  F: TForm;
+  Box: TVertScrollBox;
+  L: TLabel;
+  B: TButton;
+  M: TMemo;
+  Bar: TLayout;
+  C: TChoice;
+  Y: Single;
+  Clicker: TChoiceClicker;
+begin
+  F := TForm.CreateNew(nil);
+  Clicker := TChoiceClicker.Create(F);
+  Clicker.Picked := -1;
+  F.Caption := Caption;
+  F.Position := TFormPosition.MainFormCenter;
+  F.BorderIcons := [TBorderIcon.biSystemMenu];
+  F.ClientWidth := 520;
+  F.ClientHeight := 300;
+  Bar := TLayout.Create(F);
+  Bar.Parent := F;
+  Bar.Align := TAlignLayout.Bottom;
+  Bar.Height := 48;
+  B := TButton.Create(F);
+  B.Parent := Bar;
+  B.Align := TAlignLayout.Right;
+  B.Margins.Rect := TRectF.Create(0, 10, 12, 10);
+  B.Width := 95;
+  B.Text := 'Cancel';
+  B.Cancel := True;
+  B.ModalResult := mrCancel;
+  Box := TVertScrollBox.Create(F);
+  Box.Parent := F;
+  Box.Align := TAlignLayout.Client;
+  Box.Padding.Rect := TRectF.Create(16, 12, 16, 4);
+  Y := 0;
+
+  L := TLabel.Create(F);
+  L.Parent := Box;
+  L.Align := TAlignLayout.Top;
+  L.Height := 28;
+  L.StyledSettings := L.StyledSettings - [TStyledSetting.Size, TStyledSetting.Style, TStyledSetting.FontColor];
+  L.TextSettings.Font.Size := 16;
+  L.TextSettings.Font.Style := [TFontStyle.fsBold];
+  L.TextSettings.FontColor := $FF1F3F66;
+  L.Text := Title;
+  L.Position.Y := Y;
+  Y := Y + 30;
+
+  L := TLabel.Create(F);
+  L.Parent := Box;
+  L.Align := TAlignLayout.Top;
+  L.Height := 44;
+  L.TextSettings.WordWrap := True;
+  L.Text := Text;
+  L.Position.Y := Y;
+  Y := Y + 46;
+
+  for C in Choices do
+  begin
+    B := TButton.Create(F);
+    B.Parent := Box;
+    B.Align := TAlignLayout.Top;
+    B.Margins.Rect := TRectF.Create(0, 6, 0, 0);
+    B.Height := 48;
+    B.TextSettings.WordWrap := True;
+    B.TextSettings.HorzAlign := TTextAlign.Leading;
+    B.Text := C.Caption + sLineBreak + C.Hint;
+    B.Tag := C.Result;
+    B.OnClick := Clicker.Click;
+    B.Position.Y := Y;
+    Y := Y + 56;
+  end;
+
+  if Notes <> '' then
+  begin
+    L := TLabel.Create(F);
+    L.Parent := Box;
+    L.Align := TAlignLayout.Top;
+    L.Margins.Rect := TRectF.Create(0, 10, 0, 0);
+    L.Height := 20;
+    L.Text := NotesCaption;
+    L.Position.Y := Y;
+    Y := Y + 32;
+    M := TMemo.Create(F);
+    M.Parent := Box;
+    M.Align := TAlignLayout.Top;
+    M.Height := 110;
+    M.ReadOnly := True;
+    M.Text := Notes;
+    M.Position.Y := Y;
+    Y := Y + 112;
+  end;
+  F.ClientHeight := Round(Min(Y + 80, 620));
+
+  ShowDialog(F,
+    procedure(R: TModalResult)
+    var
+      Picked: Integer;
+    begin
+      Picked := Clicker.Picked;
+      if R <> mrOk then
+        Picked := -1;
+      if Assigned(OnChoice) then
+        OnChoice(Picked);
+    end);
+end;
+
+class procedure TPidEditorForm.Execute(Catalog: TPidCatalog; const FileName: string; const Filter: string;
+  const OnDone: TProc<Boolean>);
 var
   F: TPidEditorForm;
 begin
   F := TPidEditorForm.Create(Application);
-  try
-    F.FFileName := FileName;
-    F.FWork.Assign(Catalog);
-    F.edtFilter.Text := Filter; // fills the list
-    F.FillList;
-    if F.lvList.Items.Count > 0 then
-      F.Select(TPidDef(F.lvList.Items[0].Data))
-    else if F.FWork.Count > 0 then
-      F.Select(F.FWork[0])
-    else
-      F.ShowCurrent;
-    F.UpdateProblems;
-    F.FModified := False;
-    F.ShowModal;
-    Result := F.FSaved;
-  finally
-    F.Free;
-  end;
+  F.FFileName := FileName;
+  F.FWork.Assign(Catalog);
+  F.edtFilter.Text := Filter;
+  F.FillList;
+  if Length(F.FRows) > 0 then
+    F.Select(F.FRows[0])
+  else if F.FWork.Count > 0 then
+    F.Select(F.FWork[0])
+  else
+    F.ShowCurrent;
+  F.UpdateProblems;
+  F.FModified := False;
+  ShowDialog(F,
+    procedure(R: TModalResult)
+    begin
+      if Assigned(OnDone) then
+        OnDone(F.FSaved);
+    end);
 end;
 
 procedure TPidEditorForm.FormCreate(Sender: TObject);
@@ -147,12 +315,26 @@ var
   C: TPidCategory;
 begin
   FWork := TPidCatalog.Create;
+  lvList := TDataGrid.Create(Self);
+  lvList.Parent := pnlGrid;
+  lvList.Align := TAlignLayout.Client;
+  lvList.AddColumn('ID', 45);
+  lvList.AddColumn('Name', 180, gaLeft, True);
+  lvList.AddColumn('Kind', 75);
+  lvList.AddColumn('PID', 55);
+  lvList.AddColumn('Bytes', 50, gaRight);
+  lvList.AddColumn('Units', 50);
+  lvList.OnGetText := ListGetText;
+  lvList.OnSelect := ListSelect;
   cbKind.Items.Clear;
   for K := Low(TPidKind) to High(TPidKind) do
     cbKind.Items.Add(KindCaptions[K]);
   cbCategory.Items.Clear;
   for C := Low(TPidCategory) to High(TPidCategory) do
     cbCategory.Items.Add(CategoryNames[C]);
+  btnImport.Visible := not IsMobile; // no file picker for an old PC file on a phone
+  lblTestResult.TextSettings.Font.Style := [TFontStyle.fsBold];
+  FormResize(nil);
 end;
 
 procedure TPidEditorForm.FormDestroy(Sender: TObject);
@@ -162,36 +344,75 @@ end;
 
 procedure TPidEditorForm.FormCloseQuery(Sender: TObject; var CanClose: Boolean);
 begin
-  if (ModalResult <> mrOk) and FModified then
-    CanClose := MessageDlg('Discard your changes to the PID definitions?', mtConfirmation,
-      [mbYes, mbNo], 0) = mrYes;
+  if (ModalResult = mrOk) or not FModified or FDiscardOk then
+    Exit;
+  CanClose := False;
+  Confirm('Discard your changes to the PID definitions?',
+    procedure
+    begin
+      FDiscardOk := True;
+      // Close again once this question is out of the way.
+      TThread.ForceQueue(nil, CloseDiscarding);
+    end);
+end;
+
+procedure TPidEditorForm.CloseDiscarding;
+begin
+  ModalResult := mrCancel;
+end;
+
+{ Side by side on a wide window, list above the details on a narrow one (phone). }
+procedure TPidEditorForm.FormResize(Sender: TObject);
+var
+  Narrow: Boolean;
+begin
+  if pnlList = nil then
+    Exit;
+  Narrow := ClientWidth < NarrowWidth;
+  if (Narrow = FNarrow) and (Sender <> nil) then
+    Exit;
+  FNarrow := Narrow;
+  if Narrow then
+  begin
+    pnlList.Align := TAlignLayout.Top;
+    pnlList.Height := Max(200, ClientHeight * 0.4);
+    splMain.Align := TAlignLayout.Top;
+    splMain.Height := 6;
+    splMain.Position.Y := pnlList.Position.Y + pnlList.Height + 1;
+  end
+  else
+  begin
+    pnlList.Align := TAlignLayout.Left;
+    pnlList.Width := 480;
+    splMain.Align := TAlignLayout.Left;
+    splMain.Width := 5;
+    splMain.Position.X := pnlList.Position.X + pnlList.Width + 1;
+  end;
 end;
 
 { List }
 
-procedure TPidEditorForm.UpdateItem(Item: TListItem; P: TPidDef);
+procedure TPidEditorForm.ListGetText(Sender: TObject; Col, Row: Integer; var Text: string);
+var
+  P: TPidDef;
 begin
-  Item.Data := P;
-  Item.Caption := IntToStr(P.Id);
-  Item.SubItems.Clear;
-  Item.SubItems.Add(P.LongName + IfThen(P.Enabled, '', '  (disabled)'));
-  Item.SubItems.Add(KindKeys[P.Kind]);
-  case P.Kind of
-    pkVehicle:
-      begin
-        Item.SubItems.Add(P.PidCode);
-        Item.SubItems.Add(IntToStr(P.DataLength));
+  if (Row < 0) or (Row > High(FRows)) then
+    Exit;
+  P := FRows[Row];
+  case Col of
+    0: Text := IntToStr(P.Id);
+    1: Text := P.LongName + IfThen(P.Enabled, '', '  (disabled)');
+    2: Text := KindKeys[P.Kind];
+    3:
+      case P.Kind of
+        pkVehicle: Text := P.PidCode;
+        pkAnalog: Text := 'A/D ' + IntToStr(P.AnalogChannel);
       end;
-    pkAnalog:
-      begin
-        Item.SubItems.Add('A/D ' + IntToStr(P.AnalogChannel));
-        Item.SubItems.Add('');
-      end;
-  else
-    Item.SubItems.Add('');
-    Item.SubItems.Add('');
+    4:
+      if P.Kind = pkVehicle then
+        Text := IntToStr(P.DataLength);
+    5: Text := P.Units;
   end;
-  Item.SubItems.Add(P.Units);
 end;
 
 procedure TPidEditorForm.FillList;
@@ -201,51 +422,54 @@ var
   Filter: string;
 begin
   Filter := LowerCase(Trim(edtFilter.Text));
-  lvList.Items.BeginUpdate;
-  try
-    lvList.Items.Clear;
-    for I := 0 to FWork.Count - 1 do
-    begin
-      P := FWork[I];
-      if (Filter <> '') and (Pos(Filter, LowerCase(Format('%d %s %s %s %s',
-        [P.Id, P.LongName, P.ShortName, P.PidCode, P.Mci]))) = 0) then
-        Continue;
-      UpdateItem(lvList.Items.Add, P);
-    end;
-  finally
-    lvList.Items.EndUpdate;
+  FRows := nil;
+  for I := 0 to FWork.Count - 1 do
+  begin
+    P := FWork[I];
+    if (Filter <> '') and (Pos(Filter, LowerCase(Format('%d %s %s %s %s',
+      [P.Id, P.LongName, P.ShortName, P.PidCode, P.Mci]))) = 0) then
+      Continue;
+    FRows := FRows + [P];
   end;
+  lvList.OnSelect := nil;
+  try
+    lvList.RowCount := Length(FRows);
+    lvList.ItemIndex := RowOf(FCurrent);
+  finally
+    lvList.OnSelect := ListSelect;
+  end;
+  lvList.Refresh;
 end;
 
-function TPidEditorForm.ItemFor(P: TPidDef): TListItem;
-var
-  I: Integer;
+function TPidEditorForm.RowOf(P: TPidDef): Integer;
 begin
-  for I := 0 to lvList.Items.Count - 1 do
-    if lvList.Items[I].Data = P then
-      Exit(lvList.Items[I]);
-  Result := nil;
+  if P <> nil then
+    for Result := 0 to High(FRows) do
+      if FRows[Result] = P then
+        Exit;
+  Result := -1;
 end;
 
 procedure TPidEditorForm.Select(P: TPidDef);
-var
-  Item: TListItem;
 begin
   FCurrent := P;
-  Item := ItemFor(P);
-  if Item <> nil then
-  begin
-    lvList.Selected := Item;
-    Item.MakeVisible(False);
+  lvList.OnSelect := nil;
+  try
+    lvList.ItemIndex := RowOf(P);
+  finally
+    lvList.OnSelect := ListSelect;
   end;
   ShowCurrent;
 end;
 
-procedure TPidEditorForm.lvListSelectItem(Sender: TObject; Item: TListItem; Selected: Boolean);
+procedure TPidEditorForm.ListSelect(Sender: TObject);
+var
+  Row: Integer;
 begin
-  if Selected and (Item <> nil) and (Item.Data <> FCurrent) then
+  Row := lvList.ItemIndex;
+  if (Row >= 0) and (Row <= High(FRows)) and (FRows[Row] <> FCurrent) then
   begin
-    FCurrent := TPidDef(Item.Data);
+    FCurrent := FRows[Row];
     ShowCurrent;
   end;
 end;
@@ -253,18 +477,13 @@ end;
 procedure TPidEditorForm.edtFilterChange(Sender: TObject);
 begin
   FillList;
-  if (FCurrent <> nil) and (ItemFor(FCurrent) <> nil) then
-    ItemFor(FCurrent).Selected := True;
 end;
 
 { Detail }
 
 procedure TPidEditorForm.SetDetailEnabled(Value: Boolean);
-var
-  I: Integer;
 begin
-  for I := 0 to pnlDetail.ControlCount - 1 do
-    pnlDetail.Controls[I].Enabled := Value;
+  pnlDetail.Enabled := Value;
 end;
 
 procedure TPidEditorForm.ShowCurrent;
@@ -280,7 +499,7 @@ begin
   FLoading := True;
   try
     edtId.Text := IntToStr(P.Id);
-    chkEnabled.Checked := P.Enabled;
+    chkEnabled.IsChecked := P.Enabled;
     edtName.Text := P.LongName;
     edtShortName.Text := P.ShortName;
     edtUnits.Text := P.Units;
@@ -328,7 +547,7 @@ begin
   if (P = nil) or FLoading then
     Exit;
   P.Id := StrToIntDef(Trim(edtId.Text), -1);
-  P.Enabled := chkEnabled.Checked;
+  P.Enabled := chkEnabled.IsChecked;
   P.LongName := Trim(edtName.Text);
   P.ShortName := Trim(edtShortName.Text);
   P.Units := edtUnits.Text;
@@ -348,12 +567,12 @@ begin
         end
         else
           P.PidCode := Trim(edtPid.Text); // reported by validation
-        P.DataLength := StrToIntDef(cbBytes.Text, 0);
+        P.DataLength := StrToIntDef(ComboText(cbBytes), 0);
         P.AnalogChannel := 0;
       end;
     pkAnalog:
       begin
-        P.AnalogChannel := StrToIntDef(cbChannel.Text, 0);
+        P.AnalogChannel := StrToIntDef(ComboText(cbChannel), 0);
         P.PidCode := IntToHex($FFFF - P.AnalogChannel + 1, 4);
         P.DataLength := 0;
       end;
@@ -363,26 +582,30 @@ begin
     P.AnalogChannel := 0;
   end;
   FModified := True;
-  if ItemFor(P) <> nil then
-    UpdateItem(ItemFor(P), P);
+  lvList.Refresh;
 end;
 
 procedure TPidEditorForm.FieldChanged(Sender: TObject);
 begin
-  if FLoading then
+  if FLoading or (FCurrent = nil) then
     Exit;
   ApplyFields;
   if Sender = cbKind then
   begin
     // Sensible defaults when the kind changes.
-    if (FCurrent.Kind = pkVehicle) and (cbBytes.ItemIndex < 0) then
-      cbBytes.ItemIndex := 0;
-    if (FCurrent.Kind = pkAnalog) and (cbChannel.ItemIndex < 0) then
-      cbChannel.ItemIndex := 0;
-    if (FCurrent.Kind = pkCalculated) and (FCurrent.Category <> pcCalculated) then
-      cbCategory.ItemIndex := Ord(pcCalculated);
-    if (FCurrent.Kind = pkAnalog) and (FCurrent.Category <> pcAnalog) then
-      cbCategory.ItemIndex := Ord(pcAnalog);
+    FLoading := True;
+    try
+      if (FCurrent.Kind = pkVehicle) and (cbBytes.ItemIndex < 0) then
+        cbBytes.ItemIndex := 0;
+      if (FCurrent.Kind = pkAnalog) and (cbChannel.ItemIndex < 0) then
+        cbChannel.ItemIndex := 0;
+      if (FCurrent.Kind = pkCalculated) and (FCurrent.Category <> pcCalculated) then
+        cbCategory.ItemIndex := Ord(pcCalculated);
+      if (FCurrent.Kind = pkAnalog) and (FCurrent.Category <> pcAnalog) then
+        cbCategory.ItemIndex := Ord(pcAnalog);
+    finally
+      FLoading := False;
+    end;
     ApplyFields;
     UpdateKindControls;
   end;
@@ -405,10 +628,10 @@ begin
   lblChannel.Enabled := K = pkAnalog;
   cbChannel.Enabled := K = pkAnalog;
   case K of
-    pkVehicle: lblTestInput.Caption := 'Data bytes (hex)';
-    pkAnalog: lblTestInput.Caption := 'A/D sample (hex)';
+    pkVehicle: lblTestInput.Text := 'Data bytes (hex)';
+    pkAnalog: lblTestInput.Text := 'A/D sample (hex)';
   else
-    lblTestInput.Caption := 'Inputs (NAME=value ...)';
+    lblTestInput.Text := 'Inputs (NAME=value ...)';
   end;
 end;
 
@@ -423,17 +646,17 @@ begin
   Err := FCurrent.FormulaError;
   if Err <> '' then
   begin
-    lblFormulaStatus.Font.Color := clRed;
-    lblFormulaStatus.Caption := Err;
+    SetLabelColor(lblFormulaStatus, ColorError);
+    lblFormulaStatus.Text := Err;
     Exit;
   end;
   if FCurrent.FormulaText = '' then
   begin
-    lblFormulaStatus.Font.Color := clGrayText;
+    SetLabelColor(lblFormulaStatus, ColorGrey);
     if FCurrent.Kind = pkCalculated then
-      lblFormulaStatus.Caption := 'No formula: shows the value of its MCI (e.g. RUNTIME, LOGTIME)'
+      lblFormulaStatus.Text := 'No formula: shows the value of its MCI (e.g. RUNTIME, LOGTIME)'
     else
-      lblFormulaStatus.Caption := 'No formula: the value will show as --';
+      lblFormulaStatus.Text := 'No formula: the value will show as --';
     Exit;
   end;
   Missing := '';
@@ -447,16 +670,16 @@ begin
   end;
   if Missing <> '' then
   begin
-    lblFormulaStatus.Font.Color := $000080FF;
-    lblFormulaStatus.Caption := 'Formula OK, but no PID has MCI:' + Missing;
+    SetLabelColor(lblFormulaStatus, ColorWarn);
+    lblFormulaStatus.Text := 'Formula OK, but no PID has MCI:' + Missing;
   end
   else
   begin
-    lblFormulaStatus.Font.Color := clGreen;
+    SetLabelColor(lblFormulaStatus, ColorGood);
     if Length(FCurrent.Formula.Variables) > 0 then
-      lblFormulaStatus.Caption := 'Formula OK - uses %' + string.Join('%, %', FCurrent.Formula.Variables) + '%'
+      lblFormulaStatus.Text := 'Formula OK - uses %' + string.Join('%, %', FCurrent.Formula.Variables) + '%'
     else
-      lblFormulaStatus.Caption := 'Formula OK';
+      lblFormulaStatus.Text := 'Formula OK';
   end;
 end;
 
@@ -471,10 +694,10 @@ var
   I, J, P: Integer;
   V: Double;
 begin
-  lblTestResult.Font.Color := clWindowText;
+  SetLabelColor(lblTestResult, $FF1E1E1E);
   if (FCurrent = nil) or (FCurrent.FormulaError <> '') then
   begin
-    lblTestResult.Caption := '-';
+    lblTestResult.Text := '-';
     Exit;
   end;
   try
@@ -510,12 +733,12 @@ begin
         Inputs[I] := Bytes[I];
       V := FCurrent.Formula.Evaluate(Inputs, []);
     end;
-    lblTestResult.Caption := FCurrent.FormatValue(V) + IfThen(FCurrent.Units <> '', ' ' + FCurrent.Units, '');
+    lblTestResult.Text := FCurrent.FormatValue(V) + IfThen(FCurrent.Units <> '', ' ' + FCurrent.Units, '');
   except
     on E: Exception do
     begin
-      lblTestResult.Font.Color := clRed;
-      lblTestResult.Caption := E.Message;
+      SetLabelColor(lblTestResult, ColorError);
+      lblTestResult.Text := E.Message;
     end;
   end;
 end;
@@ -529,50 +752,56 @@ end;
 procedure TPidEditorForm.UpdateProblems;
 var
   Pr: TPidProblem;
-  Top: Integer;
+  Keep: TPointF;
+  Item: TListBoxItem;
 begin
   FProblems := FWork.Validate;
-  Top := lbProblems.TopIndex;
-  lbProblems.Items.BeginUpdate;
+  Keep := lbProblems.ViewportPosition;
+  lbProblems.BeginUpdate;
   try
-    lbProblems.Items.Clear;
+    lbProblems.Clear;
     for Pr in FProblems do
-      lbProblems.Items.Add(Pr.Text);
+    begin
+      Item := TListBoxItem.Create(lbProblems);
+      Item.Text := Pr.Text;
+      Item.StyledSettings := Item.StyledSettings - [TStyledSetting.FontColor];
+      Item.TextSettings.FontColor := $FFA00000;
+      lbProblems.AddObject(Item);
+    end;
   finally
-    lbProblems.Items.EndUpdate;
+    lbProblems.EndUpdate;
   end;
-  if Top < lbProblems.Items.Count then
-    lbProblems.TopIndex := Top;
+  lbProblems.ViewportPosition := Keep;
   pnlProblems.Visible := Length(FProblems) > 0;
   if Length(FProblems) = 0 then
   begin
-    lblProblems.Font.Color := clGreen;
-    lblProblems.Caption := Format('%d PIDs, no problems', [FWork.Count]);
+    SetLabelColor(lblProblems, ColorGood);
+    lblProblems.Text := Format('%d PIDs, no problems', [FWork.Count]);
   end
   else
   begin
-    lblProblems.Font.Color := clRed;
-    lblProblems.Caption := Format('%d PIDs, %d problem(s) to fix before saving - click one above to go to the PID',
+    SetLabelColor(lblProblems, ColorError);
+    lblProblems.Text := Format('%d PIDs, %d problem(s) to fix before saving - click one above to go to the PID',
       [FWork.Count, Length(FProblems)]);
   end;
 end;
 
 procedure TPidEditorForm.lblProblemsClick(Sender: TObject);
 begin
-  if pnlProblems.Visible and (lbProblems.Items.Count > 0) then
+  if pnlProblems.Visible and (lbProblems.Count > 0) then
     lbProblems.SetFocus;
 end;
 
-procedure TPidEditorForm.lbProblemsClick(Sender: TObject);
+procedure TPidEditorForm.lbProblemsItemClick(const Sender: TCustomListBox; const Item: TListBoxItem);
 var
   I: Integer;
   P: TPidDef;
 begin
-  I := lbProblems.ItemIndex;
+  I := Item.Index;
   if (I < 0) or (I > High(FProblems)) or (FProblems[I].Index < 0) or (FProblems[I].Index >= FWork.Count) then
     Exit;
   P := FWork[FProblems[I].Index];
-  if ItemFor(P) = nil then
+  if RowOf(P) < 0 then
   begin
     edtFilter.Text := ''; // the PID is filtered out of the list
     FillList;
@@ -632,7 +861,7 @@ end;
 procedure TPidEditorForm.btnDeleteClick(Sender: TObject);
 var
   Msg, Users: string;
-  I, Idx: Integer;
+  I: Integer;
   P: TPidDef;
   V: string;
 begin
@@ -651,18 +880,25 @@ begin
   Msg := Format('Delete "%s"?', [FCurrent.LongName]);
   if Users <> '' then
     Msg := Msg + sLineBreak + sLineBreak + Format('These PIDs use %%%s%% and will show -- without it:', [FCurrent.Mci]) + Users;
-  if MessageDlg(Msg, mtConfirmation, [mbYes, mbNo], 0) <> mrYes then
-    Exit;
-  Idx := FWork.IndexOf(FCurrent);
-  FWork.Delete(Idx);
-  FCurrent := nil;
-  FModified := True;
-  FillList;
-  if FWork.Count > 0 then
-    Select(FWork[Min(Idx, FWork.Count - 1)])
-  else
-    ShowCurrent;
-  UpdateProblems;
+  P := FCurrent;
+  Confirm(Msg,
+    procedure
+    var
+      Idx: Integer;
+    begin
+      Idx := FWork.IndexOf(P);
+      if Idx < 0 then
+        Exit;
+      FWork.Delete(Idx);
+      FCurrent := nil;
+      FModified := True;
+      FillList;
+      if FWork.Count > 0 then
+        Select(FWork[Min(Idx, FWork.Count - 1)])
+      else
+        ShowCurrent;
+      UpdateProblems;
+    end);
 end;
 
 { Import / defaults }
@@ -680,16 +916,6 @@ begin
   UpdateProblems;
 end;
 
-procedure TPidEditorForm.AddChoice(Task: TTaskDialog; const Caption, Hint: string; Result: Integer);
-var
-  B: TTaskDialogButtonItem;
-begin
-  B := Task.Buttons.Add as TTaskDialogButtonItem;
-  B.Caption := Caption;
-  B.CommandLinkHint := Hint;
-  B.ModalResult := Result;
-end;
-
 function Lines(const Items: TArray<string>; MaxLines: Integer): string;
 var
   I: Integer;
@@ -704,172 +930,177 @@ end;
 procedure TPidEditorForm.btnImportClick(Sender: TObject);
 var
   Dlg: TOpenDialog;
-  Imported: TPidCatalog;
-  Task: TTaskDialog;
-  NewCount, Disabled, I: Integer;
-  Mode: TMergeMode;
-  R: TMergeResult;
-  Summary: string;
+  FileName: string;
 begin
+  if IsMobile then
+    Exit;
+  FileName := '';
   Dlg := TOpenDialog.Create(Self);
-  Imported := TPidCatalog.Create;
-  Task := TTaskDialog.Create(Self);
   try
     Dlg.Title := 'Import old UVSCAN PID file';
     Dlg.Filter := 'UVSCAN PID file (*.csv)|*.csv|All files (*.*)|*.*';
-    Dlg.Options := Dlg.Options + [ofFileMustExist];
-    if not Dlg.Execute then
-      Exit;
-    try
-      ImportLegacyPidsCsv(Dlg.FileName, Imported);
-    except
-      on E: Exception do
-      begin
-        MessageDlg('Could not read ' + Dlg.FileName + ':' + sLineBreak + E.Message, mtError, [mbOK], 0);
-        Exit;
-      end;
-    end;
-    if Imported.Count = 0 then
-    begin
-      MessageDlg('No PIDs found in ' + Dlg.FileName + '.' + sLineBreak + sLineBreak +
-        Lines(Imported.Warnings.ToStringArray, 15), mtWarning, [mbOK], 0);
-      Exit;
-    end;
-
-    NewCount := 0;
-    Disabled := 0;
-    for I := 0 to Imported.Count - 1 do
-    begin
-      if FindMatchingPid(FWork, Imported[I]) = nil then
-        Inc(NewCount);
-      if not Imported[I].Enabled then
-        Inc(Disabled);
-    end;
-
-    Task.Caption := 'Import PIDs';
-    Task.MainIcon := tdiInformation;
-    Task.Title := Format('%d PIDs read from %s', [Imported.Count, ExtractFileName(Dlg.FileName)]);
-    Task.Text := Format('%d are new to your list; %d match a PID you already have (same PID and name or formula).',
-      [NewCount, Imported.Count - NewCount]) + sLineBreak + 'Nothing is written until you press Save.';
-    if Imported.Warnings.Count > 0 then
-    begin
-      Task.ExpandButtonCaption := Format('%d note(s) about this file', [Imported.Warnings.Count]);
-      Task.ExpandedText := Lines(Imported.Warnings.ToStringArray, 25);
-    end;
-    Task.CommonButtons := [tcbCancel];
-    Task.Flags := [tfUseCommandLinks, tfAllowDialogCancellation];
-    AddChoice(Task, 'Add the new PIDs',
-      'Keep every PID you have as it is; add the ones you do not have yet.', 101);
-    AddChoice(Task, 'Add new PIDs and update matching ones',
-      'Matching PIDs are replaced by the imported definition (they keep their ID).', 102);
-    AddChoice(Task, 'Replace my list with this file',
-      'Use only the imported PIDs.', 100);
-    if not Task.Execute then
-      Exit;
-    case Task.ModalResult of
-      100: Mode := mmReplace;
-      101: Mode := mmAddNew;
-      102: Mode := mmAddAndUpdate;
-    else
-      Exit;
-    end;
-
-    R := MergeCatalog(FWork, Imported, Mode);
-    AfterBulkChange;
-
-    if Mode = mmReplace then
-      Summary := Format('Your list now has the %d imported PIDs.', [R.Added])
-    else
-    begin
-      Summary := Format('Added %d PIDs', [R.Added]);
-      if R.Updated > 0 then
-        Summary := Summary + Format(', updated %d', [R.Updated]);
-      if R.Skipped > 0 then
-        Summary := Summary + Format(', left %d you already had unchanged', [R.Skipped]);
-      Summary := Summary + '.';
-      if R.Renumbered > 0 then
-        Summary := Summary + sLineBreak + Format('%d imported PIDs got a new ID because theirs was already taken.',
-          [R.Renumbered]);
-      if Length(R.MciCleared) > 0 then
-        Summary := Summary + sLineBreak + sLineBreak + Format('%d imported PIDs used an MCI name you already have, ' +
-          'so their MCI was removed (formulas keep using your existing PID):', [Length(R.MciCleared)]) +
-          sLineBreak + Lines(R.MciCleared, 10);
-    end;
-    if Disabled > 0 then
-      Summary := Summary + sLineBreak + Format('%d were disabled in the old file (group not 1) and stay disabled.', [Disabled]);
-    if Length(FProblems) > 0 then
-      Summary := Summary + sLineBreak + sLineBreak +
-        Format('%d problem(s) need fixing before you can save; they are listed at the bottom of the editor.',
-        [Length(FProblems)]);
-    MessageDlg(Summary, mtInformation, [mbOK], 0);
+    Dlg.Options := Dlg.Options + [TOpenOption.ofFileMustExist];
+    if Dlg.Execute then
+      FileName := Dlg.FileName;
   finally
-    Task.Free;
-    Imported.Free;
     Dlg.Free;
   end;
+  if FileName <> '' then
+    ImportFile(FileName);
+end;
+
+procedure TPidEditorForm.ImportFile(const FileName: string);
+var
+  Imported: TPidCatalog;
+  NewCount, Disabled, I: Integer;
+  Notes: string;
+begin
+  Imported := TPidCatalog.Create;
+  try
+    ImportLegacyPidsCsv(FileName, Imported);
+  except
+    on E: Exception do
+    begin
+      Imported.Free;
+      ShowError('Could not read ' + FileName + ':' + sLineBreak + E.Message);
+      Exit;
+    end;
+  end;
+  if Imported.Count = 0 then
+  begin
+    ShowWarning('No PIDs found in ' + FileName + '.' + sLineBreak + sLineBreak +
+      Lines(Imported.Warnings.ToStringArray, 15));
+    Imported.Free;
+    Exit;
+  end;
+
+  NewCount := 0;
+  Disabled := 0;
+  for I := 0 to Imported.Count - 1 do
+  begin
+    if FindMatchingPid(FWork, Imported[I]) = nil then
+      Inc(NewCount);
+    if not Imported[I].Enabled then
+      Inc(Disabled);
+  end;
+  Notes := '';
+  if Imported.Warnings.Count > 0 then
+    Notes := Lines(Imported.Warnings.ToStringArray, 25);
+
+  ChooseOption('Import PIDs',
+    Format('%d PIDs read from %s', [Imported.Count, ExtractFileName(FileName)]),
+    Format('%d are new to your list; %d match a PID you already have (same PID and name or formula).',
+      [NewCount, Imported.Count - NewCount]) + sLineBreak + 'Nothing is written until you press Save.',
+    Notes, Format('%d note(s) about this file', [Imported.Warnings.Count]),
+    [Choice('Add the new PIDs', 'Keep every PID you have as it is; add the ones you do not have yet.', 101),
+     Choice('Add new PIDs and update matching ones',
+       'Matching PIDs are replaced by the imported definition (they keep their ID).', 102),
+     Choice('Replace my list with this file', 'Use only the imported PIDs.', 100)],
+    procedure(Picked: Integer)
+    var
+      Mode: TMergeMode;
+      R: TMergeResult;
+      Summary: string;
+    begin
+      try
+        case Picked of
+          100: Mode := mmReplace;
+          101: Mode := mmAddNew;
+          102: Mode := mmAddAndUpdate;
+        else
+          Exit;
+        end;
+        R := MergeCatalog(FWork, Imported, Mode);
+        AfterBulkChange;
+
+        if Mode = mmReplace then
+          Summary := Format('Your list now has the %d imported PIDs.', [R.Added])
+        else
+        begin
+          Summary := Format('Added %d PIDs', [R.Added]);
+          if R.Updated > 0 then
+            Summary := Summary + Format(', updated %d', [R.Updated]);
+          if R.Skipped > 0 then
+            Summary := Summary + Format(', left %d you already had unchanged', [R.Skipped]);
+          Summary := Summary + '.';
+          if R.Renumbered > 0 then
+            Summary := Summary + sLineBreak + Format('%d imported PIDs got a new ID because theirs was already taken.',
+              [R.Renumbered]);
+          if Length(R.MciCleared) > 0 then
+            Summary := Summary + sLineBreak + sLineBreak + Format('%d imported PIDs used an MCI name you already have, ' +
+              'so their MCI was removed (formulas keep using your existing PID):', [Length(R.MciCleared)]) +
+              sLineBreak + Lines(R.MciCleared, 10);
+        end;
+        if Disabled > 0 then
+          Summary := Summary + sLineBreak + Format('%d were disabled in the old file (group not 1) and stay disabled.', [Disabled]);
+        if Length(FProblems) > 0 then
+          Summary := Summary + sLineBreak + sLineBreak +
+            Format('%d problem(s) need fixing before you can save; they are listed at the bottom of the editor.',
+            [Length(FProblems)]);
+        ShowInfo(Summary);
+      finally
+        Imported.Free;
+      end;
+    end);
 end;
 
 procedure TPidEditorForm.btnDefaultsClick(Sender: TObject);
 var
   Defaults: TPidCatalog;
-  Task: TTaskDialog;
   Missing, I: Integer;
-  R: TMergeResult;
-  Msg: string;
 begin
   Defaults := TPidCatalog.Create;
-  Task := TTaskDialog.Create(Self);
   try
-    try
-      Defaults.LoadFromJsonText(DefaultPidsJson);
-    except
-      on E: Exception do
-      begin
-        MessageDlg('Could not load the built-in defaults: ' + E.Message, mtError, [mbOK], 0);
-        Exit;
-      end;
-    end;
-    Missing := 0;
-    for I := 0 to Defaults.Count - 1 do
-      if FindMatchingPid(FWork, Defaults[I]) = nil then
-        Inc(Missing);
-
-    Task.Caption := 'Default PIDs';
-    Task.MainIcon := tdiInformation;
-    Task.Title := Format('The built-in list has %d PIDs', [Defaults.Count]);
-    Task.Text := Format('%d of them are not in your list.', [Missing]) + sLineBreak +
-      'Nothing is written until you press Save.';
-    Task.CommonButtons := [tcbCancel];
-    Task.Flags := [tfUseCommandLinks, tfAllowDialogCancellation];
-    AddChoice(Task, 'Add the default PIDs I do not have',
-      'Keeps everything in your list, including your own changes and imports.', 101);
-    AddChoice(Task, 'Replace my list with the defaults',
-      'Throws away your changes, imports and added PIDs.', 100);
-    if not Task.Execute then
-      Exit;
-    case Task.ModalResult of
-      101:
-        begin
-          R := MergeCatalog(FWork, Defaults, mmAddNew);
-          Msg := Format('Added %d default PIDs.', [R.Added]);
-          if Length(R.MciCleared) > 0 then
-            Msg := Msg + sLineBreak + Format('%d of them used an MCI name you already have, so it was removed:',
-              [Length(R.MciCleared)]) + sLineBreak + Lines(R.MciCleared, 10);
-        end;
-      100:
-        begin
-          FWork.Assign(Defaults);
-          Msg := Format('Your list is now the %d default PIDs.', [Defaults.Count]);
-        end;
-    else
+    Defaults.LoadFromJsonText(DefaultPidsJson);
+  except
+    on E: Exception do
+    begin
+      Defaults.Free;
+      ShowError('Could not load the built-in defaults: ' + E.Message);
       Exit;
     end;
-    AfterBulkChange;
-    MessageDlg(Msg, mtInformation, [mbOK], 0);
-  finally
-    Task.Free;
-    Defaults.Free;
   end;
+  Missing := 0;
+  for I := 0 to Defaults.Count - 1 do
+    if FindMatchingPid(FWork, Defaults[I]) = nil then
+      Inc(Missing);
+
+  ChooseOption('Default PIDs',
+    Format('The built-in list has %d PIDs', [Defaults.Count]),
+    Format('%d of them are not in your list.', [Missing]) + sLineBreak + 'Nothing is written until you press Save.',
+    '', '',
+    [Choice('Add the default PIDs I do not have',
+       'Keeps everything in your list, including your own changes and imports.', 101),
+     Choice('Replace my list with the defaults', 'Throws away your changes, imports and added PIDs.', 100)],
+    procedure(Picked: Integer)
+    var
+      R: TMergeResult;
+      Msg: string;
+    begin
+      try
+        case Picked of
+          101:
+            begin
+              R := MergeCatalog(FWork, Defaults, mmAddNew);
+              Msg := Format('Added %d default PIDs.', [R.Added]);
+              if Length(R.MciCleared) > 0 then
+                Msg := Msg + sLineBreak + Format('%d of them used an MCI name you already have, so it was removed:',
+                  [Length(R.MciCleared)]) + sLineBreak + Lines(R.MciCleared, 10);
+            end;
+          100:
+            begin
+              FWork.Assign(Defaults);
+              Msg := Format('Your list is now the %d default PIDs.', [Defaults.Count]);
+            end;
+        else
+          Exit;
+        end;
+        AfterBulkChange;
+        ShowInfo(Msg);
+      finally
+        Defaults.Free;
+      end;
+    end);
 end;
 
 { Save }
@@ -879,8 +1110,8 @@ begin
   UpdateProblems;
   if Length(FProblems) > 0 then
   begin
-    MessageDlg(Format('There are %d problem(s) to fix first. They are listed at the bottom of this window; ' +
-      'click one to go to that PID.', [Length(FProblems)]), mtWarning, [mbOK], 0);
+    ShowWarning(Format('There are %d problem(s) to fix first. They are listed at the bottom of this window; ' +
+      'click one to go to that PID.', [Length(FProblems)]));
     lbProblems.SetFocus;
     Exit;
   end;
@@ -889,7 +1120,7 @@ begin
   except
     on E: Exception do
     begin
-      MessageDlg('Could not save ' + FFileName + ':' + sLineBreak + E.Message, mtError, [mbOK], 0);
+      ShowError('Could not save ' + FFileName + ':' + sLineBreak + E.Message);
       Exit;
     end;
   end;

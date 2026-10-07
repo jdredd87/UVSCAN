@@ -1,0 +1,494 @@
+object LogViewerForm: TLogViewerForm
+  Left = 0
+  Top = 0
+  Caption = 'Log viewer'
+  ClientHeight = 760
+  ClientWidth = 1220
+  Position = ScreenCenter
+  FormFactor.Width = 320
+  FormFactor.Height = 480
+  FormFactor.Devices = [Desktop]
+  OnCreate = FormCreate
+  OnDestroy = FormDestroy
+  OnKeyDown = FormKeyDown
+  OnResize = FormResize
+  DesignerMasterStyle = 0
+  object pnlBar: TPanel
+    Align = Top
+    Size.Width = 1220.000000000000000000
+    Size.Height = 40.000000000000000000
+    Size.PlatformDefault = False
+    TabOrder = 0
+    object sbBar: THorzScrollBox
+      Align = Client
+      Size.Width = 1220.000000000000000000
+      Size.Height = 40.000000000000000000
+      Size.PlatformDefault = False
+      TabOrder = 0
+      Viewport.Width = 1220.000000000000000000
+      Viewport.Height = 40.000000000000000000
+      object btnOpen: TButton
+        Position.X = 8.000000000000000000
+        Position.Y = 7.000000000000000000
+        Size.Width = 90.000000000000000000
+        Size.Height = 26.000000000000000000
+        Size.PlatformDefault = False
+        TabOrder = 0
+        Text = 'Open log...'
+        OnClick = btnOpenClick
+      end
+      object cbRecent: TComboBox
+        Position.X = 104.000000000000000000
+        Position.Y = 8.000000000000000000
+        Size.Width = 280.000000000000000000
+        Size.Height = 24.000000000000000000
+        Size.PlatformDefault = False
+        DropDownCount = 20
+        TabOrder = 1
+        OnChange = cbRecentChange
+      end
+      object btnDemo: TButton
+        Hint = 'Open a made-up 10 minute drive to try the viewer'
+        Position.X = 390.000000000000000000
+        Position.Y = 7.000000000000000000
+        Size.Width = 150.000000000000000000
+        Size.Height = 26.000000000000000000
+        Size.PlatformDefault = False
+        TabOrder = 2
+        Text = 'Demo drive (made up)'
+        ShowHint = True
+        OnClick = btnDemoClick
+      end
+      object lblView: TLabel
+        Position.X = 556.000000000000000000
+        Position.Y = 11.000000000000000000
+        Size.Width = 30.000000000000000000
+        Size.Height = 17.000000000000000000
+        Size.PlatformDefault = False
+        Text = 'View'
+        TabOrder = 3
+      end
+      object cbView: TComboBox
+        Position.X = 588.000000000000000000
+        Position.Y = 8.000000000000000000
+        Size.Width = 170.000000000000000000
+        Size.Height = 24.000000000000000000
+        Size.PlatformDefault = False
+        TabOrder = 4
+        OnChange = cbViewChange
+      end
+      object btnSaveView: TButton
+        Hint = 'Save the channels, colours, scales and levels as a named view'
+        Position.X = 762.000000000000000000
+        Position.Y = 7.000000000000000000
+        Size.Width = 90.000000000000000000
+        Size.Height = 26.000000000000000000
+        Size.PlatformDefault = False
+        TabOrder = 5
+        Text = 'Save view...'
+        ShowHint = True
+        OnClick = btnSaveViewClick
+      end
+      object btnDeleteView: TButton
+        Position.X = 856.000000000000000000
+        Position.Y = 7.000000000000000000
+        Size.Width = 60.000000000000000000
+        Size.Height = 26.000000000000000000
+        Size.PlatformDefault = False
+        TabOrder = 6
+        Text = 'Delete'
+        OnClick = btnDeleteViewClick
+      end
+      object lblMode: TLabel
+        Position.X = 928.000000000000000000
+        Position.Y = 11.000000000000000000
+        Size.Width = 36.000000000000000000
+        Size.Height = 17.000000000000000000
+        Size.PlatformDefault = False
+        Text = 'Chart'
+        TabOrder = 7
+      end
+      object cbMode: TComboBox
+        Position.X = 966.000000000000000000
+        Position.Y = 8.000000000000000000
+        Size.Width = 170.000000000000000000
+        Size.Height = 24.000000000000000000
+        Size.PlatformDefault = False
+        TabOrder = 8
+        OnChange = cbModeChange
+      end
+      object btnImage: TButton
+        Hint = 'Save the chart as a PNG picture'
+        Position.X = 1142.000000000000000000
+        Position.Y = 7.000000000000000000
+        Size.Width = 72.000000000000000000
+        Size.Height = 26.000000000000000000
+        Size.PlatformDefault = False
+        TabOrder = 9
+        Text = 'Image...'
+        ShowHint = True
+        OnClick = btnImageClick
+      end
+    end
+  end
+  object pnlPlay: TPanel
+    Align = Top
+    Position.Y = 40.000000000000000000
+    Size.Width = 1220.000000000000000000
+    Size.Height = 40.000000000000000000
+    Size.PlatformDefault = False
+    TabOrder = 1
+    object sbPlay: THorzScrollBox
+      Align = Client
+      Size.Width = 1220.000000000000000000
+      Size.Height = 40.000000000000000000
+      Size.PlatformDefault = False
+      TabOrder = 0
+      Viewport.Width = 1220.000000000000000000
+      Viewport.Height = 40.000000000000000000
+      object btnStart: TButton
+        Hint = 'Go to the start'
+        Position.X = 8.000000000000000000
+        Position.Y = 7.000000000000000000
+        Size.Width = 34.000000000000000000
+        Size.Height = 26.000000000000000000
+        Size.PlatformDefault = False
+        TabOrder = 0
+        Text = '|<'
+        ShowHint = True
+        OnClick = btnStartClick
+      end
+      object btnPlay: TButton
+        Hint = 'Play / pause (Space)'
+        Position.X = 46.000000000000000000
+        Position.Y = 7.000000000000000000
+        Size.Width = 70.000000000000000000
+        Size.Height = 26.000000000000000000
+        Size.PlatformDefault = False
+        TabOrder = 1
+        Text = 'Play'
+        ShowHint = True
+        OnClick = btnPlayClick
+      end
+      object btnEnd: TButton
+        Hint = 'Go to the end'
+        Position.X = 120.000000000000000000
+        Position.Y = 7.000000000000000000
+        Size.Width = 34.000000000000000000
+        Size.Height = 26.000000000000000000
+        Size.PlatformDefault = False
+        TabOrder = 2
+        Text = '>|'
+        ShowHint = True
+        OnClick = btnEndClick
+      end
+      object cbSpeed: TComboBox
+        Hint = 'Playback speed'
+        Position.X = 160.000000000000000000
+        Position.Y = 8.000000000000000000
+        Size.Width = 64.000000000000000000
+        Size.Height = 24.000000000000000000
+        Size.PlatformDefault = False
+        TabOrder = 3
+        ShowHint = True
+      end
+      object tbPos: TTrackBar
+        CanParentFocus = True
+        Max = 1000.000000000000000000
+        Orientation = Horizontal
+        Position.X = 230.000000000000000000
+        Position.Y = 10.000000000000000000
+        Size.Width = 412.000000000000000000
+        Size.Height = 20.000000000000000000
+        Size.PlatformDefault = False
+        TabOrder = 4
+        OnChange = tbPosChange
+      end
+      object lblTime: TLabel
+        StyledSettings = [Family, Size, FontColor]
+        Position.X = 650.000000000000000000
+        Position.Y = 11.000000000000000000
+        Size.Width = 116.000000000000000000
+        Size.Height = 17.000000000000000000
+        Size.PlatformDefault = False
+        Text = '0:00.0 / 0:00.0'
+        TabOrder = 5
+      end
+      object chkFollow: TCheckBox
+        Hint = 'Scroll the chart to keep the cursor in view while playing'
+        IsChecked = True
+        Position.X = 770.000000000000000000
+        Position.Y = 11.000000000000000000
+        Size.Width = 112.000000000000000000
+        Size.Height = 19.000000000000000000
+        Size.PlatformDefault = False
+        TabOrder = 6
+        Text = 'Follow cursor'
+        ShowHint = True
+      end
+      object chkBands: TCheckBox
+        Hint = 'Shade the alert levels behind the lines'
+        IsChecked = True
+        Position.X = 886.000000000000000000
+        Position.Y = 11.000000000000000000
+        Size.Width = 110.000000000000000000
+        Size.Height = 19.000000000000000000
+        Size.PlatformDefault = False
+        TabOrder = 7
+        Text = 'Level bands'
+        ShowHint = True
+        OnChange = chkBandsChange
+      end
+      object chkUseDisplay: TCheckBox
+        Hint = 'Use the alert levels set in Display & alerts for PIDs with the same name'
+        IsChecked = True
+        Position.X = 1000.000000000000000000
+        Position.Y = 11.000000000000000000
+        Size.Width = 230.000000000000000000
+        Size.Height = 19.000000000000000000
+        Size.PlatformDefault = False
+        TabOrder = 8
+        Text = 'Alert levels from Display & alerts'
+        ShowHint = True
+        OnChange = chkUseDisplayChange
+      end
+      object btnSelect: TSpeedButton
+        Hint = 'While pressed, dragging in the chart selects a range'
+        StaysPressed = True
+        Position.X = 1236.000000000000000000
+        Position.Y = 7.000000000000000000
+        Size.Width = 100.000000000000000000
+        Size.Height = 26.000000000000000000
+        Size.PlatformDefault = False
+        Text = 'Select range'
+        ShowHint = True
+        OnClick = btnSelectClick
+      end
+    end
+  end
+  object sbLog: TStatusBar
+    Align = Bottom
+    Position.Y = 737.000000000000000000
+    ShowSizeGrip = True
+    Size.Width = 1220.000000000000000000
+    Size.Height = 23.000000000000000000
+    Size.PlatformDefault = False
+    TabOrder = 2
+    object lblStatus0: TLabel
+      Align = Left
+      Margins.Left = 6.000000000000000000
+      Size.Width = 520.000000000000000000
+      Size.Height = 23.000000000000000000
+      Size.PlatformDefault = False
+      TabOrder = 0
+    end
+    object lblStatus1: TLabel
+      Align = Left
+      Margins.Left = 6.000000000000000000
+      Position.X = 532.000000000000000000
+      Size.Width = 380.000000000000000000
+      Size.Height = 23.000000000000000000
+      Size.PlatformDefault = False
+      TabOrder = 1
+    end
+    object lblStatus2: TLabel
+      Align = Client
+      Margins.Left = 6.000000000000000000
+      Size.Width = 290.000000000000000000
+      Size.Height = 23.000000000000000000
+      Size.PlatformDefault = False
+      TabOrder = 2
+    end
+  end
+  object pnlLeft: TLayout
+    Align = Left
+    Padding.Left = 6.000000000000000000
+    Padding.Bottom = 4.000000000000000000
+    Position.Y = 80.000000000000000000
+    Size.Width = 340.000000000000000000
+    Size.Height = 657.000000000000000000
+    Size.PlatformDefault = False
+    TabOrder = 3
+    object layChannels: TLayout
+      Align = Client
+      Size.Width = 334.000000000000000000
+      Size.Height = 445.000000000000000000
+      Size.PlatformDefault = False
+      TabOrder = 0
+    end
+    object gbChannel: TGroupBox
+      Align = Bottom
+      Margins.Top = 6.000000000000000000
+      Position.X = 6.000000000000000000
+      Position.Y = 451.000000000000000000
+      Size.Width = 334.000000000000000000
+      Size.Height = 202.000000000000000000
+      Size.PlatformDefault = False
+      Text = 'Channel'
+      TabOrder = 1
+      object lblColor: TLabel
+        Position.X = 12.000000000000000000
+        Position.Y = 27.000000000000000000
+        Size.Width = 40.000000000000000000
+        Size.Height = 17.000000000000000000
+        Size.PlatformDefault = False
+        Text = 'Colour'
+        TabOrder = 0
+      end
+      object cbxColor: TComboBox
+        Position.X = 56.000000000000000000
+        Position.Y = 24.000000000000000000
+        Size.Width = 150.000000000000000000
+        Size.Height = 24.000000000000000000
+        Size.PlatformDefault = False
+        TabOrder = 1
+        OnChange = ChannelSettingChange
+      end
+      object lblWidth: TLabel
+        Position.X = 214.000000000000000000
+        Position.Y = 27.000000000000000000
+        Size.Width = 40.000000000000000000
+        Size.Height = 17.000000000000000000
+        Size.PlatformDefault = False
+        Text = 'Width'
+        TabOrder = 2
+      end
+      object cbWidth: TComboBox
+        Position.X = 254.000000000000000000
+        Position.Y = 24.000000000000000000
+        Size.Width = 70.000000000000000000
+        Size.Height = 24.000000000000000000
+        Size.PlatformDefault = False
+        TabOrder = 3
+        OnChange = ChannelSettingChange
+      end
+      object chkAuto: TCheckBox
+        Position.X = 12.000000000000000000
+        Position.Y = 58.000000000000000000
+        Size.Width = 300.000000000000000000
+        Size.Height = 19.000000000000000000
+        Size.PlatformDefault = False
+        TabOrder = 4
+        Text = 'Scale automatically (whole log)'
+        OnChange = ChannelSettingChange
+      end
+      object lblMin: TLabel
+        Position.X = 12.000000000000000000
+        Position.Y = 89.000000000000000000
+        Size.Width = 28.000000000000000000
+        Size.Height = 17.000000000000000000
+        Size.PlatformDefault = False
+        Text = 'Min'
+        TabOrder = 5
+      end
+      object edtMin: TEdit
+        Touch.InteractiveGestures = [LongTap, DoubleTap]
+        TabOrder = 6
+        Position.X = 42.000000000000000000
+        Position.Y = 86.000000000000000000
+        Size.Width = 90.000000000000000000
+        Size.Height = 24.000000000000000000
+        Size.PlatformDefault = False
+        OnChangeTracking = ChannelSettingChange
+      end
+      object lblMax: TLabel
+        Position.X = 150.000000000000000000
+        Position.Y = 89.000000000000000000
+        Size.Width = 30.000000000000000000
+        Size.Height = 17.000000000000000000
+        Size.PlatformDefault = False
+        Text = 'Max'
+        TabOrder = 7
+      end
+      object edtMax: TEdit
+        Touch.InteractiveGestures = [LongTap, DoubleTap]
+        TabOrder = 8
+        Position.X = 182.000000000000000000
+        Position.Y = 86.000000000000000000
+        Size.Width = 90.000000000000000000
+        Size.Height = 24.000000000000000000
+        Size.PlatformDefault = False
+        OnChangeTracking = ChannelSettingChange
+      end
+      object chkLevelColors: TCheckBox
+        Position.X = 12.000000000000000000
+        Position.Y = 118.000000000000000000
+        Size.Width = 300.000000000000000000
+        Size.Height = 19.000000000000000000
+        Size.PlatformDefault = False
+        TabOrder = 9
+        Text = 'Colour the line by alert level'
+        OnChange = ChannelSettingChange
+      end
+      object btnLevels: TButton
+        Hint = 'Alert levels of this channel in this view'
+        Position.X = 12.000000000000000000
+        Position.Y = 143.000000000000000000
+        Size.Width = 130.000000000000000000
+        Size.Height = 26.000000000000000000
+        Size.PlatformDefault = False
+        TabOrder = 10
+        Text = 'Alert levels...'
+        ShowHint = True
+        OnClick = btnLevelsClick
+      end
+      object lblLevelSource: TLabel
+        StyledSettings = [Family, Size, Style]
+        Position.X = 12.000000000000000000
+        Position.Y = 175.000000000000000000
+        Size.Width = 310.000000000000000000
+        Size.Height = 17.000000000000000000
+        Size.PlatformDefault = False
+        TextSettings.FontColor = claGray
+        TabOrder = 11
+      end
+    end
+  end
+  object splLeft: TSplitter
+    Align = Left
+    Cursor = crHSplit
+    MinSize = 200.000000000000000000
+    Position.X = 340.000000000000000000
+    Position.Y = 80.000000000000000000
+    Size.Width = 5.000000000000000000
+    Size.Height = 657.000000000000000000
+    Size.PlatformDefault = False
+  end
+  object pnlMain: TLayout
+    Align = Client
+    Size.Width = 875.000000000000000000
+    Size.Height = 657.000000000000000000
+    Size.PlatformDefault = False
+    TabOrder = 4
+    object layChart: TLayout
+      Align = Top
+      Size.Width = 875.000000000000000000
+      Size.Height = 400.000000000000000000
+      Size.PlatformDefault = False
+      TabOrder = 0
+    end
+    object splChart: TSplitter
+      Align = Top
+      Cursor = crVSplit
+      MinSize = 80.000000000000000000
+      Position.Y = 400.000000000000000000
+      Size.Width = 875.000000000000000000
+      Size.Height = 5.000000000000000000
+      Size.PlatformDefault = False
+    end
+    object layGrid: TLayout
+      Align = Client
+      Size.Width = 875.000000000000000000
+      Size.Height = 252.000000000000000000
+      Size.PlatformDefault = False
+      TabOrder = 1
+    end
+  end
+  object tmrPlay: TTimer
+    Enabled = False
+    Interval = 40
+    OnTimer = tmrPlayTimer
+    Left = 1160
+    Top = 8
+  end
+end

@@ -47,13 +47,14 @@ type
 
 { Plays a level's sound asynchronously (never blocks the UI). Returns False
   if a sound file could not be played. }
-function PlayAlertSound(Sound: TAlertSound; const FileName: string): Boolean;
-procedure StopAlertSound;
+{ The built-in sounds as 16-bit mono PCM WAV files in memory (empty for
+  asNone and asFile). Played by UVScan.Sound. }
+function AlertWave(Sound: TAlertSound): TBytes;
 
 implementation
 
 uses
-  Winapi.Windows, Winapi.MMSystem, System.Math, System.Classes;
+  System.Math, System.Classes;
 
 { TAlertTracker }
 
@@ -129,7 +130,7 @@ var
   BeepWave, AlarmWave: TBytes;
 
 { A 16-bit mono PCM WAV built in memory, so the alarm sounds the same on
-  every PC regardless of the Windows sound scheme (which may be "No sounds"). }
+  every device regardless of its sound scheme (which may be "No sounds"). }
 function MakeWave(const Tones: array of Integer; ToneMs, Repeats: Integer): TBytes;
 const
   Rate = 22050;
@@ -182,30 +183,18 @@ begin
   end;
 end;
 
-function PlayAlertSound(Sound: TAlertSound; const FileName: string): Boolean;
+function AlertWave(Sound: TAlertSound): TBytes;
 begin
-  Result := True;
   case Sound of
-    asNone: ;
-    asBeep: PlaySound(PChar(@BeepWave[0]), 0, SND_MEMORY or SND_ASYNC or SND_NODEFAULT);
-    asAlert: PlaySound('SystemExclamation', 0, SND_ALIAS or SND_ASYNC);
-    asAlarm: PlaySound(PChar(@AlarmWave[0]), 0, SND_MEMORY or SND_ASYNC or SND_NODEFAULT);
-    asFile:
-      Result := FileExists(FileName) and
-        PlaySound(PChar(FileName), 0, SND_FILENAME or SND_ASYNC or SND_NODEFAULT);
+    asBeep, asAlert: Result := BeepWave;
+    asAlarm: Result := AlarmWave;
+  else
+    Result := nil;
   end;
-end;
-
-procedure StopAlertSound;
-begin
-  PlaySound(nil, 0, 0);
 end;
 
 initialization
   BeepWave := MakeWave([1200, 0], 110, 2);
   AlarmWave := MakeWave([880, 660], 180, 3);
-
-finalization
-  StopAlertSound; // the memory waves must outlive any sound still playing
 
 end.

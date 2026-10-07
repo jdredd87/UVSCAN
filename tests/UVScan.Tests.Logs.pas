@@ -5,7 +5,7 @@ unit UVScan.Tests.Logs;
 interface
 
 uses
-  System.SysUtils, System.Classes, System.Math, System.JSON, System.IOUtils, System.UITypes, Vcl.Graphics,
+  System.SysUtils, System.Classes, System.Math, System.JSON, System.IOUtils, System.UITypes,
   DUnitX.TestFramework, UVScan.LogData, UVScan.LogViews, UVScan.Display, UVScan.JsonFile, UVScan.Defaults;
 
 type
@@ -31,6 +31,11 @@ type
   end;
 
 implementation
+
+procedure SameColor(Expected, Actual: TAlphaColor; const Msg: string = '');
+begin
+  Assert.AreEqual(IntToHex(Expected, 8), IntToHex(Actual, 8), Msg);
+end;
 
 function Lines(const S: array of string): TStringList;
 var
@@ -254,7 +259,7 @@ begin
     C.Visible := False;
     Lvl := NewLevel;
     Lvl.Value := 2;
-    Lvl.RowColor := clRed;
+    Lvl.RowColor := TAlphaColors.Red;
     C.Levels := [Lvl];
     V.Channels := V.Channels + [C];
     L.Put(V);
@@ -278,7 +283,7 @@ begin
     Assert.IsFalse(Got.Channels[1].Visible);
     Assert.IsTrue(Got.Channels[1].LevelColors);
     Assert.AreEqual(1, Integer(Length(Got.Channels[1].Levels)));
-    Assert.AreEqual(Integer(clRed), Integer(Got.Channels[1].Levels[0].RowColor));
+    SameColor(TAlphaColors.Red, (Got.Channels[1].Levels[0].RowColor));
     Assert.AreEqual(1, Got.IndexOf('kr'));
   finally
     V.Free;

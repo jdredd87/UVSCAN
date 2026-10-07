@@ -1,8 +1,10 @@
 unit UVScan.Paths;
 
-{ Where UVScan keeps its data: C:\ProgramData\UVScan (pids.json, dtcs.json,
-  lists.json, display.json, settings.json). The program itself can live anywhere (e.g. Program Files);
-  the installer seeds this folder from the repo's data\ directory. }
+{ Where UVScan keeps its data: C:\ProgramData\UVScan on Windows (pids.json,
+  dtcs.json, lists.json, display.json, settings.json, ...). The program itself
+  can live anywhere (e.g. Program Files). On Android it is the app's private
+  documents folder. Missing files are created from the defaults compiled
+  into the program (UVScan.Defaults). }
 
 interface
 
@@ -18,9 +20,10 @@ function LogViewsFile: string;
 implementation
 
 uses
-  Winapi.Windows, Winapi.ShlObj, System.SysUtils, System.IOUtils;
+  {$IFDEF MSWINDOWS}Winapi.Windows, Winapi.ShlObj,{$ENDIF} System.SysUtils, System.IOUtils;
 
 function DataDir: string;
+{$IFDEF MSWINDOWS}
 var
   Buf: array[0..MAX_PATH] of Char;
 begin
@@ -29,6 +32,12 @@ begin
   else
     Result := 'C:\ProgramData\UVScan';
 end;
+{$ELSE}
+begin
+  Result := TPath.Combine(TPath.GetDocumentsPath, 'UVScan');
+end;
+{$ENDIF}
+
 
 function PidsFile: string;
 begin

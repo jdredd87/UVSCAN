@@ -1,0 +1,466 @@
+object ControlEditorForm: TControlEditorForm
+  Left = 0
+  Top = 0
+  Caption = 'Real-time control'
+  ClientHeight = 660
+  ClientWidth = 640
+  Position = OwnerFormCenter
+  FormFactor.Width = 320
+  FormFactor.Height = 480
+  FormFactor.Devices = [Desktop]
+  DesignerMasterStyle = 0
+  OnCreate = FormCreate
+  OnResize = FormResize
+  object lytButtons: TLayout
+    Align = Bottom
+    Size.Width = 640
+    Size.Height = 50
+    Size.PlatformDefault = False
+    Padding.Left = 12
+    Padding.Top = 10
+    Padding.Right = 12
+    Padding.Bottom = 12
+    object btnCancel: TButton
+      Align = Right
+      Position.X = 560
+      Position.Y = 10
+      Size.Width = 85
+      Size.Height = 26
+      Size.PlatformDefault = False
+      Text = 'Cancel'
+      Cancel = True
+      ModalResult = 2
+    end
+    object btnOK: TButton
+      Align = Right
+      Position.X = 470
+      Position.Y = 10
+      Size.Width = 85
+      Size.Height = 26
+      Size.PlatformDefault = False
+      Margins.Right = 8
+      Text = 'OK'
+      Default = True
+      OnClick = btnOKClick
+    end
+  end
+  object sbMain: TVertScrollBox
+    Align = Client
+    Size.Width = 640
+    Size.Height = 610
+    Size.PlatformDefault = False
+    object rowName: TLayout
+      Align = Top
+      Size.Width = 616
+      Size.Height = 32
+      Size.PlatformDefault = False
+      Margins.Left = 12
+      Margins.Top = 10
+      Margins.Right = 12
+      Margins.Bottom = 4
+      object pairName: TLayout
+        Align = Left
+        Size.Width = 360
+        Size.Height = 32
+        Size.PlatformDefault = False
+        object lblName: TLabel
+          Align = Left
+          Size.Width = 100
+          Size.Height = 32
+          Size.PlatformDefault = False
+          Text = 'Name'
+        end
+        object edtName: TEdit
+          Align = Client
+          Size.Width = 120
+          Size.Height = 24
+          Size.PlatformDefault = False
+          Margins.Top = 4
+          Margins.Bottom = 4
+          OnChangeTracking = Changed
+        end
+      end
+      object pairGroup: TLayout
+        Align = Client
+        Size.Width = 220
+        Size.Height = 32
+        Size.PlatformDefault = False
+        Margins.Left = 12
+        object lblGroup: TLabel
+          Align = Left
+          Size.Width = 50
+          Size.Height = 32
+          Size.PlatformDefault = False
+          Text = 'Group'
+        end
+        object cbGroup: TComboEdit
+          Align = Client
+          Size.Width = 150
+          Size.Height = 24
+          Size.PlatformDefault = False
+          Margins.Top = 4
+          Margins.Bottom = 4
+          OnChange = Changed
+          OnChangeTracking = Changed
+        end
+      end
+    end
+    object gbKind: TGroupBox
+      Align = Top
+      Size.Width = 616
+      Size.Height = 60
+      Size.PlatformDefault = False
+      Margins.Left = 12
+      Margins.Top = 4
+      Margins.Right = 12
+      Margins.Bottom = 6
+      Padding.Left = 10
+      Padding.Top = 26
+      Padding.Right = 10
+      Padding.Bottom = 6
+      Text = 'Type'
+    end
+    object rowModule: TLayout
+      Align = Top
+      Size.Width = 616
+      Size.Height = 32
+      Size.PlatformDefault = False
+      Margins.Left = 12
+      Margins.Right = 12
+      Margins.Bottom = 2
+      object lblModule: TLabel
+        Align = Left
+        Size.Width = 100
+        Size.Height = 32
+        Size.PlatformDefault = False
+        Text = 'Module'
+      end
+      object cbModule: TComboEdit
+        Align = Left
+        Size.Width = 250
+        Size.Height = 24
+        Size.PlatformDefault = False
+        Margins.Top = 4
+        Margins.Bottom = 4
+        OnChange = Changed
+        OnChangeTracking = Changed
+      end
+    end
+    object rowOn: TLayout
+      Align = Top
+      Size.Width = 616
+      Size.Height = 32
+      Size.PlatformDefault = False
+      Margins.Left = 12
+      Margins.Right = 12
+      Margins.Bottom = 2
+      object lblOn: TLabel
+        Align = Left
+        Size.Width = 100
+        Size.Height = 32
+        Size.PlatformDefault = False
+        Text = 'On command'
+      end
+      object edtOn: TEdit
+        Align = Client
+        Size.Width = 120
+        Size.Height = 24
+        Size.PlatformDefault = False
+        Margins.Top = 4
+        Margins.Bottom = 4
+        OnChangeTracking = Changed
+        TextPrompt = 'AE 01 80 80 00 00 00 00'
+      end
+    end
+    object rowOff: TLayout
+      Align = Top
+      Size.Width = 616
+      Size.Height = 32
+      Size.PlatformDefault = False
+      Margins.Left = 12
+      Margins.Right = 12
+      Margins.Bottom = 2
+      object lblOff: TLabel
+        Align = Left
+        Size.Width = 100
+        Size.Height = 32
+        Size.PlatformDefault = False
+        Text = 'Off command'
+      end
+      object edtOff: TEdit
+        Align = Client
+        Size.Width = 120
+        Size.Height = 24
+        Size.PlatformDefault = False
+        Margins.Top = 4
+        Margins.Bottom = 4
+        OnChangeTracking = Changed
+        TextPrompt = 'AE 01 00 00 00 00 00 00'
+      end
+    end
+    object lblHelp: TLabel
+      Align = Top
+      Size.Width = 516
+      Size.Height = 52
+      Size.PlatformDefault = False
+      Margins.Left = 112
+      Margins.Right = 12
+      Margins.Bottom = 4
+      TextSettings.WordWrap = True
+      TextSettings.VertAlign = Leading
+      Text = 
+        'Hex bytes, mode byte first, e.g. AE 01 80 80 00 00 00 00 for' +
+        ' GM device control. The header (priority, module, tester add' +
+        'ress) is added for you. In a value control {V} is one byte a' +
+        'nd {V16} two bytes, high first: raw = (value - offset) / sca' +
+        'le.'
+    end
+    object gbValue: TGroupBox
+      Align = Top
+      Size.Width = 616
+      Size.Height = 96
+      Size.PlatformDefault = False
+      Margins.Left = 12
+      Margins.Right = 12
+      Margins.Bottom = 8
+      Padding.Left = 10
+      Padding.Top = 26
+      Padding.Right = 10
+      Padding.Bottom = 6
+      Text = 'Value control'
+      object flowValue: TFlowLayout
+        Align = Client
+        Size.Width = 596
+        Size.Height = 64
+        Size.PlatformDefault = False
+        object pairMin: TLayout
+          Align = Left
+          Size.Width = 136
+          Size.Height = 32
+          Size.PlatformDefault = False
+          object lblMin: TLabel
+            Align = Left
+            Size.Width = 48
+            Size.Height = 32
+            Size.PlatformDefault = False
+            Text = 'Min'
+          end
+          object edtMin: TEdit
+            Align = Client
+            Size.Width = 74
+            Size.Height = 24
+            Size.PlatformDefault = False
+            Margins.Top = 4
+            Margins.Right = 10
+            Margins.Bottom = 4
+            OnChangeTracking = Changed
+          end
+        end
+        object pairMax: TLayout
+          Align = Left
+          Size.Width = 136
+          Size.Height = 32
+          Size.PlatformDefault = False
+          object lblMax: TLabel
+            Align = Left
+            Size.Width = 48
+            Size.Height = 32
+            Size.PlatformDefault = False
+            Text = 'Max'
+          end
+          object edtMax: TEdit
+            Align = Client
+            Size.Width = 74
+            Size.Height = 24
+            Size.PlatformDefault = False
+            Margins.Top = 4
+            Margins.Right = 10
+            Margins.Bottom = 4
+            OnChangeTracking = Changed
+          end
+        end
+        object pairStep: TLayout
+          Align = Left
+          Size.Width = 136
+          Size.Height = 32
+          Size.PlatformDefault = False
+          object lblStep: TLabel
+            Align = Left
+            Size.Width = 48
+            Size.Height = 32
+            Size.PlatformDefault = False
+            Text = 'Step'
+          end
+          object edtStep: TEdit
+            Align = Client
+            Size.Width = 74
+            Size.Height = 24
+            Size.PlatformDefault = False
+            Margins.Top = 4
+            Margins.Right = 10
+            Margins.Bottom = 4
+            OnChangeTracking = Changed
+          end
+        end
+        object pairUnits: TLayout
+          Align = Left
+          Size.Width = 136
+          Size.Height = 32
+          Size.PlatformDefault = False
+          object lblUnits: TLabel
+            Align = Left
+            Size.Width = 48
+            Size.Height = 32
+            Size.PlatformDefault = False
+            Text = 'Units'
+          end
+          object edtUnits: TEdit
+            Align = Client
+            Size.Width = 74
+            Size.Height = 24
+            Size.PlatformDefault = False
+            Margins.Top = 4
+            Margins.Right = 10
+            Margins.Bottom = 4
+            OnChangeTracking = Changed
+          end
+        end
+        object pairScale: TLayout
+          Align = Left
+          Size.Width = 136
+          Size.Height = 32
+          Size.PlatformDefault = False
+          object lblScale: TLabel
+            Align = Left
+            Size.Width = 48
+            Size.Height = 32
+            Size.PlatformDefault = False
+            Text = 'Scale'
+          end
+          object edtScale: TEdit
+            Align = Client
+            Size.Width = 74
+            Size.Height = 24
+            Size.PlatformDefault = False
+            Margins.Top = 4
+            Margins.Right = 10
+            Margins.Bottom = 4
+            OnChangeTracking = Changed
+          end
+        end
+        object pairOffset: TLayout
+          Align = Left
+          Size.Width = 136
+          Size.Height = 32
+          Size.PlatformDefault = False
+          object lblOffset: TLabel
+            Align = Left
+            Size.Width = 48
+            Size.Height = 32
+            Size.PlatformDefault = False
+            Text = 'Offset'
+          end
+          object edtOffset: TEdit
+            Align = Client
+            Size.Width = 74
+            Size.Height = 24
+            Size.PlatformDefault = False
+            Margins.Top = 4
+            Margins.Right = 10
+            Margins.Bottom = 4
+            OnChangeTracking = Changed
+          end
+        end
+      end
+    end
+    object rowConfirm: TLayout
+      Align = Top
+      Size.Width = 616
+      Size.Height = 32
+      Size.PlatformDefault = False
+      Margins.Left = 12
+      Margins.Right = 12
+      Margins.Bottom = 2
+      object lblConfirm: TLabel
+        Align = Left
+        Size.Width = 100
+        Size.Height = 32
+        Size.PlatformDefault = False
+        Text = 'Ask first'
+      end
+      object edtConfirm: TEdit
+        Align = Client
+        Size.Width = 120
+        Size.Height = 24
+        Size.PlatformDefault = False
+        Margins.Top = 4
+        Margins.Bottom = 4
+        OnChangeTracking = Changed
+        TextPrompt = 
+          'Question asked before sending, e.g. "Reset the learned fuel ' +
+          'trims?" (empty = none)'
+      end
+    end
+    object rowNotes: TLayout
+      Align = Top
+      Size.Width = 616
+      Size.Height = 72
+      Size.PlatformDefault = False
+      Margins.Left = 12
+      Margins.Right = 12
+      Margins.Bottom = 4
+      object lblNotes: TLabel
+        Align = Left
+        Size.Width = 100
+        Size.Height = 64
+        Size.PlatformDefault = False
+        Margins.Top = 6
+        Text = 'Notes'
+      end
+      object memNotes: TMemo
+        Align = Client
+        Size.Width = 500
+        Size.Height = 64
+        Size.PlatformDefault = False
+        Margins.Top = 4
+        Margins.Bottom = 4
+        TextSettings.WordWrap = True
+        OnChangeTracking = Changed
+      end
+    end
+    object rowSends: TLayout
+      Align = Top
+      Size.Width = 616
+      Size.Height = 56
+      Size.PlatformDefault = False
+      Margins.Left = 12
+      Margins.Right = 12
+      object lblSendsCaption: TLabel
+        Align = Left
+        Size.Width = 100
+        Size.Height = 52
+        Size.PlatformDefault = False
+        Text = 'Will send'
+      end
+      object lblSends: TLabel
+        Align = Client
+        Size.Width = 500
+        Size.Height = 52
+        Size.PlatformDefault = False
+        TextSettings.WordWrap = True
+        TextSettings.VertAlign = Leading
+      end
+    end
+    object lblProblem: TLabel
+      Align = Top
+      Size.Width = 516
+      Size.Height = 40
+      Size.PlatformDefault = False
+      Margins.Left = 112
+      Margins.Right = 12
+      Margins.Bottom = 8
+      TextSettings.WordWrap = True
+      TextSettings.VertAlign = Leading
+    end
+  end
+end

@@ -1,0 +1,215 @@
+object GaugeEditorForm: TGaugeEditorForm
+  Left = 0
+  Top = 0
+  Caption = 'Gauge'
+  ClientHeight = 430
+  ClientWidth = 660
+  Position = OwnerFormCenter
+  FormFactor.Width = 320
+  FormFactor.Height = 480
+  FormFactor.Devices = [Desktop]
+  DesignerMasterStyle = 0
+  OnCreate = FormCreate
+  OnResize = FormResize
+  object lytButtons: TLayout
+    Align = Bottom
+    Size.Width = 660
+    Size.Height = 50
+    Size.PlatformDefault = False
+    Padding.Left = 12
+    Padding.Top = 10
+    Padding.Right = 12
+    Padding.Bottom = 12
+    object btnCancel: TButton
+      Align = Right
+      Position.X = 560
+      Position.Y = 10
+      Size.Width = 85
+      Size.Height = 26
+      Size.PlatformDefault = False
+      Text = 'Cancel'
+      Cancel = True
+      ModalResult = 2
+    end
+    object btnOK: TButton
+      Align = Right
+      Position.X = 470
+      Position.Y = 10
+      Size.Width = 85
+      Size.Height = 26
+      Size.PlatformDefault = False
+      Margins.Right = 8
+      Text = 'OK'
+      Default = True
+      OnClick = btnOKClick
+    end
+  end
+  object lytLeft: TLayout
+    Align = Left
+    Size.Width = 300
+    Size.Height = 360
+    Size.PlatformDefault = False
+    Margins.Left = 12
+    Margins.Top = 12
+    Margins.Right = 12
+    object rowPid: TLayout
+      Align = Top
+      Size.Width = 600
+      Size.Height = 32
+      Size.PlatformDefault = False
+      object lblPid: TLabel
+        Align = Left
+        Size.Width = 40
+        Size.Height = 32
+        Size.PlatformDefault = False
+        Text = 'PID'
+      end
+      object cbPid: TComboBox
+        Align = Client
+        Size.Width = 120
+        Size.Height = 24
+        Size.PlatformDefault = False
+        Margins.Top = 4
+        Margins.Bottom = 4
+        OnChange = cbPidChange
+      end
+    end
+    object gbStyle: TGroupBox
+      Align = Top
+      Size.Width = 300
+      Size.Height = 60
+      Size.PlatformDefault = False
+      Margins.Top = 8
+      Padding.Left = 10
+      Padding.Top = 26
+      Padding.Right = 10
+      Padding.Bottom = 6
+      Text = 'Style'
+    end
+    object gbSize: TGroupBox
+      Align = Top
+      Size.Width = 300
+      Size.Height = 60
+      Size.PlatformDefault = False
+      Margins.Top = 8
+      Padding.Left = 10
+      Padding.Top = 26
+      Padding.Right = 10
+      Padding.Bottom = 6
+      Text = 'Size'
+    end
+    object rowScale: TLayout
+      Align = Top
+      Size.Width = 300
+      Size.Height = 32
+      Size.PlatformDefault = False
+      Margins.Top = 8
+      object lblScale: TLabel
+        Align = Left
+        Size.Width = 66
+        Size.Height = 32
+        Size.PlatformDefault = False
+        Text = 'Scale from'
+      end
+      object edtMin: TEdit
+        Align = Left
+        Size.Width = 64
+        Size.Height = 24
+        Size.PlatformDefault = False
+        Margins.Top = 4
+        Margins.Bottom = 4
+        OnChangeTracking = SettingChange
+      end
+      object lblTo: TLabel
+        Align = Left
+        Size.Width = 24
+        Size.Height = 32
+        Size.PlatformDefault = False
+        Text = 'to'
+        TextSettings.HorzAlign = Center
+      end
+      object edtMax: TEdit
+        Align = Left
+        Size.Width = 64
+        Size.Height = 24
+        Size.PlatformDefault = False
+        Margins.Top = 4
+        Margins.Bottom = 4
+        OnChangeTracking = SettingChange
+      end
+      object btnSuggest: TButton
+        Align = Right
+        Size.Width = 56
+        Size.Height = 26
+        Size.PlatformDefault = False
+        Margins.Left = 6
+        Margins.Top = 3
+        Margins.Bottom = 3
+        Text = 'Auto'
+        Hint = 'Suggest a scale for this PID'
+        ShowHint = True
+        OnClick = btnSuggestClick
+      end
+    end
+    object lblHelp: TLabel
+      Align = Top
+      Size.Width = 300
+      Size.Height = 90
+      Size.PlatformDefault = False
+      Margins.Top = 8
+      TextSettings.WordWrap = True
+      TextSettings.VertAlign = Leading
+      Text = 
+        'The coloured bands, the card colour, flashing and sounds com' +
+        'e from the PID''s alert levels - the same ones the live grid ' +
+        'uses. Set them with Display && alerts (right-click a PID or ' +
+        'a gauge).'
+    end
+  end
+  object lytRight: TLayout
+    Align = Client
+    Size.Width = 330
+    Size.Height = 360
+    Size.PlatformDefault = False
+    Margins.Top = 12
+    Margins.Right = 12
+    object rowPreview: TLayout
+      Align = Bottom
+      Size.Width = 320
+      Size.Height = 32
+      Size.PlatformDefault = False
+      object lblPreview: TLabel
+        Align = Left
+        Size.Width = 90
+        Size.Height = 32
+        Size.PlatformDefault = False
+        Text = 'Preview value'
+      end
+      object tbPreview: TTrackBar
+        Align = Client
+        Size.Width = 200
+        Size.Height = 20
+        Size.PlatformDefault = False
+        Margins.Top = 6
+        Margins.Bottom = 6
+        Max = 100
+        OnChange = SettingChange
+      end
+    end
+    object pnlPreview: TRectangle
+      Align = Client
+      Size.Width = 320
+      Size.Height = 320
+      Size.PlatformDefault = False
+      Fill.Color = claWhite
+      Stroke.Color = xFFD8D8D8
+      OnResize = SettingChange
+    end
+  end
+  object tmrFlash: TTimer
+    Interval = 500
+    OnTimer = tmrFlashTimer
+    Left = 24
+    Top = 380
+  end
+end

@@ -6,29 +6,37 @@ unit UVScan.GaugeEditor;
 interface
 
 uses
-  Winapi.Windows, Winapi.Messages, System.SysUtils, System.Classes, System.UITypes, System.Math,
-  Vcl.Graphics, Vcl.Controls, Vcl.Forms, Vcl.Dialogs, Vcl.StdCtrls, Vcl.ExtCtrls, Vcl.ComCtrls,
+  System.SysUtils, System.Classes, System.Types, System.UITypes, System.Math,
+  FMX.Types, FMX.Controls, FMX.Forms, FMX.Graphics, FMX.StdCtrls, FMX.Edit, FMX.ListBox,
+  FMX.Layouts, FMX.Objects, FMX.Controls.Presentation,
   UVScan.Pids, UVScan.Display, UVScan.Gauge;
 
 type
   TGaugeEditorForm = class(TForm)
+    lytButtons: TLayout;
+    btnCancel: TButton;
+    btnOK: TButton;
+    lytLeft: TLayout;
+    rowPid: TLayout;
     lblPid: TLabel;
     cbPid: TComboBox;
-    rgStyle: TRadioGroup;
-    rgSize: TRadioGroup;
+    gbStyle: TGroupBox;
+    gbSize: TGroupBox;
+    rowScale: TLayout;
     lblScale: TLabel;
     edtMin: TEdit;
     lblTo: TLabel;
     edtMax: TEdit;
     btnSuggest: TButton;
     lblHelp: TLabel;
-    pnlPreview: TPanel;
+    lytRight: TLayout;
+    rowPreview: TLayout;
     lblPreview: TLabel;
     tbPreview: TTrackBar;
-    btnOK: TButton;
-    btnCancel: TButton;
+    pnlPreview: TRectangle;
     tmrFlash: TTimer;
     procedure FormCreate(Sender: TObject);
+    procedure FormResize(Sender: TObject);
     procedure cbPidChange(Sender: TObject);
     procedure SettingChange(Sender: TObject);
     procedure btnSuggestClick(Sender: TObject);
@@ -41,13 +49,17 @@ type
     FIds: TArray<Integer>;
     FLoading: Boolean;
     FFlashOn: Boolean;
+    FStyleButtons: TArray<TRadioButton>;
+    FSizeButtons: TArray<TRadioButton>;
     function SelectedPid: TPidDef;
     function ReadGauge(out G: TGauge): Boolean;
     procedure UpdatePreview;
+    function AddRadios(Box: TGroupBox; const Captions: array of string; const Group: string): TArray<TRadioButton>;
   public
-    { G: in = gauge to edit (or the PID to start from), out = the result. }
-    class function Execute(var G: TGauge; Catalog: TPidCatalog; Settings: TDisplaySettings;
-      const Caption: string): Boolean;
+    { G = gauge to edit (or the PID to start from). OnDone (may be nil) runs
+      when the dialog closes: True and the edited gauge on OK. }
+    class procedure Execute(const G: TGauge; Catalog: TPidCatalog; Settings: TDisplaySettings;
+      const Caption: string; const OnDone: TProc<Boolean, TGauge>);
   end;
 
 { A starting scale for a PID: from its formula's output range (raw 00 / FF),
@@ -61,10 +73,29 @@ procedure ShowGaugeReading(Gauge: TGaugeView; const Style: TResolvedStyle; Flash
 
 implementation
 
-{$R *.dfm}
+{$R *.fmx}
 
 uses
-  System.StrUtils;
+  System.StrUtils, UVScan.UI.Common;
+
+const
+  NarrowWidth = 560;
+
+function RadioIndex(const Buttons: TArray<TRadioButton>): Integer;
+begin
+  for Result := 0 to High(Buttons) do
+    if Buttons[Result].IsChecked then
+      Exit;
+  Result := 0;
+end;
+
+procedure SetRadioIndex(const Buttons: TArray<TRadioButton>; Index: Integer);
+var
+  I: Integer;
+begin
+  for I := 0 to High(Buttons) do
+    Buttons[I].IsChecked := I = Index;
+end;
 
 procedure SuggestScale(P: TPidDef; Settings: TDisplaySettings; out MinValue, MaxValue: Double);
 var
@@ -129,11 +160,11 @@ end;
 procedure ShowGaugeReading(Gauge: TGaugeView; const Style: TResolvedStyle; FlashOn: Boolean;
   const Value: Double; const Text, Note: string);
 var
-  Card, Txt: TColor;
+  Card, Txt: TAlphaColor;
   N: string;
 begin
-  Card := clNone;
-  Txt := clNone;
+  Card := NoColor;
+  Txt := NoColor;
   N := Note;
   // The card takes the level's colours (blinking if the level flashes); in the
   // normal state it stays dark and the value arc shows the PID's own colour.
@@ -152,39 +183,64 @@ end;
 
 { TGaugeEditorForm }
 
-class function TGaugeEditorForm.Execute(var G: TGauge; Catalog: TPidCatalog; Settings: TDisplaySettings;
-  const Caption: string): Boolean;
+class procedure TGaugeEditorForm.Execute(const G: TGauge; Catalog: TPidCatalog; Settings: TDisplaySettings;
+  const Caption: string; const OnDone: TProc<Boolean, TGauge>);
 var
   F: TGaugeEditorForm;
   I: Integer;
 begin
   F := TGaugeEditorForm.Create(Application);
-  try
-    F.Caption := Caption;
-    F.FCatalog := Catalog;
-    F.FSettings := Settings;
-    F.FLoading := True;
-    for I := 0 to Catalog.Count - 1 do
-      if Catalog[I].Enabled or (Catalog[I].Id = G.PidId) then
-      begin
-        F.cbPid.Items.Add(Catalog[I].LongName + IfThen(Catalog[I].Units <> '', '  (' + Catalog[I].Units + ')', ''));
-        F.FIds := F.FIds + [Catalog[I].Id];
-      end;
-    F.cbPid.ItemIndex := -1;
-    for I := 0 to High(F.FIds) do
-      if F.FIds[I] = G.PidId then
-        F.cbPid.ItemIndex := I;
-    F.rgStyle.ItemIndex := Ord(G.Style);
-    F.rgSize.ItemIndex := Ord(G.Size);
-    F.edtMin.Text := FormatFloat('0.###', G.MinValue);
-    F.edtMax.Text := FormatFloat('0.###', G.MaxValue);
-    F.FLoading := False;
-    F.UpdatePreview;
-    Result := F.ShowModal = mrOk;
-    if Result then
-      F.ReadGauge(G);
-  finally
-    F.Free;
+  F.Caption := Caption;
+  F.FCatalog := Catalog;
+  F.FSettings := Settings;
+  F.FLoading := True;
+  for I := 0 to Catalog.Count - 1 do
+    if Catalog[I].Enabled or (Catalog[I].Id = G.PidId) then
+    begin
+      F.cbPid.Items.Add(Catalog[I].LongName + IfThen(Catalog[I].Units <> '', '  (' + Catalog[I].Units + ')', ''));
+      F.FIds := F.FIds + [Catalog[I].Id];
+    end;
+  F.cbPid.ItemIndex := -1;
+  for I := 0 to High(F.FIds) do
+    if F.FIds[I] = G.PidId then
+      F.cbPid.ItemIndex := I;
+  SetRadioIndex(F.FStyleButtons, Ord(G.Style));
+  SetRadioIndex(F.FSizeButtons, Ord(G.Size));
+  F.edtMin.Text := FormatFloat('0.###', G.MinValue);
+  F.edtMax.Text := FormatFloat('0.###', G.MaxValue);
+  F.FLoading := False;
+  F.UpdatePreview;
+  ShowDialog(F,
+    procedure(R: TModalResult)
+    var
+      Got: TGauge;
+    begin
+      Got := G;
+      if R = mrOk then
+        F.ReadGauge(Got);
+      if Assigned(OnDone) then
+        OnDone(R = mrOk, Got);
+    end);
+end;
+
+function TGaugeEditorForm.AddRadios(Box: TGroupBox; const Captions: array of string;
+  const Group: string): TArray<TRadioButton>;
+var
+  I: Integer;
+  B: TRadioButton;
+begin
+  Result := nil;
+  for I := 0 to High(Captions) do
+  begin
+    B := TRadioButton.Create(Self);
+    B.Parent := Box;
+    B.Position.X := I * 100; // Align = Left keeps them in this order
+    B.Align := TAlignLayout.Left;
+    B.Width := 92;
+    B.Text := Captions[I];
+    B.GroupName := Group;
+    B.OnChange := SettingChange;
+    Result := Result + [B];
   end;
 end;
 
@@ -192,20 +248,50 @@ procedure TGaugeEditorForm.FormCreate(Sender: TObject);
 var
   S: TGaugeStyle;
   Z: TGaugeSize;
+  StyleCaps, SizeCaps: array of string;
+  Id: string;
 begin
+  FLoading := True;
   for S := Low(TGaugeStyle) to High(TGaugeStyle) do
-    rgStyle.Items.Add(GaugeStyleCaptions[S]);
+    StyleCaps := StyleCaps + [GaugeStyleCaptions[S]];
   for Z := Low(TGaugeSize) to High(TGaugeSize) do
-    rgSize.Items.Add(GaugeSizeCaptions[Z]);
-  pnlPreview.DoubleBuffered := True;
+    SizeCaps := SizeCaps + [GaugeSizeCaptions[Z]];
+  // Radio groups are global in FMX: give this window its own names.
+  Id := IntToHex(NativeInt(Self), SizeOf(Pointer) * 2);
+  FStyleButtons := AddRadios(gbStyle, StyleCaps, 'GaugeStyle' + Id);
+  FSizeButtons := AddRadios(gbSize, SizeCaps, 'GaugeSize' + Id);
+  SetRadioIndex(FStyleButtons, 0);
+  SetRadioIndex(FSizeButtons, 1);
+  lblHelp.StyledSettings := lblHelp.StyledSettings - [TStyledSetting.FontColor];
+  lblHelp.TextSettings.FontColor := $FF707070;
   FGaugeView := TGaugeView.Create(Self);
   FGaugeView.Parent := pnlPreview;
-  tbPreview.Position := 50;
+  FGaugeView.HitTest := False;
+  tbPreview.Value := 50;
+  FLoading := False;
+end;
+
+procedure TGaugeEditorForm.FormResize(Sender: TObject);
+begin
+  if ClientWidth < NarrowWidth then
+  begin
+    lytLeft.Align := TAlignLayout.Top;
+    lytLeft.Height := 340;
+    lytLeft.Margins.Right := 0;
+  end
+  else
+  begin
+    lytLeft.Align := TAlignLayout.Left;
+    lytLeft.Width := 300;
+    lytLeft.Margins.Right := 12;
+  end;
+  if FGaugeView <> nil then
+    UpdatePreview;
 end;
 
 function TGaugeEditorForm.SelectedPid: TPidDef;
 begin
-  if (cbPid.ItemIndex >= 0) and (cbPid.ItemIndex <= High(FIds)) then
+  if (FCatalog <> nil) and (cbPid.ItemIndex >= 0) and (cbPid.ItemIndex <= High(FIds)) then
     Result := FCatalog.FindById(FIds[cbPid.ItemIndex])
   else
     Result := nil;
@@ -221,8 +307,8 @@ begin
     (G.MaxValue > G.MinValue);
   if P <> nil then
     G.PidId := P.Id;
-  G.Style := TGaugeStyle(Max(0, rgStyle.ItemIndex));
-  G.Size := TGaugeSize(Max(0, rgSize.ItemIndex));
+  G.Style := TGaugeStyle(RadioIndex(FStyleButtons));
+  G.Size := TGaugeSize(RadioIndex(FSizeButtons));
 end;
 
 procedure TGaugeEditorForm.cbPidChange(Sender: TObject);
@@ -257,13 +343,22 @@ procedure TGaugeEditorForm.UpdatePreview;
 var
   G: TGauge;
   P: TPidDef;
-  Sz: TSize;
-  V: Double;
+  Sz: TSizeF;
+  V, AvailW, AvailH: Double;
   Ok: Boolean;
+  C: TAlphaColor;
 begin
+  if (FGaugeView = nil) or (FSettings = nil) then
+    Exit;
   Ok := ReadGauge(G);
-  edtMin.Color := IfThen(Ok or (SelectedPid = nil), clWindow, $00C8C8FF);
-  edtMax.Color := edtMin.Color;
+  if Ok or (SelectedPid = nil) then
+    C := TAlphaColors.Black
+  else
+    C := TAlphaColors.Red;
+  edtMin.StyledSettings := edtMin.StyledSettings - [TStyledSetting.FontColor];
+  edtMax.StyledSettings := edtMax.StyledSettings - [TStyledSetting.FontColor];
+  edtMin.TextSettings.FontColor := C;
+  edtMax.TextSettings.FontColor := C;
   btnOK.Enabled := Ok;
   P := SelectedPid;
   if not Ok or (P = nil) then
@@ -271,18 +366,21 @@ begin
     FGaugeView.Visible := False;
     Exit;
   end;
-  Sz := TGaugeView.PreferredSize(G.Style, G.Size, CurrentPPI);
+  Sz := TGaugeView.PreferredSize(G.Style, G.Size);
   // Shrink to fit the preview area, keeping the shape.
-  if (Sz.cx > pnlPreview.ClientWidth - 8) or (Sz.cy > pnlPreview.ClientHeight - 8) then
+  AvailW := pnlPreview.Width - 8;
+  AvailH := pnlPreview.Height - 8;
+  if (AvailW > 20) and (AvailH > 20) and ((Sz.Width > AvailW) or (Sz.Height > AvailH)) then
   begin
-    V := Min((pnlPreview.ClientWidth - 8) / Sz.cx, (pnlPreview.ClientHeight - 8) / Sz.cy);
-    Sz.cx := Round(Sz.cx * V);
-    Sz.cy := Round(Sz.cy * V);
+    V := Min(AvailW / Sz.Width, AvailH / Sz.Height);
+    Sz.Width := Sz.Width * V;
+    Sz.Height := Sz.Height * V;
   end;
-  FGaugeView.SetBounds((pnlPreview.ClientWidth - Sz.cx) div 2, (pnlPreview.ClientHeight - Sz.cy) div 2, Sz.cx, Sz.cy);
+  FGaugeView.SetBounds(Round((pnlPreview.Width - Sz.Width) / 2), Round((pnlPreview.Height - Sz.Height) / 2),
+    Sz.Width, Sz.Height);
   FGaugeView.Setup(G.Style, G.Size, P.LongName, P.Units, G.MinValue, G.MaxValue,
     FSettings.Zones(P.Id, G.MinValue, G.MaxValue));
-  V := G.MinValue + (G.MaxValue - G.MinValue) * tbPreview.Position / tbPreview.Max;
+  V := G.MinValue + (G.MaxValue - G.MinValue) * tbPreview.Value / Max(1, tbPreview.Max);
   ShowGaugeReading(FGaugeView, FSettings.Resolve(P.Id, V), FFlashOn, V, P.FormatValue(V), '');
   FGaugeView.Visible := True;
 end;
@@ -290,7 +388,7 @@ end;
 procedure TGaugeEditorForm.tmrFlashTimer(Sender: TObject);
 begin
   FFlashOn := not FFlashOn;
-  if FGaugeView.Visible then
+  if (FGaugeView <> nil) and FGaugeView.Visible then
     UpdatePreview;
 end;
 
@@ -300,7 +398,7 @@ var
 begin
   if not ReadGauge(G) then
   begin
-    MessageDlg('Choose a PID and a scale where "to" is larger than "from".', mtWarning, [mbOK], 0);
+    ShowWarning('Choose a PID and a scale where "to" is larger than "from".');
     Exit;
   end;
   ModalResult := mrOk;

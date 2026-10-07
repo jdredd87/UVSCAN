@@ -19,7 +19,7 @@ interface
 
 uses
   System.SysUtils, System.Classes, System.JSON, System.Generics.Collections, System.UITypes,
-  Vcl.Graphics, UVScan.Display;
+  UVScan.Display;
 
 type
   TChartMode = (cmLanes, cmOverlay, cmShared);
@@ -27,7 +27,7 @@ type
   TChannelStyle = record
     Name: string;
     Visible: Boolean;
-    Color: TColor;
+    Color: TAlphaColor;
     Width: Integer;          // 1..4
     AutoScale: Boolean;
     MinValue, MaxValue: Double;
@@ -75,10 +75,10 @@ const
   ChartModeCaptions: array[TChartMode] of string = ('Lanes (one strip each)', 'Overlay (own scales)',
     'Overlay (one scale)');
   { Line colours handed out in order to channels without a saved colour. }
-  ChannelPalette: array[0..11] of TColor = (
-    TColor($00F97F2D), TColor($004040FF), TColor($0035C251), TColor($0000A5FF), TColor($00C060B0),
-    TColor($00C8B400), TColor($004B8BFF), TColor($00808080), TColor($000060C0), TColor($00B48246),
-    TColor($007F00FF), TColor($00009090));
+  ChannelPalette: array[0..11] of TAlphaColor = (
+    $FF2D7FF9, $FFFF4040, $FF51C235, $FFFFA500, $FFB060C0,
+    $FF00B4C8, $FFFF8B4B, $FF808080, $FFC06000, $FF4682B4,
+    $FFFF007F, $FF909000);
 
 function DefaultChannelStyle(const Name: string; Index: Integer): TChannelStyle;
 

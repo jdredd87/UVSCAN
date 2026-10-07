@@ -19,7 +19,11 @@ unit UVScan.Display;
 interface
 
 uses
-  System.SysUtils, System.Classes, System.JSON, System.Generics.Collections, System.UITypes, Vcl.Graphics;
+  System.SysUtils, System.Classes, System.JSON, System.Generics.Collections, System.UITypes;
+
+const
+  { "Not set": use the normal colour. Real colours are always opaque. }
+  NoColor = TAlphaColor(0);
 
 type
   TCompareOp = (coGE, coGT, coLE, coLT, coEQ, coNE);
@@ -31,8 +35,8 @@ type
     Name: string;
     Op: TCompareOp;
     Value: Double;
-    RowColor: TColor;    // clNone = keep the normal row colour
-    TextColor: TColor;   // clNone = keep the normal text colour
+    RowColor: TAlphaColor;    // NoColor = keep the normal row colour
+    TextColor: TAlphaColor;   // NoColor = keep the normal text colour
     Flash: Boolean;
     Sound: TAlertSound;
     SoundFile: string;
@@ -46,8 +50,8 @@ type
   public
     PidId: Integer;
     FontSize: Integer;   // 0 = default
-    TextColor: TColor;   // clNone = default
-    RowColor: TColor;    // clNone = default
+    TextColor: TAlphaColor;   // NoColor = default
+    RowColor: TAlphaColor;    // NoColor = default
     Levels: TArray<TDisplayLevel>;
     constructor Create(APidId: Integer);
     procedure Assign(Source: TPidDisplay);
@@ -68,19 +72,19 @@ type
     Level: Integer;      // -1 = normal
     LevelName: string;
     FontSize: Integer;   // 0 = default
-    RowColor: TColor;    // clNone = default
-    TextColor: TColor;   // clNone = default
+    RowColor: TAlphaColor;    // NoColor = default
+    TextColor: TAlphaColor;   // NoColor = default
     Flash: Boolean;
-    NormalRowColor: TColor;   // the PID's own look, shown in the "off" half of a flash
-    NormalTextColor: TColor;
+    NormalRowColor: TAlphaColor;   // the PID's own look, shown in the "off" half of a flash
+    NormalTextColor: TAlphaColor;
     { The colours to paint now; FlashOn alternates while a flashing level is active. }
-    procedure Colors(FlashOn: Boolean; out Row, Text: TColor);
+    procedure Colors(FlashOn: Boolean; out Row, Text: TAlphaColor);
   end;
 
   { A coloured stretch of a gauge scale, derived from the levels. }
   TGaugeZone = record
     FromValue, ToValue: Double;
-    Color: TColor;
+    Color: TAlphaColor;
   end;
 
   TDisplaySettings = class
@@ -118,8 +122,8 @@ const
   GaugeSizeKeys: array[TGaugeSize] of string = ('small', 'medium', 'large');
   GaugeSizeCaptions: array[TGaugeSize] of string = ('Small', 'Medium', 'Large');
 
-function ColorToHex(C: TColor): string;
-function HexToColor(const S: string; Default: TColor): TColor;
+function ColorToHex(C: TAlphaColor): string;
+function HexToColor(const S: string; Default: TAlphaColor): TAlphaColor;
 function NewLevel: TDisplayLevel;
 { Coloured stretches of a scale for these levels (lowest priority first). }
 function ZonesFromLevels(const Levels: TArray<TDisplayLevel>; const MinValue, MaxValue: Double): TArray<TGaugeZone>;
@@ -149,15 +153,12 @@ uses
 
 { Colours }
 
-function ColorToHex(C: TColor): string;
-var
-  RGB: Cardinal;
+function ColorToHex(C: TAlphaColor): string;
 begin
-  RGB := TColorRec.ColorToRGB(C);
-  Result := Format('#%.2X%.2X%.2X', [RGB and $FF, (RGB shr 8) and $FF, (RGB shr 16) and $FF]);
+  Result := '#' + IntToHex(C and $FFFFFF, 6);
 end;
 
-function HexToColor(const S: string; Default: TColor): TColor;
+function HexToColor(const S: string; Default: TAlphaColor): TAlphaColor;
 var
   T: string;
   V: Integer;
@@ -167,8 +168,7 @@ begin
     Delete(T, 1, 1);
   if (Length(T) <> 6) or not TryStrToInt('$' + T, V) then
     Exit(Default);
-  // #RRGGBB -> TColor ($00BBGGRR)
-  Result := TColor(((V and $FF) shl 16) or (V and $FF00) or ((V shr 16) and $FF));
+  Result := TAlphaColor($FF000000) or TAlphaColor(V and $FFFFFF);
 end;
 
 function NewLevel: TDisplayLevel;
@@ -176,8 +176,8 @@ begin
   Result := Default(TDisplayLevel);
   Result.Name := 'Warning';
   Result.Op := coGE;
-  Result.RowColor := clNone;
-  Result.TextColor := clNone;
+  Result.RowColor := NoColor;
+  Result.TextColor := NoColor;
 end;
 
 { TDisplayLevel }
@@ -256,7 +256,7 @@ end;
 
 { TResolvedStyle }
 
-procedure TResolvedStyle.Colors(FlashOn: Boolean; out Row, Text: TColor);
+procedure TResolvedStyle.Colors(FlashOn: Boolean; out Row, Text: TAlphaColor);
 begin
   if Flash and not FlashOn then
   begin
@@ -276,8 +276,8 @@ constructor TPidDisplay.Create(APidId: Integer);
 begin
   inherited Create;
   PidId := APidId;
-  TextColor := clNone;
-  RowColor := clNone;
+  TextColor := NoColor;
+  RowColor := NoColor;
 end;
 
 procedure TPidDisplay.Assign(Source: TPidDisplay);
@@ -299,7 +299,7 @@ end;
 
 function TPidDisplay.IsDefault: Boolean;
 begin
-  Result := (FontSize = 0) and (TextColor = clNone) and (RowColor = clNone) and (Length(Levels) = 0);
+  Result := (FontSize = 0) and (TextColor = NoColor) and (RowColor = NoColor) and (Length(Levels) = 0);
 end;
 
 { TDisplaySettings }
@@ -359,10 +359,10 @@ var
 begin
   Result := Default(TResolvedStyle);
   Result.Level := -1;
-  Result.RowColor := clNone;
-  Result.TextColor := clNone;
-  Result.NormalRowColor := clNone;
-  Result.NormalTextColor := clNone;
+  Result.RowColor := NoColor;
+  Result.TextColor := NoColor;
+  Result.NormalRowColor := NoColor;
+  Result.NormalTextColor := NoColor;
   if D = nil then
     Exit;
   Result.FontSize := D.FontSize;
@@ -375,9 +375,9 @@ begin
     Exit;
   L := D.Levels[Result.Level];
   Result.LevelName := L.Name;
-  if L.RowColor <> clNone then
+  if L.RowColor <> NoColor then
     Result.RowColor := L.RowColor;
-  if L.TextColor <> clNone then
+  if L.TextColor <> NoColor then
     Result.TextColor := L.TextColor;
   Result.Flash := L.Flash;
 end;
@@ -411,7 +411,7 @@ begin
   for I := High(Levels) downto 0 do
   begin
     L := Levels[I];
-    if L.RowColor = clNone then
+    if L.RowColor = NoColor then
       Continue;
     case L.Op of
       coGE, coGT:
@@ -473,8 +473,8 @@ begin
       L.Name := JStr(LE, 'name', 'Level ' + IntToStr(J + 1));
       L.Op := TCompareOp(KeyIndexOf(CompareOpKeys, JStr(LE, 'when', '>='), 0));
       L.Value := JFloat(LE, 'value', 0);
-      L.RowColor := HexToColor(JStr(LE, 'rowColor'), clNone);
-      L.TextColor := HexToColor(JStr(LE, 'textColor'), clNone);
+      L.RowColor := HexToColor(JStr(LE, 'rowColor'), NoColor);
+      L.TextColor := HexToColor(JStr(LE, 'textColor'), NoColor);
       L.Flash := JBool(LE, 'flash', False);
       L.Sound := TAlertSound(KeyIndexOf(AlertSoundKeys, JStr(LE, 'sound', 'none'), 0));
       L.SoundFile := JStr(LE, 'soundFile');
@@ -495,9 +495,9 @@ begin
     LE.AddPair('name', L.Name);
     LE.AddPair('when', CompareOpKeys[L.Op]);
     LE.AddPair('value', TJSONNumber.Create(L.Value));
-    if L.RowColor <> clNone then
+    if L.RowColor <> NoColor then
       LE.AddPair('rowColor', ColorToHex(L.RowColor));
-    if L.TextColor <> clNone then
+    if L.TextColor <> NoColor then
       LE.AddPair('textColor', ColorToHex(L.TextColor));
     if L.Flash then
       LE.AddPair('flash', TJSONBool.Create(True));
@@ -535,8 +535,8 @@ begin
           Continue;
         end;
         D.FontSize := EnsureRange(JInt(E, 'fontSize', 0), 0, 72);
-        D.TextColor := HexToColor(JStr(E, 'textColor'), clNone);
-        D.RowColor := HexToColor(JStr(E, 'rowColor'), clNone);
+        D.TextColor := HexToColor(JStr(E, 'textColor'), NoColor);
+        D.RowColor := HexToColor(JStr(E, 'rowColor'), NoColor);
         D.Levels := LevelsFromJson(JArr(E, 'levels'));
         FPids.AddOrSetValue(D.PidId, D);
         D := nil;
@@ -611,9 +611,9 @@ begin
     E.AddPair('pid', TJSONNumber.Create(D.PidId));
     if D.FontSize > 0 then
       E.AddPair('fontSize', TJSONNumber.Create(D.FontSize));
-    if D.TextColor <> clNone then
+    if D.TextColor <> NoColor then
       E.AddPair('textColor', ColorToHex(D.TextColor));
-    if D.RowColor <> clNone then
+    if D.RowColor <> NoColor then
       E.AddPair('rowColor', ColorToHex(D.RowColor));
     if Length(D.Levels) > 0 then
       E.AddPair('levels', LevelsToJson(D.Levels));

@@ -26,7 +26,7 @@ function CreateMissingDataFiles: TArray<string>;
 implementation
 
 uses
-  Winapi.Windows, System.Classes, System.JSON, UVScan.Paths, UVScan.JsonFile;
+  System.Types, System.Classes, System.JSON, UVScan.Paths, UVScan.JsonFile;
 
 function ResourceText(const Name: string): string;
 var

@@ -57,10 +57,14 @@ const
 { Low nibble of the $2A rate byte (UVScan.Class2.StreamSpeed*). }
 function StreamSpeedNibble(Speed: TStreamSpeed): Byte;
 
+{ Documents\UVScan Logs; on Android the app's folder on shared storage
+  (Android/data/<app>/files/Logs), reachable over USB without permissions. }
+function DefaultLogFolder: string;
+
 implementation
 
 uses
-  Winapi.Windows, System.IOUtils, System.Generics.Collections, System.Math,
+  {$IFDEF MSWINDOWS}Winapi.Windows,{$ELSE}Posix.Stdio, Posix.Unistd,{$ENDIF} System.IOUtils, System.Generics.Collections, System.Math,
   UVScan.JsonFile, UVScan.Class2;
 
 function StreamSpeedNibble(Speed: TStreamSpeed): Byte;
@@ -71,6 +75,15 @@ begin
   else
     Result := StreamSpeedFast;
   end;
+end;
+
+function DefaultLogFolder: string;
+begin
+  {$IFDEF ANDROID}
+  Result := TPath.Combine(TPath.GetPublicPath, 'Logs');
+  {$ELSE}
+  Result := TPath.Combine(TPath.GetDocumentsPath, 'UVScan Logs');
+  {$ENDIF}
 end;
 
 { TAppSettings }
@@ -88,7 +101,7 @@ begin
   SelectedPids := nil;
   ActiveList := '';
   StreamSpeed := ssFast;
-  LogFolder := TPath.Combine(TPath.GetDocumentsPath, 'UVScan Logs');
+  LogFolder := DefaultLogFolder;
   Trace := False;
   AlertSounds := True;
   LiveZoom := 100;

@@ -1,23 +1,28 @@
 unit UVScan.LogChart;
 
 { The log viewer's chart: time on the horizontal axis, one line per visible
-  channel, drawn with GDI+ into an off-screen bitmap.
+  channel, drawn with the FMX canvas.
 
   Modes: lanes (a strip per channel, each with its own scale), overlay (all
   lines in one area, each on its own scale, with an axis per channel) and
   shared (one scale for everything).
 
-  Mouse: left click / drag = move the cursor, wheel = zoom time around the
-  mouse, right or middle drag = pan, double-click = show the whole log. }
+  Mouse: left click / drag = move the cursor, Shift+drag = select a range,
+  wheel = zoom time around the mouse, right or middle drag = pan,
+  double-click = show the whole log.
+  Touch: drag = move the cursor, pinch = zoom (and pan with two fingers),
+  double tap = whole log, long press then drag = select a range (or turn on
+  SelectMode so a drag selects). }
 
 interface
 
 uses
-  Winapi.Windows, Winapi.Messages, System.SysUtils, System.Classes, System.Types, System.UITypes,
-  System.Math, Vcl.Graphics, Vcl.Controls, UVScan.LogData, UVScan.LogViews, UVScan.Display;
+  System.SysUtils, System.Classes, System.Types, System.UITypes, System.Math,
+  FMX.Types, FMX.Controls, FMX.Graphics, FMX.TextLayout,
+  UVScan.LogData, UVScan.LogViews, UVScan.Display;
 
 type
-  TLogChart = class(TCustomControl)
+  TLogChart = class(TControl)
   private type
     TDrag = (dgNone, dgCursor, dgPan, dgSelect);
   private
@@ -27,36 +32,48 @@ type
     FMode: TChartMode;
     FT0, FT1: Double;
     FCursor: Double;
-    FBuffer: TBitmap;
     FDrag: TDrag;
-    FDragX: Integer;
+    FDragX: Single;
     FDragT0, FDragT1: Double;
-    FPlot: TRect;
+    FLastX: Single;
+    FPlot: TRectF;
     FShowBands: Boolean;
     FSel0, FSel1: Double;      // selected time range, NaN = none
+    FSelectMode: Boolean;
+    FPinchDist: Double;
+    FPinchX: Single;
+    FPinchT0, FPinchT1: Double;
+    FLayout: TTextLayout;
     FOnSelectionChange: TNotifyEvent;
     FOnCursorChange: TNotifyEvent;
     FOnWindowChange: TNotifyEvent;
-    procedure WMEraseBkgnd(var Msg: TWMEraseBkgnd); message WM_ERASEBKGND;
-    procedure WMGetDlgCode(var Msg: TWMGetDlgCode); message WM_GETDLGCODE;
     procedure SetMode(Value: TChartMode);
     procedure SetShowBands(Value: Boolean);
-    function TimeAtX(X: Integer): Double;
+    function TimeAtX(X: Single): Double;
     function Visible_: TArray<Integer>;
     procedure Scale(Ch: Integer; out Lo, Hi: Double);
     procedure SetWindow(T0, T1: Double);
+    procedure Txt(const S: string; X, Y, W, H, Size: Single; C: TAlphaColor; Align: TTextAlign;
+      Bold: Boolean = False);
+    function TextWidth(const S: string; Size: Single; Bold: Boolean = False): Single;
+    procedure Fill(X, Y, W, H: Single; C: TAlphaColor; Alpha: Byte = 255);
+    procedure Line(X1, Y1, X2, Y2, Width: Single; C: TAlphaColor; Alpha: Byte = 255);
+    procedure StartSelect(X: Single);
   protected
     procedure Paint; override;
-    procedure MouseDown(Button: TMouseButton; Shift: TShiftState; X, Y: Integer); override;
-    procedure MouseMove(Shift: TShiftState; X, Y: Integer); override;
-    procedure MouseUp(Button: TMouseButton; Shift: TShiftState; X, Y: Integer); override;
-    function DoMouseWheel(Shift: TShiftState; WheelDelta: Integer; MousePos: TPoint): Boolean; override;
+    procedure MouseDown(Button: TMouseButton; Shift: TShiftState; X, Y: Single); override;
+    procedure MouseMove(Shift: TShiftState; X, Y: Single); override;
+    procedure MouseUp(Button: TMouseButton; Shift: TShiftState; X, Y: Single); override;
+    procedure MouseWheel(Shift: TShiftState; WheelDelta: Integer; var Handled: Boolean); override;
     procedure DblClick; override;
+    procedure CMGesture(var EventInfo: TGestureEventInfo); override;
+    procedure DoEnter; override;
+    procedure DoExit; override;
   public
     constructor Create(AOwner: TComponent); override;
     destructor Destroy; override;
     { Data is not owned. Styles / Levels: one entry per data channel. }
-    procedure SetData(Data: TLogData);
+    procedure SetData(Data: TLogData); reintroduce;
     procedure SetStyles(const Styles: TArray<TChannelStyle>; const Levels: TArray<TArray<TDisplayLevel>>);
     procedure SetCursorTime(const T: Double; Notify: Boolean);
     procedure FitAll;
@@ -68,7 +85,7 @@ type
     function HasSelection: Boolean;
     procedure ClearSelection;
     procedure ZoomToSelection;
-    { The chart as it is on screen, for saving as a picture. }
+    { The chart as it is on screen, for saving as a picture (PNG by extension). }
     procedure SaveImage(const FileName: string);
     property SelStart: Double read FSel0;
     property SelEnd: Double read FSel1;
@@ -76,6 +93,8 @@ type
     property CursorTime: Double read FCursor;
     property Mode: TChartMode read FMode write SetMode;
     property ShowBands: Boolean read FShowBands write SetShowBands;
+    { A left drag (or a finger) selects a range instead of moving the cursor. }
+    property SelectMode: Boolean read FSelectMode write FSelectMode;
     property OnCursorChange: TNotifyEvent read FOnCursorChange write FOnCursorChange;
     property OnWindowChange: TNotifyEvent read FOnWindowChange write FOnWindowChange;
     property PopupMenu;
@@ -87,15 +106,15 @@ procedure AutoRange(const Ch: TLogChannel; out Lo, Hi: Double);
 implementation
 
 uses
-  System.StrUtils, Vcl.Imaging.pngimage, Winapi.GDIPAPI, Winapi.GDIPOBJ, UVScan.Gauge;
+  System.StrUtils;
 
 const
-  Back = TColor($001E1A16);       // RGB(22, 26, 30)
-  PlotBack = TColor($00261F1B);
-  GridColor = TColor($003A322C);
-  TextColor = TColor($00D2C8BE);
-  DimText = TColor($00968C82);
-  CursorColor = TColor($00FFFFFF);
+  Back = TAlphaColor($FF161A1E);
+  PlotBack = TAlphaColor($FF1B1F26);
+  GridColor = TAlphaColor($FF2C323A);
+  DimText = TAlphaColor($FF828C96);
+  CursorColor = TAlphaColor($FFFFFFFF);
+  SelColor = TAlphaColor($FF46AAFF);
 
 procedure AutoRange(const Ch: TLogChannel; out Lo, Hi: Double);
 var
@@ -125,88 +144,27 @@ begin
   Hi := Hi + Pad;
 end;
 
-function GP(C: TColor; Alpha: Byte = 255): ARGB;
+{ A round step (1, 2, 2.5, 5 x 10^n) giving about Target steps over Range. }
+function NiceStep(Range: Double; Target: Integer): Double;
 var
-  RGB: Cardinal;
+  Raw, Mag, F: Double;
 begin
-  RGB := ColorToRGB(C);
-  Result := MakeColor(Alpha, GetRValue(RGB), GetGValue(RGB), GetBValue(RGB));
-end;
-
-procedure Txt(G: TGPGraphics; const S: string; X, Y, W, H, Px: Single; C: TColor; Align: TStringAlignment;
-  Bold: Boolean = False);
-var
-  Font: TGPFont;
-  Fmt: TGPStringFormat;
-  Brush: TGPSolidBrush;
-begin
-  if (S = '') or (W <= 0) or (H <= 0) then
-    Exit;
-  Fmt := TGPStringFormat.Create;
-  Brush := TGPSolidBrush.Create(GP(C));
-  if Bold then
-    Font := TGPFont.Create('Segoe UI', Px, FontStyleBold, UnitPixel)
+  if (Range <= 0) or (Target < 1) then
+    Exit(1);
+  Raw := Range / Target;
+  Mag := Power(10, Floor(Log10(Raw)));
+  F := Raw / Mag;
+  if F < 1.5 then
+    F := 1
+  else if F < 2.25 then
+    F := 2
+  else if F < 3.5 then
+    F := 2.5
+  else if F < 7.5 then
+    F := 5
   else
-    Font := TGPFont.Create('Segoe UI', Px, FontStyleRegular, UnitPixel);
-  try
-    Fmt.SetFormatFlags(StringFormatFlagsNoWrap);
-    Fmt.SetTrimming(StringTrimmingEllipsisCharacter);
-    Fmt.SetAlignment(Align);
-    Fmt.SetLineAlignment(StringAlignmentCenter);
-    G.DrawString(S, Length(S), Font, MakeRect(X, Y, W, H), Fmt, Brush);
-  finally
-    Font.Free;
-    Brush.Free;
-    Fmt.Free;
-  end;
-end;
-
-function TextWidth(G: TGPGraphics; const S: string; Px: Single; Bold: Boolean = False): Single;
-var
-  Font: TGPFont;
-  Box: TGPRectF;
-  Origin: TGPPointF;
-begin
-  if Bold then
-    Font := TGPFont.Create('Segoe UI', Px, FontStyleBold, UnitPixel)
-  else
-    Font := TGPFont.Create('Segoe UI', Px, FontStyleRegular, UnitPixel);
-  try
-    Origin.X := 0;
-    Origin.Y := 0;
-    G.MeasureString(S, Length(S), Font, Origin, Box);
-    Result := Box.Width;
-  finally
-    Font.Free;
-  end;
-end;
-
-procedure Fill(G: TGPGraphics; X, Y, W, H: Single; C: TColor; Alpha: Byte = 255);
-var
-  B: TGPSolidBrush;
-begin
-  if (W <= 0) or (H <= 0) then
-    Exit;
-  B := TGPSolidBrush.Create(GP(C, Alpha));
-  try
-    G.FillRectangle(B, X, Y, W, H);
-  finally
-    B.Free;
-  end;
-end;
-
-procedure Line(G: TGPGraphics; X1, Y1, X2, Y2, Width: Single; C: TColor; Alpha: Byte = 255; Dashed: Boolean = False);
-var
-  Pen: TGPPen;
-begin
-  Pen := TGPPen.Create(GP(C, Alpha), Width);
-  try
-    if Dashed then
-      Pen.SetDashStyle(DashStyleDash);
-    G.DrawLine(Pen, X1, Y1, X2, Y2);
-  finally
-    Pen.Free;
-  end;
+    F := 10;
+  Result := F * Mag;
 end;
 
 function FormatAxis(const V, Step: Double): string;
@@ -238,31 +196,87 @@ end;
 constructor TLogChart.Create(AOwner: TComponent);
 begin
   inherited;
-  ControlStyle := ControlStyle + [csOpaque];
-  FBuffer := TBitmap.Create;
-  FBuffer.PixelFormat := pf32bit;
   FMode := cmLanes;
   FSel0 := NaN;
   FSel1 := NaN;
   FShowBands := True;
+  CanFocus := True;
   TabStop := True;
-  Color := Back;
+  HitTest := True;
+  ClipChildren := True;
+  FLayout := TTextLayoutManager.DefaultTextLayout.Create;
+  Touch.InteractiveGestures := [TInteractiveGesture.Zoom, TInteractiveGesture.DoubleTap,
+    TInteractiveGesture.LongTap];
 end;
 
 destructor TLogChart.Destroy;
 begin
-  FBuffer.Free;
+  FLayout.Free;
   inherited;
 end;
 
-procedure TLogChart.WMEraseBkgnd(var Msg: TWMEraseBkgnd);
+procedure TLogChart.Txt(const S: string; X, Y, W, H, Size: Single; C: TAlphaColor; Align: TTextAlign;
+  Bold: Boolean);
 begin
-  Msg.Result := 1;
+  if (S = '') or (W <= 0) or (H <= 0) then
+    Exit;
+  FLayout.BeginUpdate;
+  try
+    FLayout.TopLeft := TPointF.Create(X, Y);
+    FLayout.MaxSize := TPointF.Create(W, H);
+    FLayout.Text := S;
+    FLayout.WordWrap := False;
+    FLayout.Trimming := TTextTrimming.Character;
+    FLayout.Font.Size := Size;
+    if Bold then
+      FLayout.Font.Style := [TFontStyle.fsBold]
+    else
+      FLayout.Font.Style := [];
+    FLayout.Color := C;
+    FLayout.HorizontalAlign := Align;
+    FLayout.VerticalAlign := TTextAlign.Center;
+  finally
+    FLayout.EndUpdate;
+  end;
+  FLayout.RenderLayout(Canvas);
 end;
 
-procedure TLogChart.WMGetDlgCode(var Msg: TWMGetDlgCode);
+function TLogChart.TextWidth(const S: string; Size: Single; Bold: Boolean): Single;
 begin
-  Msg.Result := DLGC_WANTARROWS;
+  FLayout.BeginUpdate;
+  try
+    FLayout.TopLeft := TPointF.Zero;
+    FLayout.MaxSize := TPointF.Create(10000, 100);
+    FLayout.Text := S;
+    FLayout.WordWrap := False;
+    FLayout.Trimming := TTextTrimming.None;
+    FLayout.Font.Size := Size;
+    if Bold then
+      FLayout.Font.Style := [TFontStyle.fsBold]
+    else
+      FLayout.Font.Style := [];
+  finally
+    FLayout.EndUpdate;
+  end;
+  Result := FLayout.TextWidth;
+end;
+
+procedure TLogChart.Fill(X, Y, W, H: Single; C: TAlphaColor; Alpha: Byte);
+begin
+  if (W <= 0) or (H <= 0) then
+    Exit;
+  Canvas.Fill.Kind := TBrushKind.Solid;
+  Canvas.Fill.Color := (C and $00FFFFFF) or (TAlphaColor(Alpha) shl 24);
+  Canvas.FillRect(TRectF.Create(X, Y, X + W, Y + H), 0, 0, [], 1);
+end;
+
+procedure TLogChart.Line(X1, Y1, X2, Y2, Width: Single; C: TAlphaColor; Alpha: Byte);
+begin
+  Canvas.Stroke.Kind := TBrushKind.Solid;
+  Canvas.Stroke.Dash := TStrokeDash.Solid;
+  Canvas.Stroke.Thickness := Width;
+  Canvas.Stroke.Color := (C and $00FFFFFF) or (TAlphaColor(Alpha) shl 24);
+  Canvas.DrawLine(TPointF.Create(X1, Y1), TPointF.Create(X2, Y2), 1);
 end;
 
 procedure TLogChart.SetData(Data: TLogData);
@@ -280,7 +294,7 @@ procedure TLogChart.SetStyles(const Styles: TArray<TChannelStyle>; const Levels:
 begin
   FStyles := Copy(Styles);
   FLevels := Copy(Levels);
-  Invalidate;
+  Repaint;
 end;
 
 procedure TLogChart.SetMode(Value: TChartMode);
@@ -288,7 +302,7 @@ begin
   if FMode <> Value then
   begin
     FMode := Value;
-    Invalidate;
+    Repaint;
   end;
 end;
 
@@ -297,7 +311,7 @@ begin
   if FShowBands <> Value then
   begin
     FShowBands := Value;
-    Invalidate;
+    Repaint;
   end;
 end;
 
@@ -319,7 +333,7 @@ begin
   begin
     FT0 := 0;
     FT1 := 1;
-    Invalidate;
+    Repaint;
     Exit;
   end;
   First := FData.Times[0];
@@ -333,7 +347,7 @@ begin
     T0 := Last - Span;
   FT0 := T0;
   FT1 := T0 + Span;
-  Invalidate;
+  Repaint;
   if Assigned(FOnWindowChange) then
     FOnWindowChange(Self);
 end;
@@ -372,12 +386,12 @@ begin
   if (FData = nil) or (FData.Count = 0) then
     Exit;
   FCursor := EnsureRange(T, FData.Times[0], FData.Times[FData.Count - 1]);
-  Invalidate;
+  Repaint;
   if Notify and Assigned(FOnCursorChange) then
     FOnCursorChange(Self);
 end;
 
-function TLogChart.TimeAtX(X: Integer): Double;
+function TLogChart.TimeAtX(X: Single): Double;
 begin
   if FPlot.Width <= 0 then
     Exit(FT0);
@@ -409,16 +423,16 @@ end;
 
 procedure TLogChart.Paint;
 var
-  G: TGPGraphics;
-  K: Single;
   Vis: TArray<Integer>;
-  W, H, I, N, Lane: Integer;
+  W, H: Single;
+  I, N, Lane: Integer;
   Lo, Hi, SLo, SHi, Step, Tick, Px: Double;
   LaneTop, LaneH, AxisW, X, Y: Single;
   Ch: Integer;
   S: string;
   Box: TArray<string>;
-  BoxColors: TArray<TColor>;
+  BoxColors: TArray<TAlphaColor>;
+  State: TCanvasSaveState;
 
   function Y_(const V, Lo_, Hi_: Double; Top, Height: Single): Single;
   begin
@@ -438,55 +452,65 @@ var
     Style: TChannelStyle;
     Levels: TArray<TDisplayLevel>;
     UseLevels: Boolean;
-    I0, I1, J, Bucket, LastBucket, RunLvl: Integer;
+    I0, I1, J, Bucket, LastBucket, RunLvl, NPts: Integer;
     V, BMin, BMax: Double;
-    Pts: TArray<TGPPointF>;
-    Pen: TGPPen;
+    Pts: TArray<TPointF>;
     Decimate: Boolean;
     Vals: TArray<Double>;
+    Path: TPathData;
 
     procedure Flush;
     var
-      Col: TColor;
+      Col: TAlphaColor;
+      K: Integer;
     begin
-      if Length(Pts) >= 2 then
+      if NPts >= 2 then
       begin
         Col := Style.Color;
-        if UseLevels and (RunLvl >= 0) and (Levels[RunLvl].RowColor <> clNone) then
+        if UseLevels and (RunLvl >= 0) and (Levels[RunLvl].RowColor <> NoColor) then
           Col := Levels[RunLvl].RowColor;
-        Pen.SetColor(GP(Col));
+        Canvas.Stroke.Kind := TBrushKind.Solid;
+        Canvas.Stroke.Color := Col;
+        Canvas.Stroke.Join := TStrokeJoin.Round;
+        Canvas.Stroke.Cap := TStrokeCap.Round;
+        Canvas.Stroke.Dash := TStrokeDash.Solid;
         if UseLevels and (RunLvl >= 0) then
-          Pen.SetWidth(Style.Width * K + 1.5)
+          Canvas.Stroke.Thickness := Style.Width + 1.5
         else
-          Pen.SetWidth(Style.Width * K);
-        G.DrawLines(Pen, PGPPointF(@Pts[0]), Length(Pts));
+          Canvas.Stroke.Thickness := Style.Width;
+        Path.Clear;
+        Path.MoveTo(Pts[0]);
+        for K := 1 to NPts - 1 do
+          Path.LineTo(Pts[K]);
+        Canvas.DrawPath(Path, 1);
       end;
-      if Length(Pts) > 0 then
-        Pts := [Pts[High(Pts)]] // the next run starts where this one ended
-      else
-        Pts := nil;
+      if NPts > 0 then
+      begin
+        Pts[0] := Pts[NPts - 1]; // the next run starts where this one ended
+        NPts := 1;
+      end;
     end;
 
     procedure Add(const Tm, Val: Double);
     var
-      P: TGPPointF;
       L: Integer;
     begin
       if IsNan(Val) then
       begin
         Flush;
-        Pts := nil;
+        NPts := 0;
         Exit;
       end;
       L := -1;
       if UseLevels then
         L := LevelIndexFor(Levels, Val);
-      if (Length(Pts) > 0) and (L <> RunLvl) then
+      if (NPts > 0) and (L <> RunLvl) then
         Flush;
       RunLvl := L;
-      P.X := X_(Tm);
-      P.Y := EnsureRange(Y_(Val, Lo_, Hi_, Top, Height), Top - 2, Top + Height + 2);
-      Pts := Pts + [P];
+      if NPts >= Length(Pts) then
+        SetLength(Pts, Max(64, Length(Pts) * 2));
+      Pts[NPts] := TPointF.Create(X_(Tm), EnsureRange(Y_(Val, Lo_, Hi_, Top, Height), Top - 2, Top + Height + 2));
+      Inc(NPts);
     end;
 
   begin
@@ -499,10 +523,10 @@ var
     I0 := Max(0, FData.IndexAt(FT0) - 1);
     I1 := Min(FData.Count - 1, FData.IndexAt(FT1) + 1);
     Decimate := (I1 - I0) > FPlot.Width * 2;
-    Pen := TGPPen.Create(GP(Style.Color), Style.Width * K);
+    Path := TPathData.Create;
     try
-      Pen.SetLineJoin(LineJoinRound);
       Pts := nil;
+      NPts := 0;
       RunLvl := -2;
       if not Decimate then
         for J := I0 to I1 do
@@ -545,7 +569,7 @@ var
       end;
       Flush;
     finally
-      Pen.Free;
+      Path.Free;
     end;
   end;
 
@@ -560,7 +584,7 @@ var
     begin
       Y1 := Y_(Z.ToValue, Lo_, Hi_, Top, Height);
       Y2 := Y_(Z.FromValue, Lo_, Hi_, Top, Height);
-      Fill(G, FPlot.Left, Y1, FPlot.Width, Y2 - Y1, Z.Color, 28);
+      Fill(FPlot.Left, Y1, FPlot.Width, Y2 - Y1, Z.Color, 28);
     end;
   end;
 
@@ -577,19 +601,19 @@ var
       Text := IfThen(V >= 0.5, 'ON', 'OFF');
   end;
 
-  procedure Bubble(const S_: string; Xc, Yc: Single; Col: TColor);
+  procedure Bubble(const S_: string; Xc, Yc: Single; Col: TAlphaColor);
   var
     Tw: Single;
   begin
-    Tw := TextWidth(G, S_, 12 * K, True) + 10 * K;
-    if Xc + Tw + 6 * K > FPlot.Right then
-      Xc := Xc - Tw - 12 * K
+    Tw := TextWidth(S_, 12, True) + 10;
+    if Xc + Tw + 6 > FPlot.Right then
+      Xc := Xc - Tw - 12
     else
-      Xc := Xc + 6 * K;
-    Yc := EnsureRange(Yc - 9 * K, FPlot.Top, FPlot.Bottom - 18 * K);
-    Fill(G, Xc, Yc, Tw, 18 * K, Back, 225);
-    Fill(G, Xc, Yc, 3 * K, 18 * K, Col);
-    Txt(G, S_, Xc + 5 * K, Yc, Tw - 5 * K, 18 * K, 12 * K, Col, StringAlignmentNear, True);
+      Xc := Xc + 6;
+    Yc := EnsureRange(Yc - 9, FPlot.Top, FPlot.Bottom - 18);
+    Fill(Xc, Yc, Tw, 18, Back, 225);
+    Fill(Xc, Yc, 3, 18, Col);
+    Txt(S_, Xc + 5, Yc, Tw - 5, 18, 12, Col, TTextAlign.Leading, True);
   end;
 
 var
@@ -597,55 +621,52 @@ var
   VText: string;
   Lvl: Integer;
 begin
-  W := ClientWidth;
-  H := ClientHeight;
+  W := Width;
+  H := Height;
   if (W < 10) or (H < 10) then
     Exit;
-  if (FBuffer.Width <> W) or (FBuffer.Height <> H) then
-    FBuffer.SetSize(W, H);
-  K := CurrentPPI / 96;
   Vis := Visible_;
   N := Length(Vis);
-  G := TGPGraphics.Create(FBuffer.Canvas.Handle);
+  State := Canvas.SaveState;
   try
-    G.SetSmoothingMode(SmoothingModeAntiAlias);
-    G.SetTextRenderingHint(TextRenderingHintAntiAliasGridFit);
-    G.Clear(GP(Back));
+    Canvas.IntersectClipRect(LocalRect);
+    Fill(0, 0, W, H, Back);
     // margins
     case FMode of
-      cmOverlay: AxisW := Max(1, Min(N, 6)) * 46 * K;
+      cmOverlay: AxisW := Max(1, Min(N, 6)) * 46;
     else
-      AxisW := 58 * K;
+      AxisW := 58;
     end;
-    FPlot := Rect(Round(AxisW + 6 * K), Round(8 * K), W - Round(10 * K), H - Round(26 * K));
+    FPlot := TRectF.Create(Round(AxisW + 6), 8, Round(W - 10), Round(H - 26));
     if (FData = nil) or (FData.Count < 2) or (FPlot.Width < 20) or (FPlot.Height < 20) then
     begin
-      if FData = nil then
+      if (FData = nil) or (FData.ChannelCount = 0) then
         S := 'Open a log (or the demo) to see it here'
       else if N = 0 then
         S := 'Tick channels on the left to chart them'
+      else if FData.Count < 2 then
+        S := 'This log has no samples'
       else
-        S := 'This log has no samples';
-      Txt(G, S, 0, 0, W, H, 15 * K, DimText, StringAlignmentCenter);
+        S := '';
+      Txt(S, 0, 0, W, H, 15, DimText, TTextAlign.Center);
       Exit;
     end;
-    Fill(G, FPlot.Left, FPlot.Top, FPlot.Width, FPlot.Height, PlotBack);
+    Fill(FPlot.Left, FPlot.Top, FPlot.Width, FPlot.Height, PlotBack);
 
     // time grid and labels
-    Step := NiceStep(FT1 - FT0, Max(2, FPlot.Width div Round(90 * K)));
+    Step := NiceStep(FT1 - FT0, Max(2, Trunc(FPlot.Width / 90)));
     Tick := Ceil(FT0 / Step) * Step;
     while Tick <= FT1 do
     begin
       X := X_(Tick);
-      Line(G, X, FPlot.Top, X, FPlot.Bottom, 1, GridColor);
-      Txt(G, FormatLogTime(Tick), X - 40 * K, FPlot.Bottom + 3 * K, 80 * K, 18 * K, 11 * K, DimText,
-        StringAlignmentCenter);
+      Line(X, FPlot.Top, X, FPlot.Bottom, 1, GridColor);
+      Txt(FormatLogTime(Tick), X - 40, FPlot.Bottom + 3, 80, 18, 11, DimText, TTextAlign.Center);
       Tick := Tick + Step;
     end;
 
     if N = 0 then
-      Txt(G, 'Tick channels on the left to chart them', FPlot.Left, FPlot.Top, FPlot.Width, FPlot.Height,
-        15 * K, DimText, StringAlignmentCenter)
+      Txt('Tick channels on the left to chart them', FPlot.Left, FPlot.Top, FPlot.Width, FPlot.Height,
+        15, DimText, TTextAlign.Center)
     else
       case FMode of
         cmLanes:
@@ -657,20 +678,20 @@ begin
               Scale(Ch, Lo, Hi);
               LaneTop := FPlot.Top + Lane * LaneH;
               if Lane > 0 then
-                Line(G, FPlot.Left, LaneTop, FPlot.Right, LaneTop, 1, GridColor);
-              DrawBands(Ch, Lo, Hi, LaneTop + 3 * K, LaneH - 6 * K);
-              DrawSeries(Ch, Lo, Hi, LaneTop + 3 * K, LaneH - 6 * K);
+                Line(FPlot.Left, LaneTop, FPlot.Right, LaneTop, 1, GridColor);
+              DrawBands(Ch, Lo, Hi, LaneTop + 3, LaneH - 6);
+              DrawSeries(Ch, Lo, Hi, LaneTop + 3, LaneH - 6);
               // labels: name, and the scale on the left
-              Txt(G, FData.Channels[Ch].Caption, FPlot.Left + FPlot.Width / 2, LaneTop + 2 * K,
-                FPlot.Width / 2 - 8 * K, 16 * K, 12 * K, FStyles[Ch].Color, StringAlignmentFar, True);
-              Txt(G, FormatAxis(Hi, (Hi - Lo) / 4), 0, LaneTop + 1 * K, AxisW, 14 * K, 10.5 * K,
-                FStyles[Ch].Color, StringAlignmentFar);
-              Txt(G, FormatAxis(Lo, (Hi - Lo) / 4), 0, LaneTop + LaneH - 15 * K, AxisW, 14 * K, 10.5 * K,
-                FStyles[Ch].Color, StringAlignmentFar);
+              Txt(FData.Channels[Ch].Caption, FPlot.Left + FPlot.Width / 2, LaneTop + 2,
+                FPlot.Width / 2 - 8, 16, 12, FStyles[Ch].Color, TTextAlign.Trailing, True);
+              Txt(FormatAxis(Hi, (Hi - Lo) / 4), 0, LaneTop + 1, AxisW, 14, 10.5, FStyles[Ch].Color,
+                TTextAlign.Trailing);
+              Txt(FormatAxis(Lo, (Hi - Lo) / 4), 0, LaneTop + LaneH - 15, AxisW, 14, 10.5, FStyles[Ch].Color,
+                TTextAlign.Trailing);
               ValueAtCursor(Ch, V, VText);
               if not IsNan(V) then
                 Bubble(VText + ' ' + FData.Channels[Ch].Units, X_(FCursor),
-                  Y_(EnsureRange(V, Lo, Hi), Lo, Hi, LaneTop + 3 * K, LaneH - 6 * K), FStyles[Ch].Color);
+                  Y_(EnsureRange(V, Lo, Hi), Lo, Hi, LaneTop + 3, LaneH - 6), FStyles[Ch].Color);
             end;
           end;
 
@@ -690,15 +711,14 @@ begin
               if I < 6 then
               begin
                 // one narrow axis per channel, side by side
-                X := I * 46 * K;
-                Txt(G, FData.Channels[Ch].Name, X, FPlot.Top, 44 * K, 14 * K, 10 * K, FStyles[Ch].Color,
-                  StringAlignmentFar, True);
-                Txt(G, FormatAxis(Hi, (Hi - Lo) / 4), X, FPlot.Top + 14 * K, 44 * K, 14 * K, 10.5 * K,
-                  FStyles[Ch].Color, StringAlignmentFar);
-                Txt(G, FormatAxis((Hi + Lo) / 2, (Hi - Lo) / 4), X, FPlot.Top + FPlot.Height / 2 - 7 * K, 44 * K,
-                  14 * K, 10.5 * K, FStyles[Ch].Color, StringAlignmentFar);
-                Txt(G, FormatAxis(Lo, (Hi - Lo) / 4), X, FPlot.Bottom - 14 * K, 44 * K, 14 * K, 10.5 * K,
-                  FStyles[Ch].Color, StringAlignmentFar);
+                X := I * 46;
+                Txt(FData.Channels[Ch].Name, X, FPlot.Top, 44, 14, 10, FStyles[Ch].Color, TTextAlign.Trailing, True);
+                Txt(FormatAxis(Hi, (Hi - Lo) / 4), X, FPlot.Top + 14, 44, 14, 10.5, FStyles[Ch].Color,
+                  TTextAlign.Trailing);
+                Txt(FormatAxis((Hi + Lo) / 2, (Hi - Lo) / 4), X, FPlot.Top + FPlot.Height / 2 - 7, 44, 14, 10.5,
+                  FStyles[Ch].Color, TTextAlign.Trailing);
+                Txt(FormatAxis(Lo, (Hi - Lo) / 4), X, FPlot.Bottom - 14, 44, 14, 10.5, FStyles[Ch].Color,
+                  TTextAlign.Trailing);
               end;
             end;
           end;
@@ -715,13 +735,13 @@ begin
               if IsNan(SHi) or (Hi > SHi) then
                 SHi := Hi;
             end;
-            Step := NiceStep(SHi - SLo, Max(2, FPlot.Height div Round(40 * K)));
+            Step := NiceStep(SHi - SLo, Max(2, Trunc(FPlot.Height / 40)));
             Tick := Ceil(SLo / Step) * Step;
             while Tick <= SHi do
             begin
               Y := Y_(Tick, SLo, SHi, FPlot.Top, FPlot.Height);
-              Line(G, FPlot.Left, Y, FPlot.Right, Y, 1, GridColor);
-              Txt(G, FormatAxis(Tick, Step), 0, Y - 7 * K, AxisW, 14 * K, 10.5 * K, DimText, StringAlignmentFar);
+              Line(FPlot.Left, Y, FPlot.Right, Y, 1, GridColor);
+              Txt(FormatAxis(Tick, Step), 0, Y - 7, AxisW, 14, 10.5, DimText, TTextAlign.Trailing);
               Tick := Tick + Step;
             end;
             for Ch in Vis do
@@ -736,20 +756,18 @@ begin
       Y := Min(FPlot.Right, X_(Max(FSel0, FSel1)));
       if Y > X then
       begin
-        Fill(G, X, FPlot.Top, Y - X, FPlot.Height, TColor($00FFAA46), 38);
-        Line(G, X, FPlot.Top, X, FPlot.Bottom, 1, TColor($00FFAA46), 160);
-        Line(G, Y, FPlot.Top, Y, FPlot.Bottom, 1, TColor($00FFAA46), 160);
-        Txt(G, FormatLogTime(Abs(FSel1 - FSel0)), X, FPlot.Top + 2 * K, Y - X, 14 * K, 10.5 * K,
-          TColor($00FFAA46), StringAlignmentCenter, True);
+        Fill(X, FPlot.Top, Y - X, FPlot.Height, SelColor, 38);
+        Line(X, FPlot.Top, X, FPlot.Bottom, 1, SelColor, 160);
+        Line(Y, FPlot.Top, Y, FPlot.Bottom, 1, SelColor, 160);
+        Txt(FormatLogTime(Abs(FSel1 - FSel0)), X, FPlot.Top + 2, Y - X, 14, 10.5, SelColor, TTextAlign.Center, True);
       end;
     end;
     // cursor line
     X := X_(FCursor);
     if (X >= FPlot.Left) and (X <= FPlot.Right) then
     begin
-      Line(G, X, FPlot.Top, X, FPlot.Bottom, 1.2 * K, CursorColor, 200);
-      Txt(G, FormatLogTime(FCursor), X - 40 * K, FPlot.Bottom + 3 * K, 80 * K, 18 * K, 11 * K, CursorColor,
-        StringAlignmentCenter, True);
+      Line(X, FPlot.Top, X, FPlot.Bottom, 1.2, CursorColor, 200);
+      Txt(FormatLogTime(FCursor), X - 40, FPlot.Bottom + 3, 80, 18, 11, CursorColor, TTextAlign.Center, True);
       // overlay / shared: one box with every value at the cursor
       if (FMode <> cmLanes) and (N > 0) then
       begin
@@ -764,52 +782,66 @@ begin
           Lvl := -1;
           if (Ch <= High(FLevels)) and not IsNan(V) then
             Lvl := LevelIndexFor(FLevels[Ch], V);
-          if (Lvl >= 0) and (FLevels[Ch][Lvl].RowColor <> clNone) then
+          if (Lvl >= 0) and (FLevels[Ch][Lvl].RowColor <> NoColor) then
             BoxColors := BoxColors + [FLevels[Ch][Lvl].RowColor]
           else
             BoxColors := BoxColors + [FStyles[Ch].Color];
-          Px := Max(Px, TextWidth(G, S, 12 * K, True));
+          Px := Max(Px, TextWidth(S, 12, True));
         end;
-        Px := Px + 16 * K;
-        if X + Px + 10 * K > FPlot.Right then
-          X := X - Px - 8 * K
+        Px := Px + 16;
+        if X + Px + 10 > FPlot.Right then
+          X := X - Px - 8
         else
-          X := X + 8 * K;
-        Fill(G, X, FPlot.Top + 6 * K, Px, Length(Box) * 17 * K + 8 * K, Back, 230);
+          X := X + 8;
+        Fill(X, FPlot.Top + 6, Px, Length(Box) * 17 + 8, Back, 230);
         for I := 0 to High(Box) do
         begin
-          Fill(G, X + 4 * K, FPlot.Top + 10 * K + I * 17 * K + 4 * K, 6 * K, 9 * K, BoxColors[I]);
-          Txt(G, Box[I], X + 13 * K, FPlot.Top + 10 * K + I * 17 * K, Px - 14 * K, 17 * K, 12 * K, BoxColors[I],
-            StringAlignmentNear, True);
+          Fill(X + 4, FPlot.Top + 10 + I * 17 + 4, 6, 9, BoxColors[I]);
+          Txt(Box[I], X + 13, FPlot.Top + 10 + I * 17, Px - 14, 17, 12, BoxColors[I], TTextAlign.Leading, True);
         end;
       end;
     end;
-    if Focused then
-      Line(G, 0, H - 1, W, H - 1, 2, TColor($00FFAA46));
+    if IsFocused then
+      Line(0, H - 1, W, H - 1, 2, SelColor);
   finally
-    G.Free;
-    Canvas.Draw(0, 0, FBuffer);
+    Canvas.RestoreState(State);
   end;
 end;
 
-procedure TLogChart.MouseDown(Button: TMouseButton; Shift: TShiftState; X, Y: Integer);
+procedure TLogChart.DoEnter;
 begin
   inherited;
-  if CanFocus then
+  Repaint;
+end;
+
+procedure TLogChart.DoExit;
+begin
+  inherited;
+  Repaint;
+end;
+
+procedure TLogChart.StartSelect(X: Single);
+begin
+  FDrag := dgSelect;
+  FSel0 := EnsureRange(TimeAtX(X), FData.Times[0], FData.Times[FData.Count - 1]);
+  FSel1 := FSel0;
+  Repaint;
+end;
+
+procedure TLogChart.MouseDown(Button: TMouseButton; Shift: TShiftState; X, Y: Single);
+begin
+  inherited;
+  if CanFocus and not IsFocused then
     SetFocus;
+  FLastX := X;
   if (FData = nil) or (FData.Count < 2) then
     Exit;
   FDragX := X;
   FDragT0 := FT0;
   FDragT1 := FT1;
-  if (Button = mbLeft) and (ssShift in Shift) then
-  begin
-    FDrag := dgSelect;
-    FSel0 := EnsureRange(TimeAtX(X), FData.Times[0], FData.Times[FData.Count - 1]);
-    FSel1 := FSel0;
-    Invalidate;
-  end
-  else if Button = mbLeft then
+  if (Button = TMouseButton.mbLeft) and ((ssShift in Shift) or FSelectMode) then
+    StartSelect(X)
+  else if Button = TMouseButton.mbLeft then
   begin
     FDrag := dgCursor;
     SetCursorTime(TimeAtX(X), True);
@@ -821,18 +853,19 @@ begin
   end;
 end;
 
-procedure TLogChart.MouseMove(Shift: TShiftState; X, Y: Integer);
+procedure TLogChart.MouseMove(Shift: TShiftState; X, Y: Single);
 var
   Dt: Double;
 begin
   inherited;
+  FLastX := X;
   case FDrag of
     dgCursor:
       SetCursorTime(TimeAtX(X), True);
     dgSelect:
       begin
         FSel1 := EnsureRange(TimeAtX(X), FData.Times[0], FData.Times[FData.Count - 1]);
-        Invalidate;
+        Repaint;
       end;
     dgPan:
       if FPlot.Width > 0 then
@@ -843,7 +876,7 @@ begin
   end;
 end;
 
-procedure TLogChart.MouseUp(Button: TMouseButton; Shift: TShiftState; X, Y: Integer);
+procedure TLogChart.MouseUp(Button: TMouseButton; Shift: TShiftState; X, Y: Single);
 begin
   inherited;
   if FDrag = dgSelect then
@@ -857,16 +890,16 @@ begin
   Cursor := crDefault;
 end;
 
-function TLogChart.DoMouseWheel(Shift: TShiftState; WheelDelta: Integer; MousePos: TPoint): Boolean;
-var
-  P: TPoint;
+procedure TLogChart.MouseWheel(Shift: TShiftState; WheelDelta: Integer; var Handled: Boolean);
 begin
-  Result := True;
-  P := ScreenToClient(MousePos);
+  inherited;
+  if Handled then
+    Exit;
+  Handled := True;
   if WheelDelta > 0 then
-    Zoom(0.8, TimeAtX(P.X))
+    Zoom(0.8, TimeAtX(FLastX))
   else
-    Zoom(1.25, TimeAtX(P.X));
+    Zoom(1.25, TimeAtX(FLastX));
 end;
 
 procedure TLogChart.DblClick;
@@ -874,6 +907,50 @@ begin
   inherited;
   FDrag := dgNone;
   FitAll;
+end;
+
+{ Touch: pinch zooms around the fingers and pans as they move; double tap
+  shows everything; a long press starts a range selection there. }
+procedure TLogChart.CMGesture(var EventInfo: TGestureEventInfo);
+var
+  P: TPointF;
+  Span, Center, Rel: Double;
+begin
+  if (FData = nil) or (FData.Count < 2) then
+  begin
+    inherited;
+    Exit;
+  end;
+  P := AbsoluteToLocal(EventInfo.Location);
+  case EventInfo.GestureID of
+    igiZoom:
+      begin
+        FDrag := dgNone;
+        if (TInteractiveGestureFlag.gfBegin in EventInfo.Flags) or (FPinchDist <= 0) then
+        begin
+          FPinchDist := Max(1, EventInfo.Distance);
+          FPinchX := P.X;
+          FPinchT0 := FT0;
+          FPinchT1 := FT1;
+        end
+        else if EventInfo.Distance > 0 then
+        begin
+          // The time under the first pinch centre stays under the fingers.
+          Span := (FPinchT1 - FPinchT0) * FPinchDist / EventInfo.Distance;
+          Center := FPinchT0 + (FPinchX - FPlot.Left) / Max(1, FPlot.Width) * (FPinchT1 - FPinchT0);
+          Rel := (P.X - FPlot.Left) / Max(1, FPlot.Width);
+          SetWindow(Center - Rel * Span, Center - Rel * Span + Span);
+        end;
+        if TInteractiveGestureFlag.gfEnd in EventInfo.Flags then
+          FPinchDist := 0;
+      end;
+    igiDoubleTap:
+      FitAll;
+    igiLongTap:
+        StartSelect(P.X); // the finger is still down: dragging extends the range
+  else
+    inherited;
+  end;
 end;
 
 function TLogChart.HasSelection: Boolean;
@@ -885,7 +962,7 @@ procedure TLogChart.ClearSelection;
 begin
   FSel0 := NaN;
   FSel1 := NaN;
-  Invalidate;
+  Repaint;
   if Assigned(FOnSelectionChange) then
     FOnSelectionChange(Self);
 end;
@@ -898,15 +975,13 @@ end;
 
 procedure TLogChart.SaveImage(const FileName: string);
 var
-  Png: TPngImage;
+  Bmp: TBitmap;
 begin
-  Repaint; // make sure the buffer is current
-  Png := TPngImage.Create;
+  Bmp := MakeScreenshot;
   try
-    Png.Assign(FBuffer);
-    Png.SaveToFile(FileName);
+    Bmp.SaveToFile(FileName);
   finally
-    Png.Free;
+    Bmp.Free;
   end;
 end;
 

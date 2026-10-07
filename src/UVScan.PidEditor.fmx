@@ -1,0 +1,548 @@
+object PidEditorForm: TPidEditorForm
+  Left = 0
+  Top = 0
+  Caption = 'PID definitions'
+  ClientHeight = 660
+  ClientWidth = 1090
+  Position = MainFormCenter
+  FormFactor.Width = 320
+  FormFactor.Height = 480
+  FormFactor.Devices = [Desktop]
+  OnCreate = FormCreate
+  OnDestroy = FormDestroy
+  OnCloseQuery = FormCloseQuery
+  OnResize = FormResize
+  DesignerMasterStyle = 0
+  object pnlBottom: TLayout
+    Align = Bottom
+    Position.Y = 612
+    Size.Width = 1090
+    Size.Height = 48
+    Size.PlatformDefault = False
+    object btnCancel: TButton
+      Align = Right
+      Cancel = True
+      Margins.Left = 8
+      Margins.Top = 10
+      Margins.Right = 12
+      Margins.Bottom = 10
+      ModalResult = 2
+      Position.X = 983
+      Position.Y = 10
+      Size.Width = 95
+      Size.Height = 28
+      Size.PlatformDefault = False
+      TabOrder = 1
+      Text = 'Cancel'
+    end
+    object btnSave: TButton
+      Align = Right
+      Margins.Left = 8
+      Margins.Top = 10
+      Margins.Bottom = 10
+      Position.X = 880
+      Position.Y = 10
+      Size.Width = 95
+      Size.Height = 28
+      Size.PlatformDefault = False
+      TabOrder = 0
+      Text = 'Save'
+      OnClick = btnSaveClick
+    end
+    object lblProblems: TLabel
+      Align = Client
+      HitTest = True
+      Margins.Left = 12
+      Size.Width = 868
+      Size.Height = 48
+      Size.PlatformDefault = False
+      Text = 'No problems'
+      OnClick = lblProblemsClick
+    end
+  end
+  object pnlProblems: TLayout
+    Align = Bottom
+    Padding.Left = 8
+    Padding.Right = 8
+    Position.Y = 502
+    Size.Width = 1090
+    Size.Height = 110
+    Size.PlatformDefault = False
+    Visible = False
+    object lbProblems: TListBox
+      Align = Client
+      Hint = 'Click a problem to go to that PID'
+      ShowHint = True
+      Size.Width = 1074
+      Size.Height = 110
+      Size.PlatformDefault = False
+      TabOrder = 0
+      DisableFocusEffect = True
+      OnItemClick = lbProblemsItemClick
+    end
+  end
+  object pnlList: TLayout
+    Align = Left
+    Padding.Left = 8
+    Padding.Top = 8
+    Padding.Right = 4
+    Size.Width = 480
+    Size.Height = 502
+    Size.PlatformDefault = False
+    object edtFilter: TEdit
+      Touch.InteractiveGestures = [LongTap, DoubleTap]
+      Align = Top
+      Margins.Bottom = 6
+      Position.X = 8
+      Position.Y = 8
+      Size.Width = 468
+      Size.Height = 26
+      Size.PlatformDefault = False
+      TabOrder = 0
+      TextPrompt = 'Filter by id, name, PID or MCI...'
+      OnChangeTracking = edtFilterChange
+    end
+    object pnlListButtons: TLayout
+      Align = Bottom
+      Position.X = 8
+      Position.Y = 458
+      Size.Width = 468
+      Size.Height = 44
+      Size.PlatformDefault = False
+      object btnAdd: TButton
+        Position.Y = 10
+        Size.Width = 90
+        Size.Height = 26
+        Size.PlatformDefault = False
+        TabOrder = 0
+        Text = 'Add'
+        OnClick = btnAddClick
+      end
+      object btnDuplicate: TButton
+        Position.X = 96
+        Position.Y = 10
+        Size.Width = 90
+        Size.Height = 26
+        Size.PlatformDefault = False
+        TabOrder = 1
+        Text = 'Duplicate'
+        OnClick = btnDuplicateClick
+      end
+      object btnDelete: TButton
+        Position.X = 192
+        Position.Y = 10
+        Size.Width = 90
+        Size.Height = 26
+        Size.PlatformDefault = False
+        TabOrder = 2
+        Text = 'Delete'
+        OnClick = btnDeleteClick
+      end
+      object btnImport: TButton
+        Hint = 'Import an old UVSCAN PIDS.csv (replace or merge)'
+        ShowHint = True
+        Position.X = 296
+        Position.Y = 10
+        Size.Width = 80
+        Size.Height = 26
+        Size.PlatformDefault = False
+        TabOrder = 3
+        Text = 'Import...'
+        OnClick = btnImportClick
+      end
+      object btnDefaults: TButton
+        Hint = 'Add missing default PIDs, or put the factory list back'
+        ShowHint = True
+        Position.X = 382
+        Position.Y = 10
+        Size.Width = 86
+        Size.Height = 26
+        Size.PlatformDefault = False
+        TabOrder = 4
+        Text = 'Defaults...'
+        OnClick = btnDefaultsClick
+      end
+    end
+    object pnlGrid: TLayout
+      Align = Client
+      Size.Width = 468
+      Size.Height = 418
+      Size.PlatformDefault = False
+    end
+  end
+  object splMain: TSplitter
+    Align = Left
+    Cursor = crHSplit
+    MinSize = 200
+    Position.X = 480
+    Size.Width = 5
+    Size.Height = 502
+    Size.PlatformDefault = False
+  end
+  object sbDetail: TVertScrollBox
+    Align = Client
+    Size.Width = 605
+    Size.Height = 502
+    Size.PlatformDefault = False
+    object pnlDetail: TLayout
+      Align = Top
+      Size.Width = 605
+      Size.Height = 470
+      Size.PlatformDefault = False
+      object lblId: TLabel
+        Position.X = 16
+        Position.Y = 18
+        Size.Width = 90
+        Size.Height = 20
+        Size.PlatformDefault = False
+        Text = 'ID'
+      end
+      object edtId: TEdit
+        Touch.InteractiveGestures = [LongTap, DoubleTap]
+        FilterChar = '0123456789'
+        Position.X = 110
+        Position.Y = 16
+        Size.Width = 80
+        Size.Height = 24
+        Size.PlatformDefault = False
+        TabOrder = 0
+        OnChangeTracking = FieldChanged
+      end
+      object chkEnabled: TCheckBox
+        Position.X = 210
+        Position.Y = 18
+        Size.Width = 300
+        Size.Height = 20
+        Size.PlatformDefault = False
+        TabOrder = 1
+        Text = 'Enabled (offered in the scan list)'
+        OnChange = FieldChanged
+      end
+      object lblName: TLabel
+        Position.X = 16
+        Position.Y = 50
+        Size.Width = 90
+        Size.Height = 20
+        Size.PlatformDefault = False
+        Text = 'Name'
+      end
+      object edtName: TEdit
+        Touch.InteractiveGestures = [LongTap, DoubleTap]
+        Anchors = [akLeft, akTop, akRight]
+        Position.X = 110
+        Position.Y = 48
+        Size.Width = 470
+        Size.Height = 24
+        Size.PlatformDefault = False
+        TabOrder = 2
+        OnChangeTracking = FieldChanged
+      end
+      object lblShortName: TLabel
+        Position.X = 16
+        Position.Y = 82
+        Size.Width = 90
+        Size.Height = 20
+        Size.PlatformDefault = False
+        Text = 'Short name'
+      end
+      object edtShortName: TEdit
+        Touch.InteractiveGestures = [LongTap, DoubleTap]
+        Position.X = 110
+        Position.Y = 80
+        Size.Width = 190
+        Size.Height = 24
+        Size.PlatformDefault = False
+        TabOrder = 3
+        TextPrompt = 'Used for log columns'
+        OnChangeTracking = FieldChanged
+      end
+      object lblUnits: TLabel
+        Position.X = 320
+        Position.Y = 82
+        Size.Width = 66
+        Size.Height = 20
+        Size.PlatformDefault = False
+        Text = 'Units'
+      end
+      object edtUnits: TEdit
+        Touch.InteractiveGestures = [LongTap, DoubleTap]
+        Position.X = 390
+        Position.Y = 80
+        Size.Width = 190
+        Size.Height = 24
+        Size.PlatformDefault = False
+        TabOrder = 4
+        OnChangeTracking = FieldChanged
+      end
+      object lblDescription: TLabel
+        Position.X = 16
+        Position.Y = 114
+        Size.Width = 90
+        Size.Height = 20
+        Size.PlatformDefault = False
+        Text = 'Description'
+      end
+      object edtDescription: TEdit
+        Touch.InteractiveGestures = [LongTap, DoubleTap]
+        Anchors = [akLeft, akTop, akRight]
+        Position.X = 110
+        Position.Y = 112
+        Size.Width = 470
+        Size.Height = 24
+        Size.PlatformDefault = False
+        TabOrder = 5
+        OnChangeTracking = FieldChanged
+      end
+      object lblKind: TLabel
+        Position.X = 16
+        Position.Y = 154
+        Size.Width = 90
+        Size.Height = 20
+        Size.PlatformDefault = False
+        Text = 'Kind'
+      end
+      object cbKind: TComboBox
+        Position.X = 110
+        Position.Y = 152
+        Size.Width = 190
+        Size.Height = 24
+        Size.PlatformDefault = False
+        TabOrder = 6
+        OnChange = FieldChanged
+      end
+      object lblCategory: TLabel
+        Position.X = 320
+        Position.Y = 154
+        Size.Width = 66
+        Size.Height = 20
+        Size.PlatformDefault = False
+        Text = 'Category'
+      end
+      object cbCategory: TComboBox
+        Position.X = 390
+        Position.Y = 152
+        Size.Width = 190
+        Size.Height = 24
+        Size.PlatformDefault = False
+        TabOrder = 7
+        OnChange = FieldChanged
+      end
+      object lblPid: TLabel
+        Position.X = 16
+        Position.Y = 186
+        Size.Width = 90
+        Size.Height = 20
+        Size.PlatformDefault = False
+        Text = 'PID (hex)'
+      end
+      object edtPid: TEdit
+        Touch.InteractiveGestures = [LongTap, DoubleTap]
+        CharCase = ecUpperCase
+        MaxLength = 6
+        Position.X = 110
+        Position.Y = 184
+        Size.Width = 80
+        Size.Height = 24
+        Size.PlatformDefault = False
+        TabOrder = 8
+        OnChangeTracking = FieldChanged
+      end
+      object lblBytes: TLabel
+        Position.X = 206
+        Position.Y = 186
+        Size.Width = 40
+        Size.Height = 20
+        Size.PlatformDefault = False
+        Text = 'Bytes'
+      end
+      object cbBytes: TComboBox
+        Items.Strings = (
+          '1'
+          '2'
+          '3'
+          '4')
+        Position.X = 248
+        Position.Y = 184
+        Size.Width = 52
+        Size.Height = 24
+        Size.PlatformDefault = False
+        TabOrder = 9
+        OnChange = FieldChanged
+      end
+      object lblChannel: TLabel
+        Position.X = 320
+        Position.Y = 186
+        Size.Width = 96
+        Size.Height = 20
+        Size.PlatformDefault = False
+        Text = 'Analog channel'
+      end
+      object cbChannel: TComboBox
+        Items.Strings = (
+          '1'
+          '2'
+          '3')
+        Position.X = 420
+        Position.Y = 184
+        Size.Width = 52
+        Size.Height = 24
+        Size.PlatformDefault = False
+        TabOrder = 10
+        OnChange = FieldChanged
+      end
+      object lblFormula: TLabel
+        Position.X = 16
+        Position.Y = 226
+        Size.Width = 90
+        Size.Height = 20
+        Size.PlatformDefault = False
+        Text = 'Formula'
+      end
+      object edtFormula: TEdit
+        Touch.InteractiveGestures = [LongTap, DoubleTap]
+        Anchors = [akLeft, akTop, akRight]
+        StyledSettings = [Style, FontColor]
+        Position.X = 110
+        Position.Y = 224
+        Size.Width = 470
+        Size.Height = 24
+        Size.PlatformDefault = False
+        TabOrder = 11
+        TextSettings.Font.Family = 'Consolas'
+        TextSettings.Font.Size = 13
+        TextPrompt = 'e.g. ((N1 << 8) + N2) * 0.25   or   %IPW% * 2'
+        OnChangeTracking = FieldChanged
+      end
+      object lblFormulaStatus: TLabel
+        Anchors = [akLeft, akTop, akRight]
+        AutoSize = False
+        Position.X = 110
+        Position.Y = 251
+        Size.Width = 470
+        Size.Height = 32
+        Size.PlatformDefault = False
+        TextSettings.VertAlign = Leading
+        TextSettings.WordWrap = True
+        Text = 'Formula OK'
+      end
+      object lblFormat: TLabel
+        Position.X = 16
+        Position.Y = 290
+        Size.Width = 90
+        Size.Height = 20
+        Size.PlatformDefault = False
+        Text = 'Format'
+      end
+      object cbFormat: TComboEdit
+        Touch.InteractiveGestures = [LongTap, DoubleTap]
+        TabOrder = 12
+        ItemHeight = 19
+        Items.Strings = (
+          ''
+          '%f'
+          '%d'
+          '%o'
+          '%y'
+          '*c'
+          '*f'
+          '*f%d')
+        ItemIndex = -1
+        Position.X = 110
+        Position.Y = 288
+        Size.Width = 90
+        Size.Height = 24
+        Size.PlatformDefault = False
+        OnChange = FieldChanged
+        OnChangeTracking = FieldChanged
+      end
+      object lblFormatHelp: TLabel
+        Anchors = [akLeft, akTop, akRight]
+        StyledSettings = [Family, Size, Style]
+        Position.X = 210
+        Position.Y = 290
+        Size.Width = 370
+        Size.Height = 20
+        Size.PlatformDefault = False
+        TextSettings.FontColor = claGray
+        Text = '%f 2 decimals, %d whole, %o OFF/ON, %y NO/YES, *c F->C, *f C->F'
+      end
+      object lblMci: TLabel
+        Position.X = 16
+        Position.Y = 322
+        Size.Width = 90
+        Size.Height = 20
+        Size.PlatformDefault = False
+        Text = 'MCI'
+      end
+      object edtMci: TEdit
+        Touch.InteractiveGestures = [LongTap, DoubleTap]
+        CharCase = ecUpperCase
+        Position.X = 110
+        Position.Y = 320
+        Size.Width = 190
+        Size.Height = 24
+        Size.PlatformDefault = False
+        TabOrder = 13
+        OnChangeTracking = FieldChanged
+      end
+      object lblMciHelp: TLabel
+        Anchors = [akLeft, akTop, akRight]
+        StyledSettings = [Family, Size, Style]
+        Position.X = 310
+        Position.Y = 322
+        Size.Width = 270
+        Size.Height = 20
+        Size.PlatformDefault = False
+        TextSettings.FontColor = claGray
+        Text = 'Name other formulas use as %NAME% (unique)'
+      end
+      object gbTest: TGroupBox
+        Anchors = [akLeft, akTop, akRight]
+        Position.X = 16
+        Position.Y = 362
+        Size.Width = 564
+        Size.Height = 96
+        Size.PlatformDefault = False
+        Text = 'Try the formula'
+        TabOrder = 14
+        object lblTestInput: TLabel
+          Position.X = 12
+          Position.Y = 30
+          Size.Width = 145
+          Size.Height = 20
+          Size.PlatformDefault = False
+          Text = 'Data bytes (hex)'
+        end
+        object edtTestInput: TEdit
+          Touch.InteractiveGestures = [LongTap, DoubleTap]
+          Position.X = 160
+          Position.Y = 28
+          Size.Width = 250
+          Size.Height = 24
+          Size.PlatformDefault = False
+          TabOrder = 0
+          OnChangeTracking = edtTestInputChange
+        end
+        object lblTestResultCaption: TLabel
+          Position.X = 12
+          Position.Y = 62
+          Size.Width = 145
+          Size.Height = 20
+          Size.PlatformDefault = False
+          Text = 'Result'
+        end
+        object lblTestResult: TLabel
+          Anchors = [akLeft, akTop, akRight]
+          StyledSettings = [Family]
+          Position.X = 160
+          Position.Y = 60
+          Size.Width = 390
+          Size.Height = 24
+          Size.PlatformDefault = False
+          TextSettings.Font.Size = 14
+          Text = '-'
+        end
+      end
+    end
+  end
+end

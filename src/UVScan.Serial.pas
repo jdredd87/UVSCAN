@@ -1,12 +1,19 @@
 unit UVScan.Serial;
 
-{ Minimal Win32 serial port. Synchronous (non-overlapped) I/O: the port is
-  owned and used by exactly one thread (the scan engine), so no locking. }
+{ The serial port the scan engine talks through, and the Windows
+  implementation of it. Synchronous (non-overlapped) I/O: the port is owned
+  and used by exactly one thread (the scan engine), so no locking.
+
+  On Android the ports are USB serial adapters plugged in through USB OTG
+  (FTDI, CP210x, CH34x, CDC-ACM; see UVScan.Serial.Android). Other platforms
+  have none: CreateSerialPort raises there and ListSerialPorts is empty, so
+  only the Simulator connects. Another transport (Bluetooth, TCP) only has
+  to implement ISerialPort. }
 
 interface
 
 uses
-  Winapi.Windows, System.SysUtils, System.Classes;
+  {$IFDEF MSWINDOWS}Winapi.Windows,{$ENDIF} System.SysUtils, System.Classes;
 
 type
   ESerialError = class(Exception);
@@ -25,6 +32,7 @@ type
     function Description: string;
   end;
 
+{$IFDEF MSWINDOWS}
   TWin32SerialPort = class(TInterfacedObject, ISerialPort)
   private
     FPortName: string;
@@ -46,14 +54,30 @@ type
     procedure Purge;
     function Description: string;
   end;
+{$ENDIF}
+
+{ The serial port called PortName (e.g. 'COM9'); raises ESerialError where
+  this platform has none. Not opened yet. }
+function CreateSerialPort(const PortName: string; BaudRate: Cardinal; FlowControl: TFlowControl): ISerialPort;
 
 { COM port names present on this machine, e.g. ['COM1', 'COM6'], in numeric order. }
 function ListSerialPorts: TArray<string>;
 
+{ True where CreateSerialPort can work. }
+function SerialPortsSupported: Boolean;
+
+{ Lines describing the attached hardware when a port does not show up
+  (Android: every USB device with its ids); empty where there is nothing to add. }
+function SerialPortDiagnostics: TArray<string>;
+
 implementation
 
 uses
-  System.Win.Registry, System.Generics.Collections, System.Generics.Defaults;
+  {$IFDEF MSWINDOWS}System.Win.Registry,{$ENDIF}
+  {$IFDEF ANDROID}UVScan.Serial.Android,{$ENDIF}
+  System.Generics.Collections, System.Generics.Defaults;
+
+{$IF DEFINED(MSWINDOWS)}
 
 const
   WriteTimeoutMs = 1000;
@@ -254,5 +278,66 @@ begin
     Ports.Free;
   end;
 end;
+
+function CreateSerialPort(const PortName: string; BaudRate: Cardinal; FlowControl: TFlowControl): ISerialPort;
+begin
+  Result := TWin32SerialPort.Create(PortName, BaudRate, FlowControl);
+end;
+
+function SerialPortsSupported: Boolean;
+begin
+  Result := True;
+end;
+
+function SerialPortDiagnostics: TArray<string>;
+begin
+  Result := nil;
+end;
+
+{$ELSEIF DEFINED(ANDROID)}
+
+function CreateSerialPort(const PortName: string; BaudRate: Cardinal; FlowControl: TFlowControl): ISerialPort;
+begin
+  Result := CreateUsbSerialPort(PortName, BaudRate, FlowControl);
+end;
+
+function ListSerialPorts: TArray<string>;
+begin
+  Result := ListUsbSerialPorts;
+end;
+
+function SerialPortsSupported: Boolean;
+begin
+  Result := True;
+end;
+
+function SerialPortDiagnostics: TArray<string>;
+begin
+  Result := DescribeUsbDevices;
+end;
+
+{$ELSE}
+
+function CreateSerialPort(const PortName: string; BaudRate: Cardinal; FlowControl: TFlowControl): ISerialPort;
+begin
+  raise ESerialError.Create('Serial ports are not supported on this device yet; use the Simulator');
+end;
+
+function ListSerialPorts: TArray<string>;
+begin
+  Result := nil;
+end;
+
+function SerialPortsSupported: Boolean;
+begin
+  Result := False;
+end;
+
+function SerialPortDiagnostics: TArray<string>;
+begin
+  Result := nil;
+end;
+
+{$ENDIF}
 
 end.

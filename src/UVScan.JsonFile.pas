@@ -28,7 +28,7 @@ function JArr(Obj: TJSONObject; const Name: string): TJSONArray;
 implementation
 
 uses
-  Winapi.Windows, System.IOUtils;
+  {$IFDEF MSWINDOWS}Winapi.Windows,{$ELSE}Posix.Stdio,{$ENDIF} System.IOUtils;
 
 function ParseJsonObject(const Text, Source: string): TJSONObject;
 var
@@ -74,8 +74,14 @@ begin
   finally
     Utf8.Free;
   end;
+  {$IFDEF MSWINDOWS}
   if not MoveFileEx(PChar(Temp), PChar(FullName), MOVEFILE_REPLACE_EXISTING or MOVEFILE_WRITE_THROUGH) then
     RaiseLastOSError(GetLastError, ' (saving ' + FullName + ')');
+  {$ELSE}
+  // RenameFile is rename(), which replaces the target in one step on POSIX
+  if not RenameFile(Temp, FullName) then
+    RaiseLastOSError(GetLastError, ' (saving ' + FullName + ')');
+  {$ENDIF}
 end;
 
 function JStr(Obj: TJSONObject; const Name: string; const Default: string): string;

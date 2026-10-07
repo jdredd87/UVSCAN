@@ -1,0 +1,175 @@
+object PidDiscoveryForm: TPidDiscoveryForm
+  Left = 0
+  Top = 0
+  Caption = 'Search PCM for PIDs'
+  ClientHeight = 600
+  ClientWidth = 780
+  Position = MainFormCenter
+  FormFactor.Width = 320
+  FormFactor.Height = 480
+  FormFactor.Devices = [Desktop]
+  OnCreate = FormCreate
+  OnCloseQuery = FormCloseQuery
+  DesignerMasterStyle = 0
+  object gbSearch: TGroupBox
+    Align = Top
+    Margins.Left = 8
+    Margins.Top = 6
+    Margins.Right = 8
+    Position.X = 8
+    Position.Y = 6
+    Size.Width = 764
+    Size.Height = 156
+    Size.PlatformDefault = False
+    Text = 'Which PIDs to ask the PCM about (read only)'
+    TabOrder = 0
+    object chkSae: TCheckBox
+      IsChecked = True
+      Position.X = 14
+      Position.Y = 24
+      Size.Width = 420
+      Size.Height = 20
+      Size.PlatformDefault = False
+      TabOrder = 0
+      Text = 'Standard SAE PIDs  ($0000 - $00FF, about 10 seconds)'
+    end
+    object chkGm: TCheckBox
+      IsChecked = True
+      Position.X = 14
+      Position.Y = 46
+      Size.Width = 420
+      Size.Height = 20
+      Size.PlatformDefault = False
+      TabOrder = 1
+      Text = 'GM enhanced PIDs  ($1000 - $1FFF, about 2 minutes)'
+    end
+    object lblMore: TLabel
+      Position.X = 14
+      Position.Y = 75
+      Size.Width = 74
+      Size.Height = 20
+      Size.PlatformDefault = False
+      Text = 'Also search'
+    end
+    object edtMore: TEdit
+      Touch.InteractiveGestures = [LongTap, DoubleTap]
+      Position.X = 90
+      Position.Y = 72
+      Size.Width = 250
+      Size.Height = 26
+      Size.PlatformDefault = False
+      TabOrder = 2
+      TextPrompt = 'e.g. 2000-2FFF, 4000-40FF'
+    end
+    object btnStart: TButton
+      Default = True
+      Position.X = 352
+      Position.Y = 72
+      Size.Width = 100
+      Size.Height = 26
+      Size.PlatformDefault = False
+      TabOrder = 3
+      Text = 'Search'
+      OnClick = btnStartClick
+    end
+    object btnStop: TButton
+      Position.X = 458
+      Position.Y = 72
+      Size.Width = 80
+      Size.Height = 26
+      Size.PlatformDefault = False
+      TabOrder = 4
+      Text = 'Stop'
+      OnClick = btnStopClick
+    end
+    object pbProgress: TProgressBar
+      Anchors = [akLeft, akTop, akRight]
+      Orientation = Horizontal
+      Position.X = 14
+      Position.Y = 108
+      Size.Width = 736
+      Size.Height = 14
+      Size.PlatformDefault = False
+    end
+    object lblStatus: TLabel
+      Anchors = [akLeft, akTop, akRight]
+      Position.X = 14
+      Position.Y = 128
+      Size.Width = 736
+      Size.Height = 22
+      Size.PlatformDefault = False
+      Text = 'Connect to the vehicle, choose what to search and press Search.'
+    end
+  end
+  object pnlBottom: TLayout
+    Align = Bottom
+    Position.Y = 544
+    Size.Width = 780
+    Size.Height = 56
+    Size.PlatformDefault = False
+    object btnTickNew: TButton
+      Hint = 'Tick every PID that is not defined yet'
+      ShowHint = True
+      Position.X = 8
+      Position.Y = 15
+      Size.Width = 130
+      Size.Height = 28
+      Size.PlatformDefault = False
+      TabOrder = 0
+      Text = 'Tick all new'
+      OnClick = btnTickNewClick
+    end
+    object btnUntickAll: TButton
+      Position.X = 144
+      Position.Y = 15
+      Size.Width = 130
+      Size.Height = 28
+      Size.PlatformDefault = False
+      TabOrder = 1
+      Text = 'Untick all'
+      OnClick = btnUntickAllClick
+    end
+    object lblTicked: TLabel
+      Position.X = 290
+      Position.Y = 19
+      Size.Width = 140
+      Size.Height = 20
+      Size.PlatformDefault = False
+      Text = '0 ticked to add'
+    end
+    object btnAdd: TButton
+      Anchors = [akTop, akRight]
+      Hint = 'Add the ticked PIDs to your PID list as raw values, to name and define later'
+      ShowHint = True
+      Position.X = 540
+      Position.Y = 15
+      Size.Width = 130
+      Size.Height = 28
+      Size.PlatformDefault = False
+      TabOrder = 2
+      Text = 'Add ticked PIDs'
+      OnClick = btnAddClick
+    end
+    object btnClose: TButton
+      Anchors = [akTop, akRight]
+      Cancel = True
+      ModalResult = 2
+      Position.X = 676
+      Position.Y = 15
+      Size.Width = 95
+      Size.Height = 28
+      Size.PlatformDefault = False
+      TabOrder = 3
+      Text = 'Close'
+    end
+  end
+  object pnlResults: TLayout
+    Align = Client
+    Margins.Left = 8
+    Margins.Top = 6
+    Margins.Right = 8
+    Size.Width = 764
+    Size.Height = 376
+    Size.PlatformDefault = False
+  end
+end

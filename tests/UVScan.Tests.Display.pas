@@ -6,7 +6,7 @@ unit UVScan.Tests.Display;
 interface
 
 uses
-  System.SysUtils, System.Math, System.UITypes, System.JSON, Vcl.Graphics, DUnitX.TestFramework,
+  System.SysUtils, System.Math, System.UITypes, System.JSON, DUnitX.TestFramework,
   UVScan.Display, UVScan.Alerts, UVScan.Defaults, UVScan.JsonFile;
 
 type
@@ -36,13 +36,18 @@ type
 
 implementation
 
+procedure SameColor(Expected, Actual: TAlphaColor; const Msg: string = '');
+begin
+  Assert.AreEqual(IntToHex(Expected, 8), IntToHex(Actual, 8), Msg);
+end;
+
 const
   Kr = 14;
-  Red = TColor($005050FF);
-  Amber = TColor($0080E6FF);
-  Green = TColor($00C8F0C8);
+  Red = TAlphaColor($FFFF5050);
+  Amber = TAlphaColor($FFFFE680);
+  Green = TAlphaColor($FFC8F0C8);
 
-function Level(const Name: string; Op: TCompareOp; const Value: Double; Row: TColor): TDisplayLevel;
+function Level(const Name: string; Op: TCompareOp; const Value: Double; Row: TAlphaColor): TDisplayLevel;
 begin
   Result := NewLevel;
   Result.Name := Name;
@@ -62,7 +67,7 @@ begin
     D.RowColor := Green;
     D.FontSize := 18;
     L := Level('Alarm', coGE, 4, Red);
-    L.TextColor := clWhite;
+    L.TextColor := TAlphaColors.White;
     L.Flash := True;
     L.Sound := asAlarm;
     D.Levels := [L, Level('Warning', coGE, 1, Amber)];
@@ -81,24 +86,24 @@ begin
   try
     R := S.Resolve(Kr, 0.5);
     Assert.AreEqual(-1, R.Level);
-    Assert.AreEqual(Integer(Green), Integer(R.RowColor), 'normal look');
+    SameColor(Green, (R.RowColor), 'normal look');
     Assert.AreEqual(18, R.FontSize);
 
     R := S.Resolve(Kr, 2);
     Assert.AreEqual(1, R.Level);
     Assert.AreEqual('Warning', R.LevelName);
-    Assert.AreEqual(Integer(Amber), Integer(R.RowColor));
-    Assert.AreEqual(Integer(clNone), Integer(R.TextColor), 'warning keeps the normal text colour');
+    SameColor(Amber, (R.RowColor));
+    SameColor(NoColor, (R.TextColor), 'warning keeps the normal text colour');
 
     R := S.Resolve(Kr, 7.5);
     Assert.AreEqual(0, R.Level, '>= 4 is listed first, so it wins over >= 1');
-    Assert.AreEqual(Integer(Red), Integer(R.RowColor));
-    Assert.AreEqual(Integer(clWhite), Integer(R.TextColor));
+    SameColor(Red, (R.RowColor));
+    SameColor(TAlphaColors.White, (R.TextColor));
     Assert.IsTrue(R.Flash);
 
     Assert.AreEqual(-1, S.Resolve(Kr, NaN).Level, 'no data, no alert');
     Assert.AreEqual(-1, S.Resolve(999, 100).Level, 'PID without settings');
-    Assert.AreEqual(Integer(clNone), Integer(S.Resolve(999, 100).RowColor));
+    SameColor(NoColor, (S.Resolve(999, 100).RowColor));
   finally
     S.Free;
   end;
@@ -134,20 +139,20 @@ procedure TDisplayTests.FlashShowsNormalLookInOffPhase;
 var
   S: TDisplaySettings;
   R: TResolvedStyle;
-  Row, Txt: TColor;
+  Row, Txt: TAlphaColor;
 begin
   S := KnockSettings;
   try
     R := S.Resolve(Kr, 9);
     R.Colors(True, Row, Txt);
-    Assert.AreEqual(Integer(Red), Integer(Row));
-    Assert.AreEqual(Integer(clWhite), Integer(Txt));
+    SameColor(Red, (Row));
+    SameColor(TAlphaColors.White, (Txt));
     R.Colors(False, Row, Txt);
-    Assert.AreEqual(Integer(Green), Integer(Row), 'off phase shows the normal look');
-    Assert.AreEqual(Integer(clNone), Integer(Txt));
+    SameColor(Green, (Row), 'off phase shows the normal look');
+    SameColor(NoColor, (Txt));
     R := S.Resolve(Kr, 2); // warning does not flash
     R.Colors(False, Row, Txt);
-    Assert.AreEqual(Integer(Amber), Integer(Row));
+    SameColor(Amber, (Row));
   finally
     S.Free;
   end;
@@ -157,10 +162,10 @@ procedure TDisplayTests.ColorsAsHex;
 begin
   Assert.AreEqual('#FF5050', ColorToHex(Red));
   Assert.AreEqual('#FFE680', ColorToHex(Amber));
-  Assert.AreEqual(Integer(Red), Integer(HexToColor('#FF5050', clNone)));
-  Assert.AreEqual(Integer(Red), Integer(HexToColor('ff5050', clNone)), 'no # and lower case');
-  Assert.AreEqual(Integer(clNone), Integer(HexToColor('red', clNone)));
-  Assert.AreEqual(Integer(clNone), Integer(HexToColor('', clNone)));
+  SameColor(Red, (HexToColor('#FF5050', NoColor)));
+  SameColor(Red, (HexToColor('ff5050', NoColor)), 'no # and lower case');
+  SameColor(NoColor, (HexToColor('red', NoColor)));
+  SameColor(NoColor, (HexToColor('', NoColor)));
 end;
 
 procedure TDisplayTests.JsonRoundTrip;
@@ -176,8 +181,8 @@ begin
   try
     D := TPidDisplay.Create(3);
     try
-      L := Level('Cold', coLT, -12.5, clNone);
-      L.TextColor := clBlue;
+      L := Level('Cold', coLT, -12.5, NoColor);
+      L.TextColor := TAlphaColors.Blue;
       L.Sound := asFile;
       L.SoundFile := 'C:\Sounds\cold.wav';
       L.RepeatSound := True;
@@ -203,8 +208,8 @@ begin
     D := S2.Find(Kr);
     Assert.IsNotNull(D);
     Assert.AreEqual(18, D.FontSize);
-    Assert.AreEqual(Integer(Green), Integer(D.RowColor));
-    Assert.AreEqual(Integer(clNone), Integer(D.TextColor));
+    SameColor(Green, (D.RowColor));
+    SameColor(NoColor, (D.TextColor));
     Assert.AreEqual(2, Integer(Length(D.Levels)));
     Assert.AreEqual('Alarm', D.Levels[0].Name);
     Assert.IsTrue(D.Levels[0].Flash);
@@ -216,8 +221,8 @@ begin
     Assert.IsNotNull(D);
     Assert.IsTrue(D.Levels[0].Op = coLT);
     Assert.AreEqual(-12.5, D.Levels[0].Value, 1E-9);
-    Assert.AreEqual(Integer(clNone), Integer(D.Levels[0].RowColor));
-    Assert.AreEqual(Integer(clBlue), Integer(D.Levels[0].TextColor));
+    SameColor(NoColor, (D.Levels[0].RowColor));
+    SameColor(TAlphaColors.Blue, (D.Levels[0].TextColor));
     Assert.IsTrue(D.Levels[0].Sound = asFile);
     Assert.AreEqual('C:\Sounds\cold.wav', D.Levels[0].SoundFile);
     Assert.IsTrue(D.Levels[0].RepeatSound);
@@ -283,13 +288,13 @@ begin
     // lowest priority first, so the winning level is painted on top
     Assert.AreEqual(1.0, Z[0].FromValue, 1E-9);
     Assert.AreEqual(20.0, Z[0].ToValue, 1E-9);
-    Assert.AreEqual(Integer(Amber), Integer(Z[0].Color));
+    SameColor(Amber, (Z[0].Color));
     Assert.AreEqual(4.0, Z[1].FromValue, 1E-9);
-    Assert.AreEqual(Integer(Red), Integer(Z[1].Color));
+    SameColor(Red, (Z[1].Color));
 
     D := TPidDisplay.Create(12);
     try
-      D.Levels := [Level('Low', coLE, 11.5, Red), Level('Off scale', coGE, 50, Amber), Level('No colour', coLE, 12, clNone)];
+      D.Levels := [Level('Low', coLE, 11.5, Red), Level('Off scale', coGE, 50, Amber), Level('No colour', coLE, 12, NoColor)];
       S.Put(12, D);
     finally
       D.Free;

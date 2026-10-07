@@ -37,3 +37,7 @@ Desktop.ini
 /UVScan.res
 /tests/UVScanTests.res
 UVScan.Defaults.res
+
+# Android build output
+/Android/
+/Android64/

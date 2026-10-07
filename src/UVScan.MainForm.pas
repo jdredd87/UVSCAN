@@ -1,91 +1,108 @@
 unit UVScan.MainForm;
 
+{ The main window: connection bar, PID list, and the tabs (live data,
+  dashboard, real-time controls, vehicle & codes, tools, messages).
+
+  FireMonkey, so the same window runs on Windows and Android. On a phone the
+  PID list becomes the first tab and every dialog opens full screen; nothing
+  waits on a modal dialog (questions answer through callbacks). }
+
 interface
 
 uses
-  Winapi.Windows, Winapi.Messages, System.SysUtils, System.Variants, System.Classes,
-  System.Math, System.StrUtils, System.IOUtils, System.Generics.Collections, System.UITypes,
-  Vcl.Graphics, Vcl.Controls, Vcl.Forms, Vcl.Dialogs, Vcl.StdCtrls, Vcl.ExtCtrls,
-  Vcl.ComCtrls, Vcl.Grids, Vcl.Menus,
+  System.SysUtils, System.Types, System.UITypes, System.Classes, System.Variants, System.Math,
+  System.StrUtils, System.IOUtils, System.Generics.Collections,
+  FMX.Types, FMX.Controls, FMX.Forms, FMX.Graphics, FMX.Dialogs, FMX.StdCtrls, FMX.Edit,
+  FMX.ListBox, FMX.Layouts, FMX.Objects, FMX.TabControl, FMX.Menus, FMX.Controls.Presentation,
   UVScan.Serial, UVScan.Simulator, UVScan.Pids, UVScan.Dpid, UVScan.Dtc, UVScan.Engine,
-  UVScan.Class2, UVScan.Paths, UVScan.Settings, UVScan.PidEditor, UVScan.PidLists, UVScan.Defaults,
-  UVScan.PidDiscovery, UVScan.Display, UVScan.Alerts, UVScan.Gauge, UVScan.Controls;
+  UVScan.Class2, UVScan.Paths, UVScan.Settings, UVScan.PidLists, UVScan.Defaults,
+  UVScan.Display, UVScan.Alerts, UVScan.Controls, UVScan.Gauge, UVScan.UI.DataGrid;
 
 type
   TMainForm = class(TForm)
-    pnlTop: TPanel;
+    pnlTop: TRectangle;
+    flTop: TFlowLayout;
     lblPort: TLabel;
     cbPort: TComboBox;
     btnRefreshPorts: TButton;
     cbBaud: TComboBox;
     btnConnect: TButton;
     btnDisconnect: TButton;
-    bvlSep1: TBevel;
+    sep1: TLine;
     btnStartScan: TButton;
     btnStopScan: TButton;
-    bvlSep2: TBevel;
+    sep2: TLine;
     btnLog: TButton;
     btnPause: TButton;
-    chkSound: TCheckBox;
     btnLogViewer: TButton;
-    pnlPids: TPanel;
-    pnlListBar: TPanel;
+    chkSound: TCheckBox;
+    sbMain: TStatusBar;
+    lblStatState: TLabel;
+    lblStatPort: TLabel;
+    lblStatVin: TLabel;
+    lblStatOsid: TLabel;
+    lblStatRate: TLabel;
+    lblStatLog: TLabel;
+    pnlPids: TLayout;
+    pnlListBar: TLayout;
     lblList: TLabel;
-    cbLists: TComboBox;
-    btnSaveList: TButton;
     btnDeleteList: TButton;
+    btnSaveList: TButton;
+    cbLists: TComboBox;
     edtSearch: TEdit;
-    lvPids: TListView;
-    pnlPidFooter: TPanel;
+    pnlPidFooter: TLayout;
     lblBudget: TLabel;
+    flPidButtons: TFlowLayout;
     btnTestPids: TButton;
     btnClearSelection: TButton;
     btnEditPids: TButton;
+    lyPids: TLayout;
     splLeft: TSplitter;
-    pnlRight: TPanel;
-    pnlNotice: TPanel;
+    pnlRight: TLayout;
+    pnlNotice: TRectangle;
     lblNotice: TLabel;
-    pcMain: TPageControl;
-    tsLive: TTabSheet;
-    grdLive: TDrawGrid;
-    pnlLiveFooter: TPanel;
+    tcMain: TTabControl;
+    tiLive: TTabItem;
+    pnlLiveFooter: TFlowLayout;
     btnResetMinMax: TButton;
     btnLiveTest: TButton;
-    lblLiveHint: TLabel;
     chkMinMax: TCheckBox;
     btnZoomOut: TButton;
     lblZoom: TLabel;
     btnZoomIn: TButton;
-    tsDashboard: TTabSheet;
-    pnlDashBar: TPanel;
-    lblDashHint: TLabel;
+    lblLiveHint: TLabel;
+    lyLive: TLayout;
+    tiDashboard: TTabItem;
+    pnlDashBar: TFlowLayout;
     btnAddGauge: TButton;
     btnTickDashPids: TButton;
     btnDashTest: TButton;
-    sbDash: TScrollBox;
-    tsControls: TTabSheet;
-    pnlCtlWarn: TPanel;
+    lblDashHint: TLabel;
+    sbDash: TVertScrollBox;
+    tiControls: TTabItem;
+    pnlCtlWarn: TRectangle;
     lblCtlWarn: TLabel;
-    pnlCtlBar: TPanel;
+    pnlCtlBar: TFlowLayout;
     btnCtlAdd: TButton;
     btnCtlEdit: TButton;
     btnCtlDup: TButton;
     btnCtlDelete: TButton;
     btnCtlRestore: TButton;
     btnReleaseAll: TButton;
-    lvControls: TListView;
-    pnlCtlRun: TPanel;
+    pnlCtlRun: TRectangle;
     lblCtlName: TLabel;
     lblCtlNotes: TLabel;
-    lblCtlUnits: TLabel;
+    flCtlRun: TFlowLayout;
     btnCtlSend: TButton;
     btnCtlOn: TButton;
     btnCtlHold: TButton;
     tbCtlValue: TTrackBar;
     edtCtlValue: TEdit;
+    lblCtlUnits: TLabel;
     btnCtlApply: TButton;
     btnCtlOff: TButton;
-    tsVehicle: TTabSheet;
+    lyControls: TLayout;
+    tiVehicle: TTabItem;
     gbVehicle: TGroupBox;
     lblVinCaption: TLabel;
     lblVin: TLabel;
@@ -95,11 +112,12 @@ type
     lblFirmware: TLabel;
     btnReadInfo: TButton;
     gbDtcs: TGroupBox;
-    lvDtcs: TListView;
-    pnlDtcButtons: TPanel;
+    pnlDtcButtons: TLayout;
     btnReadDtcs: TButton;
     btnClearDtcs: TButton;
-    tsTools: TTabSheet;
+    lyDtcs: TLayout;
+    tiTools: TTabItem;
+    sbTools: TVertScrollBox;
     gbWriteVin: TGroupBox;
     edtNewVin: TEdit;
     btnWriteVin: TButton;
@@ -112,16 +130,16 @@ type
     edtRaw: TEdit;
     btnSendRaw: TButton;
     chkTrace: TCheckBox;
+    lblRate: TLabel;
+    cbRate: TComboBox;
     gbDiscover: TGroupBox;
     btnDiscoverPids: TButton;
     lblDiscoverHelp: TLabel;
-    lblRate: TLabel;
-    cbRate: TComboBox;
-    tsMessages: TTabSheet;
-    memLog: TMemo;
-    pnlLogFooter: TPanel;
+    tiMessages: TTabItem;
+    pnlLogFooter: TLayout;
     btnClearMessages: TButton;
-    sbMain: TStatusBar;
+    btnCopyMessages: TButton;
+    lyMessages: TLayout;
     pmPid: TPopupMenu;
     miPidDisplay: TMenuItem;
     miPidGauge: TMenuItem;
@@ -136,8 +154,9 @@ type
     tmrRefresh: TTimer;
     procedure FormCreate(Sender: TObject);
     procedure FormDestroy(Sender: TObject);
-    procedure FormKeyDown(Sender: TObject; var Key: Word; Shift: TShiftState);
     procedure FormCloseQuery(Sender: TObject; var CanClose: Boolean);
+    procedure FormKeyDown(Sender: TObject; var Key: Word; var KeyChar: WideChar; Shift: TShiftState);
+    procedure FormResize(Sender: TObject);
     procedure btnRefreshPortsClick(Sender: TObject);
     procedure btnConnectClick(Sender: TObject);
     procedure btnDisconnectClick(Sender: TObject);
@@ -145,67 +164,64 @@ type
     procedure btnStopScanClick(Sender: TObject);
     procedure btnLogClick(Sender: TObject);
     procedure btnPauseClick(Sender: TObject);
+    procedure btnLogViewerClick(Sender: TObject);
+    procedure chkSoundChange(Sender: TObject);
+    procedure btnDeleteListClick(Sender: TObject);
+    procedure btnSaveListClick(Sender: TObject);
+    procedure cbListsChange(Sender: TObject);
     procedure edtSearchChange(Sender: TObject);
-    procedure lvPidsItemChecked(Sender: TObject; Item: TListItem);
     procedure btnTestPidsClick(Sender: TObject);
     procedure btnClearSelectionClick(Sender: TObject);
     procedure btnEditPidsClick(Sender: TObject);
-    procedure btnDiscoverPidsClick(Sender: TObject);
-    procedure cbListsChange(Sender: TObject);
-    procedure btnSaveListClick(Sender: TObject);
-    procedure btnDeleteListClick(Sender: TObject);
-    procedure grdLiveDrawCell(Sender: TObject; ACol, ARow: Integer; Rect: TRect; State: TGridDrawState);
+    procedure pnlNoticeClick(Sender: TObject);
     procedure btnResetMinMaxClick(Sender: TObject);
-    procedure btnReadInfoClick(Sender: TObject);
-    procedure btnReadDtcsClick(Sender: TObject);
-    procedure btnClearDtcsClick(Sender: TObject);
+    procedure btnTestDisplayClick(Sender: TObject);
+    procedure chkMinMaxChange(Sender: TObject);
+    procedure btnZoomOutClick(Sender: TObject);
+    procedure lblZoomClick(Sender: TObject);
+    procedure btnZoomInClick(Sender: TObject);
+    procedure btnAddGaugeClick(Sender: TObject);
+    procedure btnTickDashPidsClick(Sender: TObject);
+    procedure sbDashResized(Sender: TObject);
     procedure btnCtlAddClick(Sender: TObject);
     procedure btnCtlEditClick(Sender: TObject);
     procedure btnCtlDupClick(Sender: TObject);
     procedure btnCtlDeleteClick(Sender: TObject);
     procedure btnCtlRestoreClick(Sender: TObject);
     procedure btnReleaseAllClick(Sender: TObject);
-    procedure lvControlsSelectItem(Sender: TObject; Item: TListItem; Selected: Boolean);
-    procedure lvControlsCustomDrawItem(Sender: TCustomListView; Item: TListItem; State: TCustomDrawState;
-      var DefaultDraw: Boolean);
     procedure btnCtlSendClick(Sender: TObject);
     procedure btnCtlOnClick(Sender: TObject);
-    procedure btnCtlOffClick(Sender: TObject);
-    procedure btnCtlHoldMouseDown(Sender: TObject; Button: TMouseButton; Shift: TShiftState; X, Y: Integer);
-    procedure btnCtlHoldMouseUp(Sender: TObject; Button: TMouseButton; Shift: TShiftState; X, Y: Integer);
+    procedure btnCtlHoldMouseDown(Sender: TObject; Button: TMouseButton; Shift: TShiftState; X, Y: Single);
+    procedure btnCtlHoldMouseUp(Sender: TObject; Button: TMouseButton; Shift: TShiftState; X, Y: Single);
+    procedure btnCtlHoldMouseLeave(Sender: TObject);
     procedure tbCtlValueChange(Sender: TObject);
     procedure btnCtlApplyClick(Sender: TObject);
+    procedure btnCtlOffClick(Sender: TObject);
+    procedure btnReadInfoClick(Sender: TObject);
+    procedure btnReadDtcsClick(Sender: TObject);
+    procedure btnClearDtcsClick(Sender: TObject);
     procedure btnWriteVinClick(Sender: TObject);
     procedure btnBrowseLogFolderClick(Sender: TObject);
     procedure btnSendRawClick(Sender: TObject);
-    procedure chkTraceClick(Sender: TObject);
+    procedure chkTraceChange(Sender: TObject);
     procedure cbRateChange(Sender: TObject);
+    procedure btnDiscoverPidsClick(Sender: TObject);
     procedure btnClearMessagesClick(Sender: TObject);
-    procedure tmrRefreshTimer(Sender: TObject);
-    procedure lblNoticeClick(Sender: TObject);
-    procedure FormResize(Sender: TObject);
-    procedure chkSoundClick(Sender: TObject);
-    procedure btnLogViewerClick(Sender: TObject);
-    procedure btnAddGaugeClick(Sender: TObject);
-    procedure btnTickDashPidsClick(Sender: TObject);
-    procedure btnTestDisplayClick(Sender: TObject);
-    procedure chkMinMaxClick(Sender: TObject);
-    procedure btnZoomOutClick(Sender: TObject);
-    procedure btnZoomInClick(Sender: TObject);
-    procedure lblZoomClick(Sender: TObject);
-    procedure FormMouseWheel(Sender: TObject; Shift: TShiftState; WheelDelta: Integer;
-      MousePos: TPoint; var Handled: Boolean);
-    procedure sbDashResize(Sender: TObject);
-    procedure pmPidPopup(Sender: TObject);
+    procedure btnCopyMessagesClick(Sender: TObject);
     procedure miPidDisplayClick(Sender: TObject);
     procedure miPidGaugeClick(Sender: TObject);
-    procedure pmGaugePopup(Sender: TObject);
     procedure miGaugeEditClick(Sender: TObject);
     procedure miGaugeDisplayClick(Sender: TObject);
     procedure miGaugeEarlierClick(Sender: TObject);
     procedure miGaugeLaterClick(Sender: TObject);
     procedure miGaugeRemoveClick(Sender: TObject);
+    procedure tmrRefreshTimer(Sender: TObject);
   private
+    grdPids: TDataGrid;
+    grdLive: TDataGrid;
+    grdControls: TDataGrid;
+    grdDtcs: TDataGrid;
+    grdMessages: TDataGrid;
     FCatalog: TPidCatalog;
     FDtcs: TDtcCatalog;
     FEngine: TScanEngine;
@@ -213,19 +229,20 @@ type
     FSelected: TList<Integer>;      // selected PID ids, catalog order
     FSupport: TDictionary<Integer, Boolean>; // PID test results
     FRejected: TList<Integer>;
+    FPidRows: TArray<Integer>;      // PID list rows: PID id, or -(category + 1) for a group row
     FLiveIds: TArray<Integer>;
     FLive: TLiveSnapshot;
     FMin, FMax: TArray<Double>;
-    FUpdatingList: Boolean;
     FLogging: Boolean;
     FLogPaused: Boolean;
     FClosing: Boolean;
+    FForceClose: Boolean;
     FAutoScan: Boolean;
     FAutoLog: Boolean;
     FSettings: TAppSettings;
     FLists: TPidLists;
-    FDiscovery: TPidDiscoveryForm;
     FPendingLog: TStringList;   // message lines waiting for the next timer tick
+    FMessages: TStringList;     // what the Messages tab shows
     FShownRows: TArray<string>; // what each live row last showed (value|min|max)
     FShownCycles: Int64;
     FDisplay: TDisplaySettings;      // display.json: PID looks, alert levels, gauges
@@ -233,42 +250,78 @@ type
     FRowStyles: TArray<TResolvedStyle>; // per live row, as last evaluated
     FFlashOn: Boolean;
     FGaugeViews: TList<TGaugeView>;
-    FMenuPidId: Integer;             // PID the PID/grid right-click menu is about
+    FMenuPidId: Integer;             // PID the PID/grid menu is about
     FMenuGauge: Integer;             // gauge index the gauge menu is about
     FTestMode: Boolean;              // "Test display": made-up values instead of the PCM
     FTestStart: UInt64;
     FTestLo, FTestHi: TArray<Double>;
     FControls: TControlList;         // controls.json
+    FCtlRows: TArray<TControlDef>;   // control list rows (nil = group row)
+    FCtlGroups: TArray<string>;      // group caption per row ('' for controls)
     FControlResult: TDictionary<string, string>;  // control name -> last result
     FControlActive: TDictionary<string, Boolean>; // control name -> held by the engine
+    FConfirmed: TDictionary<string, Boolean>;     // "hold to run" controls whose question was answered
+    FValueControl: TControlDef;      // control the value slider was set up for
     FHolding: Boolean;               // "hold to run" button is down
+    FDtcRows: TArray<TArray<string>>;
     FLastLogFile: string;            // the log recorded most recently
     FViewerLog: string;              // the log last handed to the viewer
     FZoom: Integer;                  // live grid zoom, percent
-    FBaseRowHeight: Integer;         // the grid's row height at 100%
+    FNormalBounds: TRect;            // window bounds when not maximized
+    procedure CreateGrids;
+    procedure AdaptToPhone;
+    procedure FitFlowHeights;
+    // grid events
+    procedure PidsGetText(Sender: TObject; Col, Row: Integer; var Text: string);
+    procedure PidsGetStyle(Sender: TObject; Col, Row: Integer; var Style: TCellStyle);
+    procedure PidsGetChecked(Sender: TObject; Row: Integer; var Checked: Boolean);
+    procedure PidsToggle(Sender: TObject; Row: Integer);
+    procedure PidsIsGroup(Sender: TObject; Row: Integer; var IsGroup: Boolean);
+    procedure PidsDblClick(Sender: TObject; Row: Integer);
+    procedure LiveGetText(Sender: TObject; Col, Row: Integer; var Text: string);
+    procedure LiveGetStyle(Sender: TObject; Col, Row: Integer; var Style: TCellStyle);
+    procedure LiveDblClick(Sender: TObject; Row: Integer);
+    procedure LiveMouseWheel(Sender: TObject; Shift: TShiftState; WheelDelta: Integer; var Handled: Boolean);
+    procedure GridMouseDown(Sender: TObject; Button: TMouseButton; Shift: TShiftState; X, Y: Single);
+    procedure GridGesture(Sender: TObject; const EventInfo: TGestureEventInfo; var Handled: Boolean);
+    procedure ControlsGetText(Sender: TObject; Col, Row: Integer; var Text: string);
+    procedure ControlsGetStyle(Sender: TObject; Col, Row: Integer; var Style: TCellStyle);
+    procedure ControlsIsGroup(Sender: TObject; Row: Integer; var IsGroup: Boolean);
+    procedure ControlsSelect(Sender: TObject);
+    procedure ControlsDblClick(Sender: TObject; Row: Integer);
+    procedure DtcsGetText(Sender: TObject; Col, Row: Integer; var Text: string);
+    procedure MessagesGetText(Sender: TObject; Col, Row: Integer; var Text: string);
+    procedure GaugeMouseDown(Sender: TObject; Button: TMouseButton; Shift: TShiftState; X, Y: Single);
+    procedure GaugeDblClick(Sender: TObject);
+    procedure GaugeGesture(Sender: TObject; const EventInfo: TGestureEventInfo; var Handled: Boolean);
+    // zoom
     procedure SetZoom(Percent: Integer);
     procedure ZoomStep(Direction: Integer);
     procedure ApplyGridLayout;
-    function ZoomPx(N: Integer): Integer;
-    function ZoomPt(Points: Integer): Integer;
-    function LastLiveCol: Integer;
+    function Z(N: Single): Single;
+    // controls
     procedure LoadControls;
     procedure SaveControls;
     procedure FillControls(const Select: string);
     function SelectedControl: TControlDef;
+    function ControlActive(C: TControlDef): Boolean;
     procedure UpdateControlPanel;
     function ControlsUsable: Boolean;
     procedure SendControl(C: TControlDef; TurnOn: Boolean; const Value: Double = 0);
     procedure EditControl(C: TControlDef; IsNew: Boolean);
+    procedure StopHolding;
+    // live data
     procedure SetupLiveRows(const Ids: TArray<Integer>);
     procedure StartTest;
     procedure StopTest;
     function TestSnapshot: TLiveSnapshot;
     function LiveActive: Boolean;
     procedure RefreshLiveRows;
-    procedure InvalidateLiveRow(Idx: Integer);
     procedure UpdateAlerts;
     procedure ApplyRowHeights;
+    function LiveIndexOf(PidId: Integer): Integer;
+    function FlashPhase: Boolean;
+    // display & dashboard
     procedure LoadDisplay;
     procedure SaveDisplay;
     procedure DisplayChanged;
@@ -279,9 +332,9 @@ type
     procedure BuildDashboard;
     procedure LayoutDashboard;
     procedure RefreshDashboard;
-    procedure GaugeDblClick(Sender: TObject);
-    function FlashPhase: Boolean;
-    function LiveIndexOf(PidId: Integer): Integer;
+    procedure PreparePidMenu(PidId: Integer);
+    procedure PrepareGaugeMenu(Index: Integer);
+    // data, settings, lists
     procedure FlushMessages;
     procedure ReloadCatalog;
     procedure FillLists(const Select: string);
@@ -302,7 +355,8 @@ type
     procedure Post(const Cmd: TEngineCommand); overload;
     function LogFolder: string;
     function PidName(Id: Integer): string;
-    procedure SetStatus(Panel: Integer; const Text: string);
+    procedure SetStatus(Lbl: TLabel; const Text: string);
+    procedure OpenPidEditor(const Filter: string);
   end;
 
 var
@@ -310,11 +364,11 @@ var
 
 implementation
 
-{$R *.dfm}
+{$R *.fmx}
 
 uses
-  System.JSON, UVScan.JsonFile, UVScan.DisplayEditor, UVScan.GaugeEditor, UVScan.ControlEditor,
-  UVScan.LogViewer;
+  System.JSON, FMX.Platform, UVScan.JsonFile, UVScan.UI.Common, UVScan.Sound, UVScan.PidEditor,
+  UVScan.PidDiscovery, UVScan.DisplayEditor, UVScan.GaugeEditor, UVScan.ControlEditor, UVScan.LogViewer;
 
 const
   SimulatorPort = 'Simulator';
@@ -323,19 +377,25 @@ const
   ColUnits = 2;
   ColMin = 3;
   ColMax = 4;
-  PanelState = 0;
-  PanelPort = 1;
-  PanelVin = 2;
-  PanelOsid = 3;
-  PanelRate = 4;
-  PanelLog = 5;
+  PtToDip = 96 / 72;
+  ZoomSteps: array[0..8] of Integer = (75, 90, 100, 110, 125, 150, 175, 200, 250);
+  NoListCaption = '(none)';
+  MaxMessageLines = 5000;
+  TopBarColor = $FFF0F0F0;
+
+function ComboText(Combo: TComboBox): string;
+begin
+  if Combo.ItemIndex >= 0 then
+    Result := Combo.Items[Combo.ItemIndex]
+  else
+    Result := '';
+end;
 
 { TMainForm }
 
 procedure TMainForm.FormCreate(Sender: TObject);
 begin
   FZoom := 100;
-  FBaseRowHeight := grdLive.DefaultRowHeight; // already scaled to the screen DPI
   FSelected := TList<Integer>.Create;
   FSupport := TDictionary<Integer, Boolean>.Create;
   FRejected := TList<Integer>.Create;
@@ -343,32 +403,191 @@ begin
   FDtcs := TDtcCatalog.Create;
   FSettings := TAppSettings.Create;
   FPendingLog := TStringList.Create;
+  FMessages := TStringList.Create;
   FLists := TPidLists.Create;
   FDisplay := TDisplaySettings.Create;
   FControls := TControlList.Create;
   FControlResult := TDictionary<string, string>.Create;
   FControlActive := TDictionary<string, Boolean>.Create;
+  FConfirmed := TDictionary<string, Boolean>.Create;
   FAlerts := TAlertTracker.Create;
   FGaugeViews := TList<TGaugeView>.Create;
   FMenuPidId := -1;
   FMenuGauge := -1;
   Caption := 'UVScan';
+  lblVin.TextSettings.Font.Style := [TFontStyle.fsBold];
+  lblOsid.TextSettings.Font.Style := [TFontStyle.fsBold];
+  lblFirmware.TextSettings.Font.Style := [TFontStyle.fsBold];
+  lblCtlName.TextSettings.Font.Style := [TFontStyle.fsBold];
   pnlNotice.Visible := False;
+  CreateGrids;
+  if IsMobile then
+    AdaptToPhone;
   LoadData;
   LoadSettings;
   FillPidList;
   FEngine := TScanEngine.Create(FCatalog, HandleEvent);
   cbRateChange(nil);
-  FEngine.SetTrace(chkTrace.Checked);
+  FEngine.SetTrace(chkTrace.IsChecked);
   SetZoom(FSettings.LiveZoom);
-  grdLive.DoubleBuffered := True; // paint off-screen, then copy: no flicker
-  sbDash.DoubleBuffered := True;
   BuildDashboard;
-  FormResize(nil);
   FState := esDisconnected;
   UpdateControls;
-  pcMain.ActivePage := tsLive;
+  if IsMobile then
+    tcMain.ActiveTab := tiLive
+  else
+    tcMain.ActiveTab := tiLive;
   ApplyCommandLine;
+  TThread.ForceQueue(nil, FitFlowHeights);
+end;
+
+procedure TMainForm.CreateGrids;
+
+  function NewGrid(Parent: TFmxObject): TDataGrid;
+  begin
+    Result := TDataGrid.Create(Self);
+    Result.Parent := Parent;
+    Result.Align := TAlignLayout.Client;
+  end;
+
+begin
+  grdPids := NewGrid(lyPids);
+  grdPids.Checkboxes := True;
+  grdPids.AddColumn('PID', 200, gaLeft, True);
+  grdPids.AddColumn('Units', 55);
+  grdPids.AddColumn('Bytes', 45, gaRight);
+  grdPids.AddColumn('Test', 60);
+  grdPids.OnGetText := PidsGetText;
+  grdPids.OnGetStyle := PidsGetStyle;
+  grdPids.OnGetChecked := PidsGetChecked;
+  grdPids.OnToggleCheck := PidsToggle;
+  grdPids.OnIsGroupRow := PidsIsGroup;
+  grdPids.OnRowDblClick := PidsDblClick;
+  grdPids.OnMouseDown := GridMouseDown;
+  grdPids.PopupMenu := pmPid;
+  grdPids.Touch.InteractiveGestures := [TInteractiveGesture.LongTap];
+  grdPids.OnGesture := GridGesture;
+
+  grdLive := NewGrid(lyLive);
+  grdLive.AddColumn('PID', 160, gaLeft, True);
+  grdLive.AddColumn('Value', 140, gaRight);
+  grdLive.AddColumn('Units', 80);
+  grdLive.AddColumn('Min', 100, gaRight);
+  grdLive.AddColumn('Max', 100, gaRight);
+  grdLive.OnGetText := LiveGetText;
+  grdLive.OnGetStyle := LiveGetStyle;
+  grdLive.OnRowDblClick := LiveDblClick;
+  grdLive.OnMouseDown := GridMouseDown;
+  grdLive.OnMouseWheel := LiveMouseWheel;
+  grdLive.PopupMenu := pmPid;
+  grdLive.Touch.InteractiveGestures := [TInteractiveGesture.LongTap];
+  grdLive.OnGesture := GridGesture;
+
+  grdControls := NewGrid(lyControls);
+  grdControls.AddColumn('Control', 230, gaLeft, True);
+  grdControls.AddColumn('Type', 110);
+  grdControls.AddColumn('Command', 220);
+  grdControls.AddColumn('Last result', 260);
+  grdControls.OnGetText := ControlsGetText;
+  grdControls.OnGetStyle := ControlsGetStyle;
+  grdControls.OnIsGroupRow := ControlsIsGroup;
+  grdControls.OnSelect := ControlsSelect;
+  grdControls.OnRowDblClick := ControlsDblClick;
+
+  grdDtcs := NewGrid(lyDtcs);
+  grdDtcs.AddColumn('Code', 80);
+  grdDtcs.AddColumn('Module', 140);
+  grdDtcs.AddColumn('Description', 300, gaLeft, True);
+  grdDtcs.AddColumn('Status', 70);
+  grdDtcs.OnGetText := DtcsGetText;
+
+  grdMessages := NewGrid(lyMessages);
+  grdMessages.ShowHeader := False;
+  grdMessages.Striped := False;
+  grdMessages.GridLines := False;
+  grdMessages.RowHeight := 19;
+  grdMessages.FontSize := 12;
+  {$IFDEF MSWINDOWS}
+  grdMessages.FontFamily := 'Consolas';
+  {$ENDIF}
+  grdMessages.AddColumn('', 400, gaLeft, True);
+  grdMessages.OnGetText := MessagesGetText;
+end;
+
+{ Phone: the PID list becomes the first tab; the bars wrap. }
+procedure TMainForm.AdaptToPhone;
+var
+  Tab: TTabItem;
+  Item: TTabItem;
+  I: Integer;
+begin
+  Tab := TTabItem.Create(tcMain);
+  Tab.Text := 'PIDs';
+  tcMain.InsertObject(0, Tab);
+  pnlPids.Parent := Tab;
+  pnlPids.Align := TAlignLayout.Client;
+  splLeft.Visible := False;
+  // Short tab names so all seven fit across a phone.
+  tiLive.Text := 'Live';
+  tiDashboard.Text := 'Gauges';
+  tiControls.Text := 'Control';
+  tiVehicle.Text := 'Codes';
+  tiTools.Text := 'Tools';
+  tiMessages.Text := 'Log';
+  for I := 0 to tcMain.TabCount - 1 do
+  begin
+    Item := tcMain.Tabs[I];
+    Item.StyledSettings := Item.StyledSettings - [TStyledSetting.Size];
+    Item.TextSettings.Font.Size := 11;
+  end;
+  // A compact top bar: no labels, separators or keyboard hints.
+  lblPort.Visible := False;
+  sep1.Visible := False;
+  sep2.Visible := False;
+  cbBaud.Visible := False; // USB adapters take the baud rate from the port settings
+  btnPause.Visible := False;
+  chkSound.Visible := False;
+  btnRefreshPorts.Text := 'Ports';
+  btnLogViewer.Text := 'Logs';
+  lblLiveHint.Visible := False;
+  btnBrowseLogFolder.Visible := False;
+  lblDashHint.Text := 'Long-press a gauge to change, move or remove it.';
+  WindowState := TWindowState.wsMaximized;
+  KeepInSafeArea(Self);
+end;
+
+{ Flow layouts wrap their buttons on narrow windows; grow their bars to fit. }
+procedure TMainForm.FitFlowHeights;
+
+  procedure Fit(Flow: TFlowLayout; Bar: TControl; Extra: Single);
+  var
+    I: Integer;
+    C: TControl;
+    Bottom: Single;
+  begin
+    Bottom := 0;
+    for I := 0 to Flow.ControlsCount - 1 do
+    begin
+      C := Flow.Controls[I];
+      if C.Visible then
+        Bottom := Max(Bottom, C.Position.Y + C.Height);
+    end;
+    if Bottom <= 0 then
+      Exit;
+    Bottom := Bottom + Flow.Padding.Bottom + Extra;
+    if Abs(Bar.Height - Bottom) > 0.5 then
+      Bar.Height := Bottom;
+  end;
+
+begin
+  if FClosing then
+    Exit;
+  Fit(flTop, pnlTop, 0);
+  Fit(pnlLiveFooter, pnlLiveFooter, 0);
+  Fit(pnlDashBar, pnlDashBar, 0);
+  Fit(pnlCtlBar, pnlCtlBar, 0);
+  Fit(flPidButtons, pnlPidFooter, lblBudget.Height);
+  Fit(flCtlRun, pnlCtlRun, lblCtlName.Height + lblCtlNotes.Height + pnlCtlRun.Padding.Top + pnlCtlRun.Padding.Bottom);
 end;
 
 { Same switches as legacy UVSCAN: -connect [-scan [-log]], plus -port <name>. }
@@ -389,21 +608,25 @@ begin
   TThread.ForceQueue(nil,
     procedure
     begin
-      btnConnect.Click;
+      btnConnectClick(nil);
     end);
 end;
 
 procedure TMainForm.FormDestroy(Sender: TObject);
 begin
+  FClosing := True;
+  tmrRefresh.Enabled := False;
   FEngine.Free; // stops the scan, closes the port, waits for the thread
   FCatalog.Free;
   FSettings.Free;
   FPendingLog.Free;
+  FMessages.Free;
   FLists.Free;
   FDisplay.Free;
   FControls.Free;
   FControlResult.Free;
   FControlActive.Free;
+  FConfirmed.Free;
   FAlerts.Free;
   FGaugeViews.Free; // the views themselves are owned by the form
   FDtcs.Free;
@@ -414,45 +637,62 @@ end;
 
 procedure TMainForm.FormCloseQuery(Sender: TObject; var CanClose: Boolean);
 begin
-  if FLogging and (MessageDlg('A log is being recorded. Stop logging and exit?', mtConfirmation,
-    [mbYes, mbNo], 0) <> mrYes) then
+  if FLogging and not FForceClose then
   begin
     CanClose := False;
+    Confirm('A log is being recorded. Stop logging and exit?',
+      procedure
+      begin
+        FForceClose := True;
+        Close;
+      end);
     Exit;
   end;
   FClosing := True;
   SaveSettings;
 end;
 
-procedure TMainForm.FormKeyDown(Sender: TObject; var Key: Word; Shift: TShiftState);
+procedure TMainForm.FormKeyDown(Sender: TObject; var Key: Word; var KeyChar: WideChar; Shift: TShiftState);
 begin
-  if (Key = VK_F7) and (Shift = []) then
+  if (Key = vkF7) and (Shift = []) then
   begin
-    btnLogViewer.Click;
+    btnLogViewerClick(nil);
     Key := 0;
-    Exit;
-  end;
-  if (Shift = [ssCtrl]) and (pcMain.ActivePage = tsLive) and
-    ((Key = VK_ADD) or (Key = VK_OEM_PLUS) or (Key = VK_SUBTRACT) or (Key = VK_OEM_MINUS) or (Key = Ord('0')) or (Key = VK_NUMPAD0)) then
+  end
+  else if (Key = vkF8) and btnLog.Enabled then
   begin
-    if (Key = VK_ADD) or (Key = VK_OEM_PLUS) then
+    btnLogClick(nil);
+    Key := 0;
+  end
+  else if (Key = vkF9) and btnPause.Enabled then
+  begin
+    btnPauseClick(nil);
+    Key := 0;
+  end
+  else if (ssCtrl in Shift) and (tcMain.ActiveTab = tiLive) then
+  begin
+    if (Key = vkAdd) or (KeyChar = '+') or (KeyChar = '=') then
       ZoomStep(1)
-    else if (Key = VK_SUBTRACT) or (Key = VK_OEM_MINUS) then
+    else if (Key = vkSubtract) or (KeyChar = '-') then
       ZoomStep(-1)
+    else if (Key = vkNumpad0) or (KeyChar = '0') then
+      SetZoom(100)
     else
-      SetZoom(100);
+      Exit;
     Key := 0;
-  end
-  else if (Key = VK_F8) and btnLog.Enabled then
-  begin
-    btnLog.Click;
-    Key := 0;
-  end
-  else if (Key = VK_F9) and btnPause.Enabled then
-  begin
-    btnPause.Click;
-    Key := 0;
+    KeyChar := #0;
   end;
+end;
+
+procedure TMainForm.FormResize(Sender: TObject);
+begin
+  if grdLive = nil then
+    Exit; // the form is still loading
+  if WindowState = TWindowState.wsNormal then
+    FNormalBounds := TRect.Create(Left, Top, Left + Width, Top + Height);
+  if pnlPids.Align = TAlignLayout.Left then
+    pnlPids.Width := Min(pnlPids.Width, Max(200, ClientWidth - 300));
+  TThread.ForceQueue(nil, FitFlowHeights);
 end;
 
 procedure TMainForm.LoadData;
@@ -526,61 +766,66 @@ begin
   end;
 
   FillPorts(FSettings.Port);
-  cbBaud.ItemIndex := cbBaud.Items.IndexOf(IntToStr(FSettings.Baud));
-  if cbBaud.ItemIndex < 0 then
-    cbBaud.ItemIndex := 0;
+  cbBaud.ItemIndex := Max(0, cbBaud.Items.IndexOf(IntToStr(FSettings.Baud)));
   edtLogFolder.Text := FSettings.LogFolder;
   cbRate.ItemIndex := Ord(FSettings.StreamSpeed);
-  chkTrace.Checked := FSettings.Trace;
-  chkSound.Checked := FSettings.AlertSounds;
-  chkMinMax.Checked := FSettings.ShowMinMax;
+  chkTrace.IsChecked := FSettings.Trace;
+  chkSound.IsChecked := FSettings.AlertSounds;
+  chkMinMax.IsChecked := FSettings.ShowMinMax;
   for N in FSettings.SelectedPids do
     if (FCatalog.FindById(N) <> nil) and FCatalog.FindById(N).Enabled and not FSelected.Contains(N) then
       FSelected.Add(N);
   FillLists(FSettings.ActiveList);
-  if FSettings.Window.Saved then
+  if FSettings.Window.Saved and not IsMobile then
   begin
-    Position := poDesigned;
     SetBounds(FSettings.Window.Left, FSettings.Window.Top, FSettings.Window.Width, FSettings.Window.Height);
-    MakeFullyVisible;
+    // Keep the window on a screen that still exists.
+    if (Left > Screen.Width - 100) or (Top > Screen.Height - 100) or (Left + Width < 100) or (Top < -20) then
+    begin
+      Left := 40;
+      Top := 40;
+    end;
+    FNormalBounds := TRect.Create(Left, Top, Left + Width, Top + Height);
     if FSettings.Window.Maximized then
-      WindowState := wsMaximized;
+      WindowState := TWindowState.wsMaximized;
     if FSettings.Window.PidPanelWidth > 0 then
       pnlPids.Width := FSettings.Window.PidPanelWidth;
   end;
 end;
 
 procedure TMainForm.SaveSettings;
-var
-  Placement: TWindowPlacement;
 begin
-  FSettings.Port := cbPort.Text;
-  FSettings.Baud := StrToIntDef(cbBaud.Text, 115200);
+  FSettings.Port := ComboText(cbPort);
+  FSettings.Baud := StrToIntDef(ComboText(cbBaud), 115200);
   FSettings.LogFolder := edtLogFolder.Text;
   FSettings.StreamSpeed := TStreamSpeed(Max(0, cbRate.ItemIndex));
-  FSettings.Trace := chkTrace.Checked;
-  FSettings.AlertSounds := chkSound.Checked;
+  FSettings.Trace := chkTrace.IsChecked;
+  FSettings.AlertSounds := chkSound.IsChecked;
   FSettings.LiveZoom := FZoom;
-  FSettings.ShowMinMax := chkMinMax.Checked;
+  FSettings.ShowMinMax := chkMinMax.IsChecked;
   FSettings.SelectedPids := FSelected.ToArray;
   if cbLists.ItemIndex > 0 then
-    FSettings.ActiveList := cbLists.Text
+    FSettings.ActiveList := ComboText(cbLists)
   else
     FSettings.ActiveList := '';
-  Placement.length := SizeOf(Placement);
-  GetWindowPlacement(Handle, @Placement);
-  FSettings.Window.Left := Placement.rcNormalPosition.Left;
-  FSettings.Window.Top := Placement.rcNormalPosition.Top;
-  FSettings.Window.Width := Placement.rcNormalPosition.Width;
-  FSettings.Window.Height := Placement.rcNormalPosition.Height;
-  FSettings.Window.Maximized := WindowState = wsMaximized;
-  FSettings.Window.PidPanelWidth := pnlPids.Width;
-  FSettings.Window.Saved := True;
+  if not IsMobile then
+  begin
+    if FNormalBounds.Width > 0 then
+    begin
+      FSettings.Window.Left := FNormalBounds.Left;
+      FSettings.Window.Top := FNormalBounds.Top;
+      FSettings.Window.Width := FNormalBounds.Width;
+      FSettings.Window.Height := FNormalBounds.Height;
+      FSettings.Window.Saved := True;
+    end;
+    FSettings.Window.Maximized := WindowState = TWindowState.wsMaximized;
+    FSettings.Window.PidPanelWidth := Round(pnlPids.Width);
+  end;
   try
     FSettings.SaveToFile(SettingsFile);
   except
     on E: Exception do
-      MessageDlg('Settings could not be saved: ' + E.Message, mtWarning, [mbOK], 0);
+      AddMessage('Settings could not be saved: ' + E.Message);
   end;
 end;
 
@@ -604,7 +849,7 @@ end;
 
 procedure TMainForm.btnRefreshPortsClick(Sender: TObject);
 begin
-  FillPorts(cbPort.Text);
+  FillPorts(ComboText(cbPort));
 end;
 
 { PID list }
@@ -612,57 +857,119 @@ end;
 procedure TMainForm.FillPidList;
 var
   Cat: TPidCategory;
-  Group: TListGroup;
-  GroupIds: array[TPidCategory] of Integer;
-  I: Integer;
+  I, Keep: Integer;
   P: TPidDef;
-  Item: TListItem;
-  Filter, Status: string;
-  Supported: Boolean;
+  Filter: string;
+  Rows: TList<Integer>;
+  Added: Boolean;
 begin
+  Keep := -1;
+  if (grdPids.ItemIndex >= 0) and (grdPids.ItemIndex <= High(FPidRows)) then
+    Keep := FPidRows[grdPids.ItemIndex];
   Filter := LowerCase(Trim(edtSearch.Text));
-  FUpdatingList := True;
-  lvPids.Items.BeginUpdate;
+  Rows := TList<Integer>.Create;
   try
-    lvPids.Items.Clear;
-    lvPids.Groups.Clear;
     for Cat := Low(TPidCategory) to High(TPidCategory) do
     begin
-      Group := lvPids.Groups.Add;
-      Group.Header := CategoryNames[Cat];
-      Group.State := [lgsCollapsible];
-      GroupIds[Cat] := Group.GroupID;
-    end;
-    for I := 0 to FCatalog.Count - 1 do
-    begin
-      P := FCatalog[I];
-      if not P.Enabled then
-        Continue;
-      if (Filter <> '') and (Pos(Filter, LowerCase(P.LongName + ' ' + P.ShortName + ' ' + P.PidCode)) = 0) then
-        Continue;
-      Item := lvPids.Items.Add;
-      Item.Caption := P.LongName;
-      Item.SubItems.Add(P.Units);
-      case P.Kind of
-        pkVehicle: Item.SubItems.Add(IntToStr(P.DataLength));
-        pkCalculated: Item.SubItems.Add('calc');
-        pkAnalog: Item.SubItems.Add('A/D');
+      Added := False;
+      for I := 0 to FCatalog.Count - 1 do
+      begin
+        P := FCatalog[I];
+        if not P.Enabled or (P.Category <> Cat) then
+          Continue;
+        if (Filter <> '') and (Pos(Filter, LowerCase(P.LongName + ' ' + P.ShortName + ' ' + P.PidCode)) = 0) then
+          Continue;
+        if not Added then
+        begin
+          Rows.Add(-(Ord(Cat) + 1));
+          Added := True;
+        end;
+        Rows.Add(P.Id);
       end;
-      Status := '';
-      if FSupport.TryGetValue(P.Id, Supported) then
-        Status := IfThen(Supported, 'yes', 'no');
-      if FRejected.Contains(P.Id) then
-        Status := 'rejected';
-      Item.SubItems.Add(Status);
-      Item.Data := Pointer(P.Id);
-      Item.GroupID := GroupIds[P.Category];
-      Item.Checked := FSelected.Contains(P.Id);
     end;
+    FPidRows := Rows.ToArray;
   finally
-    lvPids.Items.EndUpdate;
-    FUpdatingList := False;
+    Rows.Free;
   end;
+  grdPids.RowCount := Length(FPidRows);
+  grdPids.ItemIndex := -1;
+  if Keep >= 0 then
+    for I := 0 to High(FPidRows) do
+      if FPidRows[I] = Keep then
+        grdPids.ItemIndex := I;
+  grdPids.Refresh;
   UpdateBudget;
+end;
+
+procedure TMainForm.PidsIsGroup(Sender: TObject; Row: Integer; var IsGroup: Boolean);
+begin
+  IsGroup := (Row <= High(FPidRows)) and (FPidRows[Row] < 0);
+end;
+
+procedure TMainForm.PidsGetText(Sender: TObject; Col, Row: Integer; var Text: string);
+var
+  P: TPidDef;
+  Supported: Boolean;
+begin
+  if Row > High(FPidRows) then
+    Exit;
+  if FPidRows[Row] < 0 then
+  begin
+    if Col = 0 then
+      Text := CategoryNames[TPidCategory(-FPidRows[Row] - 1)];
+    Exit;
+  end;
+  P := FCatalog.FindById(FPidRows[Row]);
+  if P = nil then
+    Exit;
+  case Col of
+    0: Text := P.LongName;
+    1: Text := P.Units;
+    2:
+      case P.Kind of
+        pkVehicle: Text := IntToStr(P.DataLength);
+        pkCalculated: Text := 'calc';
+        pkAnalog: Text := 'A/D';
+      end;
+    3:
+      begin
+        if FSupport.TryGetValue(P.Id, Supported) then
+          Text := IfThen(Supported, 'yes', 'no');
+        if FRejected.Contains(P.Id) then
+          Text := 'rejected';
+      end;
+  end;
+end;
+
+procedure TMainForm.PidsGetStyle(Sender: TObject; Col, Row: Integer; var Style: TCellStyle);
+var
+  Supported: Boolean;
+begin
+  if (Col <> 3) or (Row > High(FPidRows)) or (FPidRows[Row] < 0) then
+    Exit;
+  if FRejected.Contains(FPidRows[Row]) or (FSupport.TryGetValue(FPidRows[Row], Supported) and not Supported) then
+    Style.Fore := $FFC03030
+  else if FSupport.TryGetValue(FPidRows[Row], Supported) then
+    Style.Fore := $FF208020;
+end;
+
+procedure TMainForm.PidsGetChecked(Sender: TObject; Row: Integer; var Checked: Boolean);
+begin
+  Checked := (Row <= High(FPidRows)) and (FPidRows[Row] >= 0) and FSelected.Contains(FPidRows[Row]);
+end;
+
+procedure TMainForm.PidsToggle(Sender: TObject; Row: Integer);
+begin
+  if (Row > High(FPidRows)) or (FPidRows[Row] < 0) then
+    Exit;
+  SetSelected(FPidRows[Row], not FSelected.Contains(FPidRows[Row]));
+  UpdateBudget;
+end;
+
+procedure TMainForm.PidsDblClick(Sender: TObject; Row: Integer);
+begin
+  PidsToggle(Sender, Row);
+  grdPids.Refresh;
 end;
 
 procedure TMainForm.SetSelected(Id: Integer; Checked: Boolean);
@@ -689,28 +996,28 @@ begin
   end;
 end;
 
-procedure TMainForm.lvPidsItemChecked(Sender: TObject; Item: TListItem);
-begin
-  if FUpdatingList then
-    Exit;
-  SetSelected(Integer(Item.Data), Item.Checked);
-  UpdateBudget;
-end;
-
 procedure TMainForm.edtSearchChange(Sender: TObject);
 begin
   FillPidList;
 end;
 
+procedure TMainForm.OpenPidEditor(const Filter: string);
+begin
+  TPidEditorForm.Execute(FCatalog, PidsFile, Filter,
+    procedure(Saved: Boolean)
+    begin
+      if not Saved then
+        Exit;
+      ReloadCatalog;
+      AddMessage(Format('PID definitions saved (%d PIDs) to %s', [FCatalog.Count, PidsFile]));
+    end);
+end;
+
 procedure TMainForm.btnEditPidsClick(Sender: TObject);
 begin
   // The engine only uses the catalog while scanning or busy, which this button excludes.
-  if not (FState in [esDisconnected, esConnected]) then
-    Exit;
-  if not TPidEditorForm.Execute(FCatalog, PidsFile) then
-    Exit;
-  ReloadCatalog;
-  AddMessage(Format('PID definitions saved (%d PIDs) to %s', [FCatalog.Count, PidsFile]));
+  if FState in [esDisconnected, esConnected] then
+    OpenPidEditor('');
 end;
 
 procedure TMainForm.ReloadCatalog;
@@ -740,27 +1047,30 @@ begin
 end;
 
 procedure TMainForm.btnDiscoverPidsClick(Sender: TObject);
-var
-  Added: TArray<Integer>;
 begin
   if FState <> esConnected then
     Exit;
-  Added := TPidDiscoveryForm.Execute(FEngine, FCatalog, PidsFile, FDiscovery);
-  if Length(Added) = 0 then
-    Exit;
-  ReloadCatalog;
-  AddMessage(Format('PID search: added %d PIDs to %s', [Length(Added), PidsFile]));
-  if (FState in [esDisconnected, esConnected]) and
-    (MessageDlg(Format('%d new PIDs were added as raw "PID $xxxx" entries (category Other).' + sLineBreak +
-      'Open the PID editor to name and define them now?', [Length(Added)]), mtConfirmation, [mbYes, mbNo], 0) = mrYes) and
-    TPidEditorForm.Execute(FCatalog, PidsFile, 'PID $') then
-    ReloadCatalog;
+  TPidDiscoveryForm.Execute(FEngine, FCatalog, PidsFile,
+    procedure(Added: TArray<Integer>)
+    var
+      N: Integer;
+    begin
+      N := Length(Added);
+      if N = 0 then
+        Exit;
+      ReloadCatalog;
+      AddMessage(Format('PID search: added %d PIDs to %s', [N, PidsFile]));
+      if FState in [esDisconnected, esConnected] then
+        Confirm(Format('%d new PIDs were added as raw "PID $xxxx" entries (category Other).' + sLineBreak +
+          'Open the PID editor to name and define them now?', [N]),
+          procedure
+          begin
+            OpenPidEditor('PID $');
+          end);
+    end);
 end;
 
 { Scan lists }
-
-const
-  NoListCaption = '(none)';
 
 procedure TMainForm.FillLists(const Select: string);
 var
@@ -775,7 +1085,9 @@ begin
   finally
     cbLists.Items.EndUpdate;
   end;
+  cbLists.OnChange := nil;
   cbLists.ItemIndex := Max(0, cbLists.Items.IndexOf(Select));
+  cbLists.OnChange := cbListsChange;
   btnDeleteList.Enabled := cbLists.ItemIndex > 0;
 end;
 
@@ -785,7 +1097,7 @@ begin
     FLists.SaveToFile(ListsFile);
   except
     on E: Exception do
-      MessageDlg('Could not save the scan lists: ' + E.Message, mtWarning, [mbOK], 0);
+      ShowWarning('Could not save the scan lists: ' + E.Message);
   end;
 end;
 
@@ -794,10 +1106,12 @@ var
   I, Id, Missing: Integer;
   P: TPidDef;
 begin
+  if FLists = nil then
+    Exit; // the form is still loading
   btnDeleteList.Enabled := cbLists.ItemIndex > 0;
   if cbLists.ItemIndex <= 0 then
     Exit;
-  I := FLists.IndexOf(cbLists.Text);
+  I := FLists.IndexOf(ComboText(cbLists));
   if I < 0 then
     Exit;
   FSelected.Clear;
@@ -813,12 +1127,12 @@ begin
   edtSearch.Text := '';
   FillPidList;
   if Missing > 0 then
-    ShowNotice(Format('Scan list "%s": %d PID(s) no longer exist or are disabled', [cbLists.Text, Missing]), False);
+    ShowNotice(Format('Scan list "%s": %d PID(s) no longer exist or are disabled', [ComboText(cbLists), Missing]), False);
 end;
 
 procedure TMainForm.btnSaveListClick(Sender: TObject);
 var
-  Name: string;
+  Current: string;
 begin
   if FSelected.Count = 0 then
   begin
@@ -826,21 +1140,29 @@ begin
     Exit;
   end;
   if cbLists.ItemIndex > 0 then
-    Name := cbLists.Text
+    Current := ComboText(cbLists)
   else
-    Name := '';
-  if not InputQuery('Save scan list', 'List name', Name) then
-    Exit;
-  Name := Trim(Name);
-  if Name = '' then
-    Exit;
-  if (FLists.IndexOf(Name) >= 0) and not SameText(Name, cbLists.Text) and
-    (MessageDlg(Format('Replace the existing list "%s"?', [Name]), mtConfirmation, [mbYes, mbNo], 0) <> mrYes) then
-    Exit;
-  FLists.Put(Name, FSelected.ToArray);
-  SaveLists;
-  FillLists(Name);
-  AddMessage(Format('Saved scan list "%s" (%d PIDs)', [Name, FSelected.Count]));
+    Current := '';
+  AskText('Save scan list', 'List name', Current,
+    procedure(Name: string)
+    var
+      Save: TProc;
+    begin
+      if Name = '' then
+        Exit;
+      Save :=
+        procedure
+        begin
+          FLists.Put(Name, FSelected.ToArray);
+          SaveLists;
+          FillLists(Name);
+          AddMessage(Format('Saved scan list "%s" (%d PIDs)', [Name, FSelected.Count]));
+        end;
+      if (FLists.IndexOf(Name) >= 0) and not SameText(Name, Current) then
+        Confirm(Format('Replace the existing list "%s"?', [Name]), Save)
+      else
+        Save();
+    end);
 end;
 
 procedure TMainForm.btnDeleteListClick(Sender: TObject);
@@ -849,13 +1171,14 @@ var
 begin
   if cbLists.ItemIndex <= 0 then
     Exit;
-  Name := cbLists.Text;
-  if MessageDlg(Format('Delete the scan list "%s"? The PIDs themselves are not affected.', [Name]),
-    mtConfirmation, [mbYes, mbNo], 0) <> mrYes then
-    Exit;
-  FLists.Delete(Name);
-  SaveLists;
-  FillLists('');
+  Name := ComboText(cbLists);
+  Confirm(Format('Delete the scan list "%s"? The PIDs themselves are not affected.', [Name]),
+    procedure
+    begin
+      FLists.Delete(Name);
+      SaveLists;
+      FillLists('');
+    end);
 end;
 
 procedure TMainForm.btnClearSelectionClick(Sender: TObject);
@@ -890,17 +1213,18 @@ begin
       Reqs := Reqs + [R];
     end;
   end;
+  lblBudget.StyledSettings := lblBudget.StyledSettings - [TStyledSetting.FontColor];
   try
     Dpids := Format('%d DPID(s)', [Length(PlanDpids(Reqs).Dpids)]);
-    lblBudget.Font.Color := clWindowText;
+    lblBudget.TextSettings.FontColor := TAlphaColors.Black;
   except
     on E: EDpidPlanError do
     begin
       Dpids := 'too many!';
-      lblBudget.Font.Color := clRed;
+      lblBudget.TextSettings.FontColor := TAlphaColors.Red;
     end;
   end;
-  lblBudget.Caption := Format('%d selected  -  %d / %d bytes  -  %s',
+  lblBudget.Text := Format('%d selected  -  %d / %d bytes  -  %s',
     [Count, Bytes, MaxDpids * DpidDataBytes, Dpids]);
 end;
 
@@ -909,6 +1233,7 @@ var
   Cmd: TEngineCommand;
   Id: Integer;
   P: TPidDef;
+  Run: TProc;
 begin
   Cmd := Command(ecTestPids);
   for Id in FSelected do
@@ -917,12 +1242,17 @@ begin
     if (P <> nil) and (P.Kind = pkVehicle) then
       Cmd.PidIds := Cmd.PidIds + [Id];
   end;
-  if (Length(Cmd.PidIds) = 0) and (MessageDlg('No vehicle PIDs are selected. Test every PID in the list?',
-    mtConfirmation, [mbYes, mbNo], 0) <> mrYes) then
-    Exit;
-  FSupport.Clear;
-  Post(Cmd);
-  pcMain.ActivePage := tsMessages;
+  Run :=
+    procedure
+    begin
+      FSupport.Clear;
+      Post(Cmd);
+      tcMain.ActiveTab := tiMessages;
+    end;
+  if Length(Cmd.PidIds) = 0 then
+    Confirm('No vehicle PIDs are selected. Test every PID in the list?', Run)
+  else
+    Run();
 end;
 
 { Connection and scanning }
@@ -944,13 +1274,13 @@ var
   PortName: string;
   Baud: Cardinal;
 begin
-  PortName := cbPort.Text;
+  PortName := ComboText(cbPort);
   if PortName = '' then
   begin
-    ShowNotice('Choose a COM port first', True);
+    ShowNotice('Choose a port first', True);
     Exit;
   end;
-  Baud := StrToIntDef(cbBaud.Text, 115200);
+  Baud := StrToIntDef(ComboText(cbBaud), 115200);
   Cmd := Command(ecConnect);
   if PortName = SimulatorPort then
     Cmd.Factory :=
@@ -962,9 +1292,9 @@ begin
     Cmd.Factory :=
       function: ISerialPort
       begin
-        Result := TWin32SerialPort.Create(PortName, Baud, fcRtsCts);
+        Result := CreateSerialPort(PortName, Baud, fcRtsCts);
       end;
-  SetStatus(PanelPort, PortName);
+  SetStatus(lblStatPort, PortName);
   Post(Cmd);
 end;
 
@@ -981,7 +1311,7 @@ begin
     StopTest;
   if FSelected.Count = 0 then
   begin
-    ShowNotice('Tick the PIDs to scan in the list on the left', True);
+    ShowNotice('Tick the PIDs to scan in the PID list', True);
     Exit;
   end;
   FRejected.Clear;
@@ -999,7 +1329,7 @@ function TMainForm.LogFolder: string;
 begin
   Result := Trim(edtLogFolder.Text);
   if Result = '' then
-    Result := TPath.Combine(TPath.GetDocumentsPath, 'UVScan Logs');
+    Result := DefaultLogFolder;
 end;
 
 procedure TMainForm.btnLogClick(Sender: TObject);
@@ -1013,7 +1343,7 @@ begin
   end;
   ForceDirectories(LogFolder);
   Cmd := Command(ecStartLog);
-  Cmd.Text := TPath.Combine(LogFolder, 'UVScan_' + FormatDateTime('yyyy-mm-dd_hhnnss', Now) + '.csv');
+  Cmd.Text := System.IOUtils.TPath.Combine(LogFolder, 'UVScan_' + FormatDateTime('yyyy-mm-dd_hhnnss', Now) + '.csv');
   Post(Cmd);
 end;
 
@@ -1031,12 +1361,11 @@ end;
 procedure TMainForm.HandleEvent(const Ev: TEngineEvent);
 var
   D: TDtcEntry;
-  Item: TListItem;
 begin
   if FClosing then
     Exit;
-  if FDiscovery <> nil then
-    FDiscovery.HandleEngineEvent(Ev);
+  if TPidDiscoveryForm.Current <> nil then
+    TPidDiscoveryForm.Current.HandleEngineEvent(Ev);
   case Ev.Kind of
     eeLog:
       AddMessage(Ev.Text);
@@ -1053,38 +1382,35 @@ begin
     eeState:
       begin
         FState := Ev.State;
-        SetStatus(PanelState, StateNames[FState]);
+        SetStatus(lblStatState, StateNames[FState]);
         if FState <> esScanning then
         begin
-          grdLive.Invalidate;
+          grdLive.Refresh;
           RefreshDashboard;
         end;
         if (FState = esConnected) and FAutoScan then
         begin
           FAutoScan := False;
-          btnStartScan.Click;
+          btnStartScanClick(nil);
         end;
         if FState = esDisconnected then
         begin
           FAutoScan := False;
           FAutoLog := False;
-        end;
-        if FState = esDisconnected then
-        begin
           FControlActive.Clear; // the engine released everything
           FillControls('');
           FLogging := False;
-          SetStatus(PanelRate, '');
+          SetStatus(lblStatRate, '');
         end;
         UpdateControls;
       end;
     eeVehicleInfo:
       begin
-        lblFirmware.Caption := IfThen(Ev.Vehicle.Firmware = '', '-', Ev.Vehicle.Firmware);
-        lblVin.Caption := IfThen(Ev.Vehicle.Vin = '', '-', Ev.Vehicle.Vin);
-        lblOsid.Caption := IfThen(Ev.Vehicle.Osid = '', '-', Ev.Vehicle.Osid);
-        SetStatus(PanelVin, 'VIN ' + lblVin.Caption);
-        SetStatus(PanelOsid, 'OSID ' + lblOsid.Caption);
+        lblFirmware.Text := IfThen(Ev.Vehicle.Firmware = '', '-', Ev.Vehicle.Firmware);
+        lblVin.Text := IfThen(Ev.Vehicle.Vin = '', '-', Ev.Vehicle.Vin);
+        lblOsid.Text := IfThen(Ev.Vehicle.Osid = '', '-', Ev.Vehicle.Osid);
+        SetStatus(lblStatVin, 'VIN ' + lblVin.Text);
+        SetStatus(lblStatOsid, 'OSID ' + lblOsid.Text);
       end;
     eeScanStarted:
       begin
@@ -1094,7 +1420,7 @@ begin
         if FAutoLog then
         begin
           FAutoLog := False;
-          btnLog.Click;
+          btnLogClick(nil);
         end;
       end;
     eePidRejected:
@@ -1114,35 +1440,22 @@ begin
       end;
     eeDtcs:
       begin
-        lvDtcs.Items.BeginUpdate;
-        try
-          lvDtcs.Items.Clear;
-          for D in Ev.Dtcs do
-          begin
-            Item := lvDtcs.Items.Add;
-            Item.Caption := D.Code;
-            Item.SubItems.Add(ModuleName(D.Module));
-            Item.SubItems.Add(FDtcs.Describe(D.Code));
-            Item.SubItems.Add('$' + IntToHex(D.Status, 2));
-          end;
-          if Length(Ev.Dtcs) = 0 then
-          begin
-            Item := lvDtcs.Items.Add;
-            Item.Caption := 'None';
-            Item.SubItems.Add('');
-            Item.SubItems.Add('No trouble codes reported');
-          end;
-        finally
-          lvDtcs.Items.EndUpdate;
-        end;
-        pcMain.ActivePage := tsVehicle;
+        FDtcRows := nil;
+        for D in Ev.Dtcs do
+          FDtcRows := FDtcRows + [TArray<string>.Create(D.Code, ModuleName(D.Module), FDtcs.Describe(D.Code),
+            '$' + IntToHex(D.Status, 2))];
+        if Length(Ev.Dtcs) = 0 then
+          FDtcRows := [TArray<string>.Create('None', '', 'No trouble codes reported', '')];
+        grdDtcs.RowCount := Length(FDtcRows);
+        grdDtcs.Refresh;
+        tcMain.ActiveTab := tiVehicle;
       end;
     eeLogStarted:
       begin
         FLastLogFile := Ev.Text;
         FLogging := True;
         FLogPaused := False;
-        SetStatus(PanelLog, 'Logging to ' + ExtractFileName(Ev.Text));
+        SetStatus(lblStatLog, 'Logging to ' + ExtractFileName(Ev.Text));
         UpdateControls;
       end;
     eeControl:
@@ -1159,7 +1472,7 @@ begin
           AddMessage('Log saved: ' + FLastLogFile + '  (F7 opens it in the log viewer)');
         FLogging := False;
         FLogPaused := False;
-        SetStatus(PanelLog, '');
+        SetStatus(lblStatLog, '');
         UpdateControls;
       end;
   end;
@@ -1177,13 +1490,13 @@ begin
   btnConnect.Enabled := FState = esDisconnected;
   btnDisconnect.Enabled := Connected;
   btnStartScan.Enabled := Idle or (FState = esScanning);
-  btnStartScan.Caption := IfThen(FState = esScanning, 'Restart scan', 'Start scan');
+  btnStartScan.Text := IfThen(FState = esScanning, 'Restart scan', 'Start scan');
   btnStopScan.Enabled := FState in [esScanning, esBusy];
-  btnStopScan.Caption := IfThen(FState = esBusy, 'Cancel', 'Stop scan');
+  btnStopScan.Text := IfThen(FState = esBusy, 'Cancel', 'Stop scan');
   btnLog.Enabled := FState = esScanning;
-  btnLog.Caption := IfThen(FLogging, 'Stop log (F8)', 'Start log (F8)');
+  btnLog.Text := IfThen(FLogging, 'Stop log', 'Start log') + IfThen(IsMobile, '', ' (F8)');
   btnPause.Enabled := FLogging;
-  btnPause.Caption := IfThen(FLogPaused, 'Resume (F9)', 'Pause (F9)');
+  btnPause.Text := IfThen(FLogPaused, 'Resume (F9)', 'Pause (F9)');
   btnTestPids.Enabled := Idle;
   btnEditPids.Enabled := FState in [esDisconnected, esConnected];
   btnReadInfo.Enabled := Idle;
@@ -1194,33 +1507,36 @@ begin
   btnDiscoverPids.Enabled := Idle;
   UpdateControlPanel;
   btnLiveTest.Enabled := FTestMode or not (FState in [esScanning, esBusy]);
-  btnLiveTest.Caption := IfThen(FTestMode, 'Stop test', 'Test display');
+  btnLiveTest.Text := IfThen(FTestMode, 'Stop test', 'Test display');
   btnDashTest.Enabled := btnLiveTest.Enabled;
-  btnDashTest.Caption := btnLiveTest.Caption;
-  if FState = esScanning then
-    pnlTop.Color := $00D8F0D8
+  btnDashTest.Text := btnLiveTest.Text;
+  if FLogging and FLogPaused then
+    pnlTop.Fill.Color := $FFFFE0B0
+  else if FLogging then
+    pnlTop.Fill.Color := $FF90EE90
+  else if FState = esScanning then
+    pnlTop.Fill.Color := $FFD8F0D8
   else
-    pnlTop.Color := clBtnFace;
-  if FLogging then
-    pnlTop.Color := IfThen(FLogPaused, $00B0E0FF, $0090EE90);
+    pnlTop.Fill.Color := TopBarColor;
 end;
 
 procedure TMainForm.tmrRefreshTimer(Sender: TObject);
 var
   I: Integer;
   V: Double;
-  Phase: Boolean;
+  Phase, Repaint: Boolean;
 begin
   FlushMessages;
   if not LiveActive then
     Exit;
+  Repaint := False;
   Phase := FlashPhase;
   if Phase <> FFlashOn then
   begin
     FFlashOn := Phase;
     for I := 0 to High(FRowStyles) do
       if FRowStyles[I].Flash then
-        InvalidateLiveRow(I);
+        Repaint := True;
   end;
   if FTestMode then
     FLive := TestSnapshot
@@ -1244,17 +1560,19 @@ begin
     UpdateControls;
   end;
   if FTestMode then
-    SetStatus(PanelRate, 'Test data')
+    SetStatus(lblStatRate, 'Test data')
   else
-    SetStatus(PanelRate, Format('%.1f updates/s', [FLive.CyclesPerSecond]));
+    SetStatus(lblStatRate, Format('%.1f updates/s', [FLive.CyclesPerSecond]));
   if FLive.Logging then
-    SetStatus(PanelLog, Format('Logging: %d rows%s', [FLive.LogRows, IfThen(FLive.LogPaused, ' (paused)', '')]));
+    SetStatus(lblStatLog, Format('Logging: %d rows%s', [FLive.LogRows, IfThen(FLive.LogPaused, ' (paused)', '')]));
   if FLive.Cycles <> FShownCycles then
   begin
     FShownCycles := FLive.Cycles;
     UpdateAlerts;
     RefreshLiveRows;
-  end;
+  end
+  else if Repaint then
+    grdLive.Refresh;
   RefreshDashboard;
 end;
 
@@ -1265,8 +1583,8 @@ begin
   FLive := Default(TLiveSnapshot);
   SetLength(FMin, Length(FLiveIds));
   SetLength(FMax, Length(FLiveIds));
-  btnResetMinMax.Click;
-  grdLive.RowCount := Max(2, Length(FLiveIds) + 1);
+  btnResetMinMaxClick(nil);
+  grdLive.RowCount := Length(FLiveIds);
   FShownRows := nil;
   FShownCycles := -1;
   FRowStyles := nil;
@@ -1274,9 +1592,9 @@ begin
   ApplyRowHeights;
   RefreshDashboard;
   lblLiveHint.Visible := False;
-  if pcMain.ActivePage <> tsDashboard then
-    pcMain.ActivePage := tsLive;
-  grdLive.Invalidate;
+  if tcMain.ActiveTab <> tiDashboard then
+    tcMain.ActiveTab := tiLive;
+  grdLive.Refresh;
 end;
 
 function TMainForm.LiveActive: Boolean;
@@ -1355,7 +1673,7 @@ begin
       FTestHi[I] := Hi;
     end;
     FTestMode := True;
-    FTestStart := GetTickCount64;
+    FTestStart := TThread.GetTickCount64;
     FRejected.Clear;
     SetupLiveRows(Ids.ToArray);
   finally
@@ -1373,9 +1691,9 @@ begin
   FTestMode := False;
   StopAlertSound;
   pnlNotice.Visible := False;
-  SetStatus(PanelRate, '');
+  SetStatus(lblStatRate, '');
   AddMessage('Test display stopped');
-  grdLive.Invalidate;
+  grdLive.Refresh;
   RefreshDashboard;
   UpdateControls;
 end;
@@ -1390,7 +1708,7 @@ begin
   Result.PidIds := FLiveIds;
   SetLength(Result.Values, Length(FLiveIds));
   SetLength(Result.Text, Length(FLiveIds));
-  T := (GetTickCount64 - FTestStart) / 1000;
+  T := (TThread.GetTickCount64 - FTestStart) / 1000;
   for I := 0 to High(FLiveIds) do
   begin
     P := FCatalog.FindById(FLiveIds[I]);
@@ -1411,40 +1729,25 @@ end;
 
 function TMainForm.FlashPhase: Boolean;
 begin
-  Result := (GetTickCount64 div 400) mod 2 = 0;
+  Result := (TThread.GetTickCount64 div 400) mod 2 = 0;
 end;
 
-procedure TMainForm.InvalidateLiveRow(Idx: Integer);
-var
-  R, R2: TRect;
-begin
-  R := grdLive.CellRect(ColName, Idx + 1);
-  R2 := grdLive.CellRect(LastLiveCol, Idx + 1);
-  if IsRectEmpty(R) and IsRectEmpty(R2) then
-    Exit; // scrolled out of view
-  UnionRect(R, R, R2);
-  InvalidateRect(grdLive.Handle, @R, False);
-end;
-
-{ Works out each live row's display level, repaints rows whose look changed,
-  and plays / announces alerts. }
+{ Works out each live row's display level and plays / announces alerts. }
 procedure TMainForm.UpdateAlerts;
 var
   I, Id: Integer;
   V: Double;
-  S, Old: TResolvedStyle;
+  S: TResolvedStyle;
   D: TPidDisplay;
   L: TDisplayLevel;
   Change: TAlertChange;
   Sounded: Boolean;
+  Now_: UInt64;
 begin
   if Length(FRowStyles) <> Length(FLiveIds) then
-  begin
     SetLength(FRowStyles, Length(FLiveIds));
-    for I := 0 to High(FRowStyles) do
-      FRowStyles[I].Level := -2; // forces the first comparison to differ
-  end;
   Sounded := False;
+  Now_ := TThread.GetTickCount64;
   for I := 0 to High(FLiveIds) do
   begin
     Id := FLiveIds[I];
@@ -1452,18 +1755,15 @@ begin
     if (I <= High(FLive.Values)) and not FRejected.Contains(Id) then
       V := FLive.Values[I];
     S := FDisplay.Resolve(Id, V);
-    Old := FRowStyles[I];
     FRowStyles[I] := S;
-    if (S.Level <> Old.Level) or (S.RowColor <> Old.RowColor) or (S.TextColor <> Old.TextColor) then
-      InvalidateLiveRow(I);
     D := FDisplay.Find(Id);
     if (D = nil) or (S.Level < 0) then
     begin
-      FAlerts.Update(Id, -1, False, False, GetTickCount64);
+      FAlerts.Update(Id, -1, False, False, Now_);
       Continue;
     end;
     L := D.Levels[S.Level];
-    Change := FAlerts.Update(Id, S.Level, chkSound.Checked and (L.Sound <> asNone), L.RepeatSound, GetTickCount64);
+    Change := FAlerts.Update(Id, S.Level, chkSound.IsChecked and (L.Sound <> asNone), L.RepeatSound, Now_);
     if Change.PlaySound and not Sounded then
     begin
       Sounded := True; // one sound at a time; the first (top) row wins this tick
@@ -1476,19 +1776,18 @@ begin
   end;
 end;
 
+{ Rows of PIDs with a bigger font are taller. }
 procedure TMainForm.ApplyRowHeights;
 var
-  I, H: Integer;
+  I: Integer;
   D: TPidDisplay;
 begin
+  grdLive.ResetRowHeights;
   for I := 0 to High(FLiveIds) do
   begin
-    H := grdLive.DefaultRowHeight;
     D := FDisplay.Find(FLiveIds[I]);
     if (D <> nil) and (D.FontSize > 0) then
-      H := Max(H, MulDiv(ZoomPt(D.FontSize), CurrentPPI, 72) + ZoomPx(12));
-    if I + 1 < grdLive.RowCount then
-      grdLive.RowHeights[I + 1] := H;
+      grdLive.RowHeights[I] := Z(D.FontSize * PtToDip + 12);
   end;
 end;
 
@@ -1502,28 +1801,15 @@ end;
 
 { Live grid zoom and columns }
 
-const
-  ZoomSteps: array[0..8] of Integer = (75, 90, 100, 110, 125, 150, 175, 200, 250);
-
-function TMainForm.ZoomPx(N: Integer): Integer;
+function TMainForm.Z(N: Single): Single;
 begin
-  Result := MulDiv(N, CurrentPPI * FZoom, 96 * 100);
-end;
-
-function TMainForm.ZoomPt(Points: Integer): Integer;
-begin
-  Result := Max(6, Round(Points * FZoom / 100));
-end;
-
-function TMainForm.LastLiveCol: Integer;
-begin
-  Result := grdLive.ColCount - 1;
+  Result := N * FZoom / 100;
 end;
 
 procedure TMainForm.SetZoom(Percent: Integer);
 begin
   FZoom := EnsureRange(Percent, ZoomSteps[0], ZoomSteps[High(ZoomSteps)]);
-  lblZoom.Caption := IntToStr(FZoom) + '%';
+  lblZoom.Text := IntToStr(FZoom) + '%';
   btnZoomOut.Enabled := FZoom > ZoomSteps[0];
   btnZoomIn.Enabled := FZoom < ZoomSteps[High(ZoomSteps)];
   ApplyGridLayout;
@@ -1551,31 +1837,39 @@ begin
       end;
 end;
 
-{ Column widths, row heights and fonts follow the zoom; min / max are the
-  last two columns, so hiding them is just two columns fewer. }
+{ Column widths, row heights and fonts follow the zoom. }
 procedure TMainForm.ApplyGridLayout;
 begin
-  if FBaseRowHeight = 0 then
-    Exit; // called while the form is still loading
-  if chkMinMax.Checked then
-    grdLive.ColCount := ColMax + 1
-  else
-    grdLive.ColCount := ColUnits + 1;
-  grdLive.DefaultRowHeight := MulDiv(FBaseRowHeight, FZoom, 100); // resets every row height
-  grdLive.ColWidths[ColValue] := ZoomPx(140);
-  grdLive.ColWidths[ColUnits] := ZoomPx(80);
-  if chkMinMax.Checked then
+  if grdLive = nil then
+    Exit; // the form is still loading
+  grdLive.SetColumnVisible(ColMin, chkMinMax.IsChecked);
+  grdLive.SetColumnVisible(ColMax, chkMinMax.IsChecked);
+  grdLive.RowHeight := Z(30);
+  grdLive.HeaderHeight := Z(26);
+  grdLive.FontSize := Z(13);
+  grdLive.CellPadding := Z(6);
+  if IsMobile then
   begin
-    grdLive.ColWidths[ColMin] := ZoomPx(100);
-    grdLive.ColWidths[ColMax] := ZoomPx(100);
+    grdLive.SetColumnWidth(ColName, Z(120));
+    grdLive.SetColumnWidth(ColValue, Z(96));
+    grdLive.SetColumnWidth(ColUnits, Z(52));
+    grdLive.SetColumnWidth(ColMin, Z(64));
+    grdLive.SetColumnWidth(ColMax, Z(64));
+  end
+  else
+  begin
+    grdLive.SetColumnWidth(ColName, Z(160));
+    grdLive.SetColumnWidth(ColValue, Z(140));
+    grdLive.SetColumnWidth(ColUnits, Z(80));
+    grdLive.SetColumnWidth(ColMin, Z(100));
+    grdLive.SetColumnWidth(ColMax, Z(100));
   end;
   ApplyRowHeights;
   FShownRows := nil;
-  FormResize(nil);
-  grdLive.Invalidate;
+  grdLive.Refresh;
 end;
 
-procedure TMainForm.chkMinMaxClick(Sender: TObject);
+procedure TMainForm.chkMinMaxChange(Sender: TObject);
 begin
   ApplyGridLayout;
 end;
@@ -1596,142 +1890,107 @@ begin
 end;
 
 { Ctrl + mouse wheel over the live grid zooms it. }
-procedure TMainForm.FormMouseWheel(Sender: TObject; Shift: TShiftState; WheelDelta: Integer;
-  MousePos: TPoint; var Handled: Boolean);
+procedure TMainForm.LiveMouseWheel(Sender: TObject; Shift: TShiftState; WheelDelta: Integer; var Handled: Boolean);
 begin
-  if (ssCtrl in Shift) and (FindVCLWindow(Mouse.CursorPos) = grdLive) then
+  if ssCtrl in Shift then
   begin
     ZoomStep(Sign(WheelDelta));
     Handled := True;
   end;
 end;
 
-{ Repaints only the value/min/max cells whose text changed, without erasing
-  the background first (DrawCell paints every pixel of the cell itself).
-  Invalidating the whole grid ten times a second is what made it flicker. }
+{ Repaints the grid when any value / min / max text changed. }
 procedure TMainForm.RefreshLiveRows;
 var
   I: Integer;
   P: TPidDef;
   Shown: string;
-  R, R2: TRect;
+  Changed: Boolean;
 begin
   if Length(FShownRows) <> Length(FLiveIds) then
     SetLength(FShownRows, Length(FLiveIds));
+  Changed := False;
   for I := 0 to High(FLiveIds) do
   begin
     P := FCatalog.FindById(FLiveIds[I]);
     if (P = nil) or (I > High(FLive.Text)) then
       Continue;
-    Shown := FLive.Text[I] + #1 + P.FormatValue(FMin[I]) + #1 + P.FormatValue(FMax[I]);
-    if Shown = FShownRows[I] then
-      Continue;
-    FShownRows[I] := Shown;
-    R := grdLive.CellRect(ColValue, I + 1);
-    R2 := grdLive.CellRect(LastLiveCol, I + 1);
-    if IsRectEmpty(R) then
-      Continue; // row scrolled out of view
-    UnionRect(R, R, R2);
-    InvalidateRect(grdLive.Handle, @R, False);
+    Shown := FLive.Text[I] + #1 + P.FormatValue(FMin[I]) + #1 + P.FormatValue(FMax[I]) + #1 +
+      IntToStr(FRowStyles[I].Level);
+    if Shown <> FShownRows[I] then
+    begin
+      FShownRows[I] := Shown;
+      Changed := True;
+    end;
+  end;
+  if Changed or (Length(FRowStyles) > 0) then
+    grdLive.Refresh;
+end;
+
+procedure TMainForm.LiveGetText(Sender: TObject; Col, Row: Integer; var Text: string);
+var
+  P: TPidDef;
+begin
+  if Row > High(FLiveIds) then
+    Exit;
+  P := FCatalog.FindById(FLiveIds[Row]);
+  if P = nil then
+    Exit;
+  case Col of
+    ColName: Text := P.LongName;
+    ColValue:
+      if FRejected.Contains(P.Id) then
+        Text := 'rejected'
+      else if Row <= High(FLive.Text) then
+        Text := FLive.Text[Row];
+    ColUnits: Text := P.Units;
+    ColMin: if Row <= High(FMin) then Text := P.FormatValue(FMin[Row]);
+    ColMax: if Row <= High(FMax) then Text := P.FormatValue(FMax[Row]);
   end;
 end;
 
-procedure TMainForm.grdLiveDrawCell(Sender: TObject; ACol, ARow: Integer; Rect: TRect; State: TGridDrawState);
-const
-  Headers: array[0..4] of string = ('PID', 'Value', 'Units', 'Min', 'Max');
+procedure TMainForm.LiveGetStyle(Sender: TObject; Col, Row: Integer; var Style: TCellStyle);
 var
-  C: TCanvas;
-  Text: string;
   P: TPidDef;
-  Idx: Integer;
-  Flags: Cardinal;
-  R: TRect;
   V: Double;
-  Style: TResolvedStyle;
-  RowColor, TextColor: TColor;
+  S: TResolvedStyle;
+  RowColor, TextColor: TAlphaColor;
 begin
-  C := grdLive.Canvas;
-  R := Rect;
-  if ARow = 0 then
-  begin
-    C.Brush.Color := clBtnFace;
-    C.FillRect(R);
-    C.Font.Style := [fsBold];
-    C.Font.Size := ZoomPt(9);
-    C.Font.Color := clWindowText;
-    InflateRect(R, -6, 0);
-    Flags := DT_SINGLELINE or DT_VCENTER;
-    if ACol in [ColValue, ColMin, ColMax] then
-      Flags := Flags or DT_RIGHT;
-    DrawText(C.Handle, PChar(Headers[ACol]), -1, R, Flags);
+  if Row > High(FLiveIds) then
     Exit;
-  end;
-
-  Idx := ARow - 1;
-  RowColor := clNone;
-  TextColor := clNone;
-  Style := Default(TResolvedStyle);
-  P := nil;
-  if Idx <= High(FLiveIds) then
-    P := FCatalog.FindById(FLiveIds[Idx]);
-  if P <> nil then
-  begin
-    V := NaN;
-    if (Idx <= High(FLive.Values)) and not FRejected.Contains(P.Id) then
-      V := FLive.Values[Idx];
-    Style := FDisplay.Resolve(P.Id, V);
-    // Rows only flash while scanning; otherwise they keep the level's colours.
-    Style.Colors(FFlashOn or not LiveActive, RowColor, TextColor);
-  end;
-  if RowColor <> clNone then
-    C.Brush.Color := RowColor
-  else if Odd(ARow) then
-    C.Brush.Color := clWindow
-  else
-    C.Brush.Color := $00F7F3F0;
-  C.FillRect(R);
+  P := FCatalog.FindById(FLiveIds[Row]);
   if P = nil then
     Exit;
-
-  C.Font.Style := [];
-  C.Font.Size := ZoomPt(10);
-  if TextColor <> clNone then
-    C.Font.Color := TextColor
-  else
-    C.Font.Color := clWindowText;
-  Flags := DT_SINGLELINE or DT_VCENTER or DT_END_ELLIPSIS;
-  Text := '';
-  case ACol of
-    ColName: Text := P.LongName;
+  V := NaN;
+  if (Row <= High(FLive.Values)) and not FRejected.Contains(P.Id) then
+    V := FLive.Values[Row];
+  S := FDisplay.Resolve(P.Id, V);
+  // Rows only flash while scanning; otherwise they keep the level's colours.
+  S.Colors(FFlashOn or not LiveActive, RowColor, TextColor);
+  Style.Back := RowColor;
+  Style.Fore := TextColor;
+  case Col of
     ColValue:
+      if FRejected.Contains(P.Id) then
+        Style.Fore := $FF808080
+      else
       begin
-        if FRejected.Contains(P.Id) then
-        begin
-          Text := 'rejected';
-          C.Font.Color := clGrayText;
-        end
-        else if Idx <= High(FLive.Text) then
-        begin
-          Text := FLive.Text[Idx];
-          C.Font.Style := [fsBold];
-          C.Font.Size := ZoomPt(IfThen(Style.FontSize > 0, Style.FontSize, 14));
-        end;
-        Flags := Flags or DT_RIGHT;
-      end;
-    ColUnits: Text := P.Units;
-    ColMin, ColMax:
-      begin
-        if ACol = ColMin then
-          Text := P.FormatValue(FMin[Idx])
+        Style.Bold := True;
+        if S.FontSize > 0 then
+          Style.FontSize := Z(S.FontSize * PtToDip)
         else
-          Text := P.FormatValue(FMax[Idx]);
-        if TextColor = clNone then
-          C.Font.Color := clGrayText;
-        Flags := Flags or DT_RIGHT;
+          Style.FontSize := Z(14 * PtToDip);
       end;
+    ColMin, ColMax:
+      if TextColor = NoColor then
+        Style.Fore := $FF808080;
   end;
-  InflateRect(R, -ZoomPx(6), 0);
-  DrawText(C.Handle, PChar(Text), -1, R, Flags);
+end;
+
+procedure TMainForm.LiveDblClick(Sender: TObject; Row: Integer);
+begin
+  if Row <= High(FLiveIds) then
+    EditDisplay(FLiveIds[Row]);
 end;
 
 procedure TMainForm.btnResetMinMaxClick(Sender: TObject);
@@ -1744,7 +2003,72 @@ begin
     FMax[I] := NaN;
   end;
   FShownRows := nil;
-  grdLive.Invalidate;
+  grdLive.Refresh;
+end;
+
+{ Grid menus (right-click on a PC, long-press on a phone) }
+
+procedure TMainForm.PreparePidMenu(PidId: Integer);
+var
+  Name: string;
+begin
+  FMenuPidId := PidId;
+  miPidDisplay.Enabled := FMenuPidId >= 0;
+  miPidGauge.Enabled := FMenuPidId >= 0;
+  if FMenuPidId >= 0 then
+    Name := ' for ' + StringReplace(PidName(FMenuPidId), '&', '&&', [rfReplaceAll])
+  else
+    Name := '';
+  miPidDisplay.Text := 'Display && alerts' + Name + '...';
+end;
+
+function GridPidAt(Form: TMainForm; Grid: TDataGrid; Row: Integer): Integer;
+begin
+  Result := -1;
+  if Row < 0 then
+    Exit;
+  if (Grid = Form.grdLive) and (Row <= High(Form.FLiveIds)) then
+    Result := Form.FLiveIds[Row]
+  else if (Grid = Form.grdPids) and (Row <= High(Form.FPidRows)) and (Form.FPidRows[Row] >= 0) then
+    Result := Form.FPidRows[Row];
+end;
+
+procedure TMainForm.GridMouseDown(Sender: TObject; Button: TMouseButton; Shift: TShiftState; X, Y: Single);
+begin
+  if Button = TMouseButton.mbRight then
+    PreparePidMenu(GridPidAt(Self, TDataGrid(Sender), TDataGrid(Sender).RowAt(Y)));
+end;
+
+procedure TMainForm.GridGesture(Sender: TObject; const EventInfo: TGestureEventInfo; var Handled: Boolean);
+var
+  Grid: TDataGrid;
+  Local, Scr: TPointF;
+  Row: Integer;
+begin
+  if EventInfo.GestureID <> igiLongTap then
+    Exit;
+  Grid := TDataGrid(Sender);
+  Local := Grid.AbsoluteToLocal(EventInfo.Location);
+  Row := Grid.RowAt(Local.Y);
+  if Row < 0 then
+    Exit;
+  Grid.ItemIndex := Row;
+  PreparePidMenu(GridPidAt(Self, Grid, Row));
+  if FMenuPidId < 0 then
+    Exit;
+  Scr := Grid.LocalToScreen(Local);
+  pmPid.Popup(Scr.X, Scr.Y);
+  Handled := True;
+end;
+
+procedure TMainForm.miPidDisplayClick(Sender: TObject);
+begin
+  EditDisplay(FMenuPidId);
+end;
+
+procedure TMainForm.miPidGaugeClick(Sender: TObject);
+begin
+  AddGauge(FMenuPidId);
 end;
 
 { Vehicle / tools }
@@ -1756,14 +2080,24 @@ end;
 
 procedure TMainForm.btnReadDtcsClick(Sender: TObject);
 begin
-  lvDtcs.Items.Clear;
+  FDtcRows := nil;
+  grdDtcs.RowCount := 0;
   Post(ecReadDtcs);
 end;
 
 procedure TMainForm.btnClearDtcsClick(Sender: TObject);
 begin
-  if MessageDlg('Clear trouble codes in the PCM?', mtConfirmation, [mbYes, mbNo], 0) = mrYes then
-    Post(ecClearDtcs);
+  Confirm('Clear trouble codes in the PCM?',
+    procedure
+    begin
+      Post(ecClearDtcs);
+    end);
+end;
+
+procedure TMainForm.DtcsGetText(Sender: TObject; Col, Row: Integer; var Text: string);
+begin
+  if (Row <= High(FDtcRows)) and (Col <= High(FDtcRows[Row])) then
+    Text := FDtcRows[Row][Col];
 end;
 
 { Real-time controls }
@@ -1808,66 +2142,140 @@ begin
     FControls.SaveToFile(ControlsFile);
   except
     on E: Exception do
-      MessageDlg('Could not save the real-time controls: ' + E.Message, mtWarning, [mbOK], 0);
+      ShowWarning('Could not save the real-time controls: ' + E.Message);
   end;
+end;
+
+function GroupOf(C: TControlDef): string;
+begin
+  Result := IfThen(C.Group = '', 'Other', C.Group);
 end;
 
 procedure TMainForm.FillControls(const Select: string);
 var
-  I: Integer;
-  C: TControlDef;
-  Item: TListItem;
+  I, J: Integer;
   Groups: TStringList;
-  G, Keep, Res: string;
+  Keep: string;
 begin
   Keep := Select;
   if (Keep = '') and (SelectedControl <> nil) then
     Keep := SelectedControl.Name;
+  FCtlRows := nil;
+  FCtlGroups := nil;
   Groups := TStringList.Create;
-  lvControls.Items.BeginUpdate;
   try
-    lvControls.Items.Clear;
-    lvControls.Groups.Clear;
+    // Groups in order of first appearance, controls under their group.
     for I := 0 to FControls.Count - 1 do
+      if Groups.IndexOf(GroupOf(FControls[I])) < 0 then
+        Groups.Add(GroupOf(FControls[I]));
+    for J := 0 to Groups.Count - 1 do
     begin
-      G := IfThen(FControls[I].Group = '', 'Other', FControls[I].Group);
-      if Groups.IndexOf(G) < 0 then
-        Groups.AddObject(G, TObject(lvControls.Groups.Add.GroupID));
-      lvControls.Groups[Groups.IndexOf(G)].Header := G;
-    end;
-    for I := 0 to FControls.Count - 1 do
-    begin
-      C := FControls[I];
-      Item := lvControls.Items.Add;
-      Item.Caption := C.Name;
-      Item.SubItems.Add(ControlKindCaptions[C.Kind]);
-      Item.SubItems.Add(ModuleName(C.Module) + ': ' + C.OnText);
-      if C.Problem <> '' then
-        Res := 'Needs fixing: ' + C.Problem
-      else if not FControlResult.TryGetValue(C.Name, Res) then
-        Res := '';
-      if FControlActive.ContainsKey(C.Name) and FControlActive[C.Name] then
-        Res := 'ACTIVE  ' + Res;
-      Item.SubItems.Add(Res);
-      Item.Data := C;
-      Item.GroupID := Integer(Groups.Objects[Groups.IndexOf(IfThen(C.Group = '', 'Other', C.Group))]);
-      if SameText(C.Name, Keep) then
-        Item.Selected := True;
+      FCtlRows := FCtlRows + [nil];
+      FCtlGroups := FCtlGroups + [Groups[J]];
+      for I := 0 to FControls.Count - 1 do
+        if GroupOf(FControls[I]) = Groups[J] then
+        begin
+          FCtlRows := FCtlRows + [FControls[I]];
+          FCtlGroups := FCtlGroups + [''];
+        end;
     end;
   finally
-    lvControls.Items.EndUpdate;
     Groups.Free;
   end;
+  grdControls.OnSelect := nil;
+  try
+    grdControls.RowCount := Length(FCtlRows);
+    grdControls.ItemIndex := -1;
+    for I := 0 to High(FCtlRows) do
+      if (FCtlRows[I] <> nil) and SameText(FCtlRows[I].Name, Keep) then
+        grdControls.ItemIndex := I;
+  finally
+    grdControls.OnSelect := ControlsSelect;
+  end;
+  grdControls.Refresh;
   UpdateControlPanel;
 end;
 
-function TMainForm.SelectedControl: TControlDef;
+procedure TMainForm.ControlsIsGroup(Sender: TObject; Row: Integer; var IsGroup: Boolean);
 begin
-  if (lvControls.Selected <> nil) and (FControls <> nil) and
-    (FControls.IndexOfName(TControlDef(lvControls.Selected.Data).Name) >= 0) then
-    Result := TControlDef(lvControls.Selected.Data)
-  else
-    Result := nil;
+  IsGroup := (Row <= High(FCtlRows)) and (FCtlRows[Row] = nil);
+end;
+
+procedure TMainForm.ControlsGetText(Sender: TObject; Col, Row: Integer; var Text: string);
+var
+  C: TControlDef;
+  Res: string;
+begin
+  if Row > High(FCtlRows) then
+    Exit;
+  C := FCtlRows[Row];
+  if C = nil then
+  begin
+    if Col = 0 then
+      Text := FCtlGroups[Row];
+    Exit;
+  end;
+  case Col of
+    0: Text := C.Name;
+    1: Text := ControlKindCaptions[C.Kind];
+    2: Text := ModuleName(C.Module) + ': ' + C.OnText;
+    3:
+      begin
+        if C.Problem <> '' then
+          Res := 'Needs fixing: ' + C.Problem
+        else if not FControlResult.TryGetValue(C.Name, Res) then
+          Res := '';
+        if ControlActive(C) then
+          Res := 'ACTIVE  ' + Res;
+        Text := Res;
+      end;
+  end;
+end;
+
+procedure TMainForm.ControlsGetStyle(Sender: TObject; Col, Row: Integer; var Style: TCellStyle);
+var
+  C: TControlDef;
+begin
+  if Row > High(FCtlRows) then
+    Exit;
+  C := FCtlRows[Row];
+  if C = nil then
+    Exit;
+  if ControlActive(C) then
+  begin
+    Style.Back := $FFFFE680; // amber: something is being controlled
+    Style.Bold := True;
+  end
+  else if C.Problem <> '' then
+    Style.Fore := $FF808080;
+end;
+
+procedure TMainForm.ControlsSelect(Sender: TObject);
+begin
+  UpdateControlPanel;
+end;
+
+procedure TMainForm.ControlsDblClick(Sender: TObject; Row: Integer);
+begin
+  btnCtlEditClick(nil);
+end;
+
+function TMainForm.SelectedControl: TControlDef;
+var
+  Row: Integer;
+begin
+  Result := nil;
+  if (grdControls = nil) or (FControls = nil) then
+    Exit;
+  Row := grdControls.ItemIndex;
+  if (Row >= 0) and (Row <= High(FCtlRows)) and (FCtlRows[Row] <> nil) and
+    (FControls.IndexOfName(FCtlRows[Row].Name) >= 0) then
+    Result := FCtlRows[Row];
+end;
+
+function TMainForm.ControlActive(C: TControlDef): Boolean;
+begin
+  Result := (C <> nil) and FControlActive.ContainsKey(C.Name) and FControlActive[C.Name];
 end;
 
 function TMainForm.ControlsUsable: Boolean;
@@ -1879,13 +2287,13 @@ end;
 procedure TMainForm.UpdateControlPanel;
 var
   C: TControlDef;
-  Ok, Active: Boolean;
+  Ok: Boolean;
+  B: TButton;
 begin
-  if FControls = nil then
+  if (FControls = nil) or (grdControls = nil) then
     Exit;
   C := SelectedControl;
   Ok := (C <> nil) and (C.Problem = '') and ControlsUsable;
-  Active := (C <> nil) and FControlActive.ContainsKey(C.Name) and FControlActive[C.Name];
   btnCtlSend.Visible := (C <> nil) and (C.Kind = ckAction);
   btnCtlOn.Visible := (C <> nil) and (C.Kind = ckToggle);
   btnCtlHold.Visible := (C <> nil) and (C.Kind = ckHold);
@@ -1894,69 +2302,43 @@ begin
   lblCtlUnits.Visible := tbCtlValue.Visible;
   btnCtlApply.Visible := tbCtlValue.Visible;
   btnCtlOff.Visible := (C <> nil) and (C.Kind in [ckToggle, ckValue]);
-  if (C <> nil) and (C.Kind = ckValue) then
-  begin
-    btnCtlOff.Left := btnCtlApply.Left + btnCtlApply.Width + 6;
-    btnCtlOff.Caption := 'Release';
-  end
-  else
-  begin
-    btnCtlOff.Left := btnCtlOn.Left + btnCtlOn.Width + 6;
-    btnCtlOff.Caption := 'Off';
-  end;
-  for var B in TArray<TButton>.Create(btnCtlSend, btnCtlOn, btnCtlHold, btnCtlApply, btnCtlOff) do
+  btnCtlOff.Text := IfThen((C <> nil) and (C.Kind = ckValue), 'Release', 'Off');
+  for B in TArray<TButton>.Create(btnCtlSend, btnCtlOn, btnCtlHold, btnCtlApply, btnCtlOff) do
     B.Enabled := Ok;
   tbCtlValue.Enabled := Ok;
   btnCtlEdit.Enabled := C <> nil;
   btnCtlDup.Enabled := C <> nil;
   btnCtlDelete.Enabled := C <> nil;
   btnReleaseAll.Enabled := ControlsUsable;
+  TThread.ForceQueue(nil, FitFlowHeights);
   if C = nil then
   begin
-    lblCtlName.Caption := IfThen(FControls.Count = 0, 'No controls yet - press Add', 'Select a control');
-    lblCtlNotes.Caption := '';
+    lblCtlName.Text := IfThen(FControls.Count = 0, 'No controls yet - press Add', 'Select a control');
+    lblCtlNotes.Text := '';
     Exit;
   end;
-  lblCtlName.Caption := C.Name + IfThen(Active, '   (active)', '');
+  lblCtlName.Text := C.Name + IfThen(ControlActive(C), '   (active)', '');
   if C.Problem <> '' then
-    lblCtlNotes.Caption := 'Needs fixing: ' + C.Problem
+    lblCtlNotes.Text := 'Needs fixing: ' + C.Problem
   else if not ControlsUsable then
-    lblCtlNotes.Caption := 'Connect first. ' + C.Notes
+    lblCtlNotes.Text := 'Connect first. ' + C.Notes
   else
-    lblCtlNotes.Caption := C.Notes;
+    lblCtlNotes.Text := C.Notes;
   if C.Kind = ckValue then
   begin
-    tbCtlValue.OnChange := nil;
-    tbCtlValue.Max := Max(1, Round((C.MaxValue - C.MinValue) / C.Step));
-    tbCtlValue.OnChange := tbCtlValueChange;
-    lblCtlUnits.Caption := C.Units;
-    if edtCtlValue.Tag <> NativeInt(C) then
+    lblCtlUnits.Text := C.Units;
+    if FValueControl <> C then
     begin
-      edtCtlValue.Tag := NativeInt(C);
-      tbCtlValue.Position := 0;
+      FValueControl := C;
+      tbCtlValue.OnChange := nil;
+      tbCtlValue.Min := 0;
+      tbCtlValue.Max := Max(1, Round((C.MaxValue - C.MinValue) / C.Step));
+      tbCtlValue.Frequency := 1;
+      tbCtlValue.Value := 0;
+      tbCtlValue.OnChange := tbCtlValueChange;
       tbCtlValueChange(nil);
     end;
   end;
-end;
-
-procedure TMainForm.lvControlsSelectItem(Sender: TObject; Item: TListItem; Selected: Boolean);
-begin
-  UpdateControlPanel;
-end;
-
-procedure TMainForm.lvControlsCustomDrawItem(Sender: TCustomListView; Item: TListItem; State: TCustomDrawState;
-  var DefaultDraw: Boolean);
-var
-  C: TControlDef;
-begin
-  C := TControlDef(Item.Data);
-  if (C <> nil) and FControlActive.ContainsKey(C.Name) and FControlActive[C.Name] then
-  begin
-    Sender.Canvas.Brush.Color := $0080E6FF; // amber: something is being controlled
-    Sender.Canvas.Font.Style := [fsBold];
-  end
-  else if (C <> nil) and (C.Problem <> '') then
-    Sender.Canvas.Font.Color := clGrayText;
 end;
 
 procedure TMainForm.SendControl(C: TControlDef; TurnOn: Boolean; const Value: Double);
@@ -1996,10 +2378,16 @@ var
   C: TControlDef;
 begin
   C := SelectedControl;
-  if (C <> nil) and (C.Confirm <> '') and
-    (MessageDlg(C.Confirm, mtConfirmation, [mbYes, mbNo], 0) <> mrYes) then
+  if C = nil then
     Exit;
-  SendControl(C, True);
+  if C.Confirm <> '' then
+    Confirm(C.Confirm,
+      procedure
+      begin
+        SendControl(C, True);
+      end)
+  else
+    SendControl(C, True);
 end;
 
 procedure TMainForm.btnCtlOnClick(Sender: TObject);
@@ -2012,27 +2400,47 @@ begin
   SendControl(SelectedControl, False);
 end;
 
-procedure TMainForm.btnCtlHoldMouseDown(Sender: TObject; Button: TMouseButton; Shift: TShiftState; X, Y: Integer);
+{ "Hold to run": on while the button is pressed. A control with a question
+  asks it once (per session) on the first press; then press and hold. }
+procedure TMainForm.btnCtlHoldMouseDown(Sender: TObject; Button: TMouseButton; Shift: TShiftState; X, Y: Single);
 var
   C: TControlDef;
 begin
   C := SelectedControl;
-  if (Button <> mbLeft) or (C = nil) or not btnCtlHold.Enabled then
+  if (Button <> TMouseButton.mbLeft) or (C = nil) or not btnCtlHold.Enabled then
     Exit;
-  if (C.Confirm <> '') and (MessageDlg(C.Confirm, mtConfirmation, [mbYes, mbNo], 0) <> mrYes) then
+  if (C.Confirm <> '') and not FConfirmed.ContainsKey(C.Name) then
+  begin
+    Confirm(C.Confirm,
+      procedure
+      begin
+        FConfirmed.AddOrSetValue(C.Name, True);
+        ShowNotice('Now press and hold "Hold to run"', False);
+      end);
     Exit;
+  end;
   FHolding := True;
-  btnCtlHold.Caption := 'Running - let go to stop';
+  btnCtlHold.Text := 'Running - let go to stop';
   SendControl(C, True);
 end;
 
-procedure TMainForm.btnCtlHoldMouseUp(Sender: TObject; Button: TMouseButton; Shift: TShiftState; X, Y: Integer);
+procedure TMainForm.StopHolding;
 begin
   if not FHolding then
     Exit;
   FHolding := False;
-  btnCtlHold.Caption := 'Hold to run';
+  btnCtlHold.Text := 'Hold to run';
   SendControl(SelectedControl, False);
+end;
+
+procedure TMainForm.btnCtlHoldMouseUp(Sender: TObject; Button: TMouseButton; Shift: TShiftState; X, Y: Single);
+begin
+  StopHolding;
+end;
+
+procedure TMainForm.btnCtlHoldMouseLeave(Sender: TObject);
+begin
+  StopHolding;
 end;
 
 procedure TMainForm.tbCtlValueChange(Sender: TObject);
@@ -2042,7 +2450,7 @@ begin
   C := SelectedControl;
   if (C = nil) or (C.Kind <> ckValue) then
     Exit;
-  edtCtlValue.Text := FormatFloat('0.###', C.MinValue + tbCtlValue.Position * C.Step);
+  edtCtlValue.Text := FormatFloat('0.###', C.MinValue + Round(tbCtlValue.Value) * C.Step);
 end;
 
 procedure TMainForm.btnCtlApplyClick(Sender: TObject);
@@ -2059,10 +2467,14 @@ begin
       FormatFloat('0.###', C.MaxValue)]), True);
     Exit;
   end;
-  if (C.Confirm <> '') and not (FControlActive.ContainsKey(C.Name) and FControlActive[C.Name]) and
-    (MessageDlg(C.Confirm, mtConfirmation, [mbYes, mbNo], 0) <> mrYes) then
-    Exit;
-  SendControl(C, True, V);
+  if (C.Confirm <> '') and not ControlActive(C) then
+    Confirm(C.Confirm,
+      procedure
+      begin
+        SendControl(C, True, V);
+      end)
+  else
+    SendControl(C, True, V);
 end;
 
 procedure TMainForm.btnReleaseAllClick(Sender: TObject);
@@ -2076,12 +2488,23 @@ var
   Groups: TStringList;
   I: Integer;
 begin
-  if (C <> nil) and FControlActive.ContainsKey(C.Name) and FControlActive[C.Name] then
+  if ControlActive(C) then
   begin
     ShowNotice('Release "' + C.Name + '" before changing it', True);
     Exit;
   end;
   Work := TControlDef.Create;
+  if C <> nil then
+    Work.Assign(C);
+  if IsNew and (C <> nil) then
+  begin
+    Work.Name := C.Name + ' (copy)';
+    Work.BuiltIn := False;
+  end;
+  if IsNew then
+    Original := nil
+  else
+    Original := C;
   Groups := TStringList.Create;
   try
     Groups.Sorted := True;
@@ -2089,33 +2512,28 @@ begin
     for I := 0 to FControls.Count - 1 do
       if FControls[I].Group <> '' then
         Groups.Add(FControls[I].Group);
-    if C <> nil then
-      Work.Assign(C);
-    if IsNew and (C <> nil) then
-    begin
-      Work.Name := C.Name + ' (copy)';
-      Work.BuiltIn := False;
-    end;
-    if IsNew then
-      Original := nil
-    else
-      Original := C;
-    if not TControlEditorForm.Execute(Work, Groups, FControls, Original) then
-      Exit;
-    if IsNew then
-    begin
-      FControls.Add(Work);
-      Work := nil;
-      FillControls(FControls[FControls.Count - 1].Name);
-    end
-    else
-    begin
-      C.Assign(Work);
-      FillControls(C.Name);
-    end;
-    SaveControls;
+    TControlEditorForm.Execute(Work, Groups, FControls, Original,
+      procedure(Ok: Boolean)
+      begin
+        if not Ok then
+        begin
+          Work.Free;
+          Exit;
+        end;
+        if IsNew then
+        begin
+          FControls.Add(Work);
+          FillControls(Work.Name);
+        end
+        else
+        begin
+          C.Assign(Work);
+          Work.Free;
+          FillControls(C.Name);
+        end;
+        SaveControls;
+      end);
   finally
-    Work.Free;
     Groups.Free;
   end;
 end;
@@ -2144,16 +2562,20 @@ begin
   C := SelectedControl;
   if C = nil then
     Exit;
-  if FControlActive.ContainsKey(C.Name) and FControlActive[C.Name] then
+  if ControlActive(C) then
   begin
     ShowNotice('Release "' + C.Name + '" before deleting it', True);
     Exit;
   end;
-  if MessageDlg(Format('Delete the control "%s"?', [C.Name]), mtConfirmation, [mbYes, mbNo], 0) <> mrYes then
-    Exit;
-  FControls.Delete(FControls.IndexOfName(C.Name));
-  SaveControls;
-  FillControls('');
+  Confirm(Format('Delete the control "%s"?', [C.Name]),
+    procedure
+    begin
+      FControls.Delete(FControls.IndexOfName(C.Name));
+      if FValueControl = C then
+        FValueControl := nil;
+      SaveControls;
+      FillControls('');
+    end);
 end;
 
 procedure TMainForm.btnCtlRestoreClick(Sender: TObject);
@@ -2180,7 +2602,6 @@ end;
 
 procedure TMainForm.btnWriteVinClick(Sender: TObject);
 var
-  Cmd: TEngineCommand;
   Vin: string;
 begin
   Vin := UpperCase(Trim(edtNewVin.Text));
@@ -2189,27 +2610,30 @@ begin
     ShowNotice('A VIN is 17 characters, A-Z and 0-9', True);
     Exit;
   end;
-  if MessageDlg(Format('Write VIN %s to the PCM?', [Vin]), mtWarning, [mbYes, mbNo], 0) <> mrYes then
-    Exit;
-  Cmd := Command(ecWriteVin);
-  Cmd.Text := Vin;
-  Post(Cmd);
+  Confirm(Format('Write VIN %s to the PCM?', [Vin]),
+    procedure
+    var
+      Cmd: TEngineCommand;
+    begin
+      Cmd := Command(ecWriteVin);
+      Cmd.Text := Vin;
+      Post(Cmd);
+    end);
 end;
 
 procedure TMainForm.btnBrowseLogFolderClick(Sender: TObject);
+{$IFDEF MSWINDOWS}
 var
-  Dlg: TFileOpenDialog;
+  Dir: string;
 begin
-  Dlg := TFileOpenDialog.Create(Self);
-  try
-    Dlg.Options := [fdoPickFolders, fdoPathMustExist];
-    Dlg.DefaultFolder := LogFolder;
-    if Dlg.Execute then
-      edtLogFolder.Text := Dlg.FileName;
-  finally
-    Dlg.Free;
-  end;
+  Dir := LogFolder;
+  if SelectDirectory('Log folder', '', Dir) then
+    edtLogFolder.Text := Dir;
 end;
+{$ELSE}
+begin
+end;
+{$ENDIF}
 
 procedure TMainForm.btnSendRawClick(Sender: TObject);
 var
@@ -2218,13 +2642,13 @@ begin
   Cmd := Command(ecSendRaw);
   Cmd.Text := edtRaw.Text;
   Post(Cmd);
-  pcMain.ActivePage := tsMessages;
+  tcMain.ActiveTab := tiMessages;
 end;
 
-procedure TMainForm.chkTraceClick(Sender: TObject);
+procedure TMainForm.chkTraceChange(Sender: TObject);
 begin
   if FEngine <> nil then
-    FEngine.SetTrace(chkTrace.Checked);
+    FEngine.SetTrace(chkTrace.IsChecked);
 end;
 
 procedure TMainForm.cbRateChange(Sender: TObject);
@@ -2235,12 +2659,9 @@ end;
 
 { Messages }
 
-const
-  MaxMessageLines = 5000;
-
-{ Messages are queued and written to the memo in one go by the refresh timer.
-  Adding them one by one (thousands per minute with traffic tracing on) kept
-  the UI thread so busy that windows stopped repainting. }
+{ Messages are queued and shown in one go by the refresh timer (thousands
+  per minute with traffic tracing on). The list is virtual: only the lines
+  on screen are drawn. }
 procedure TMainForm.AddMessage(const Text: string);
 begin
   FPendingLog.Add(FormatDateTime('hh:nn:ss.zzz', Now) + '  ' + Text);
@@ -2250,56 +2671,68 @@ end;
 
 procedure TMainForm.FlushMessages;
 var
+  AtEnd: Boolean;
   Cut: Integer;
 begin
-  if FPendingLog.Count = 0 then
+  if (FPendingLog.Count = 0) or (grdMessages = nil) then
     Exit;
-  // Append the batch at the end (one EM_REPLACESEL) ...
-  memLog.SelStart := memLog.GetTextLen;
-  memLog.SelLength := 0;
-  memLog.SelText := string.Join(sLineBreak, FPendingLog.ToStringArray) + sLineBreak;
+  AtEnd := (FMessages.Count = 0) or (grdMessages.TopRow + grdMessages.VisibleRows >= FMessages.Count - 1);
+  FMessages.AddStrings(FPendingLog);
   FPendingLog.Clear;
-  // ... and drop old lines in one cut once there are clearly too many.
-  if memLog.Lines.Count > MaxMessageLines + 500 then
+  if FMessages.Count > MaxMessageLines + 500 then
   begin
-    Cut := memLog.Perform(EM_LINEINDEX, memLog.Lines.Count - MaxMessageLines, 0);
-    memLog.SelStart := 0;
-    memLog.SelLength := Cut;
-    memLog.SelText := '';
+    Cut := FMessages.Count - MaxMessageLines;
+    FMessages.BeginUpdate;
+    try
+      while Cut > 0 do
+      begin
+        FMessages.Delete(0);
+        Dec(Cut);
+      end;
+    finally
+      FMessages.EndUpdate;
+    end;
   end;
-  memLog.SelStart := memLog.GetTextLen;
-  memLog.Perform(EM_SCROLLCARET, 0, 0);
+  grdMessages.RowCount := FMessages.Count;
+  if AtEnd then
+    grdMessages.ScrollIntoView(FMessages.Count - 1);
+  grdMessages.Refresh;
+end;
+
+procedure TMainForm.MessagesGetText(Sender: TObject; Col, Row: Integer; var Text: string);
+begin
+  if Row < FMessages.Count then
+    Text := FMessages[Row];
 end;
 
 procedure TMainForm.btnClearMessagesClick(Sender: TObject);
 begin
   FPendingLog.Clear;
-  memLog.Clear;
+  FMessages.Clear;
+  grdMessages.RowCount := 0;
+  grdMessages.Refresh;
+end;
+
+procedure TMainForm.btnCopyMessagesClick(Sender: TObject);
+var
+  Clip: IFMXClipboardService;
+begin
+  FlushMessages;
+  if TPlatformServices.Current.SupportsPlatformService(IFMXClipboardService, Clip) then
+    Clip.SetClipboard(FMessages.Text);
 end;
 
 procedure TMainForm.ShowNotice(const Text: string; IsError: Boolean);
 begin
-  lblNotice.Caption := Text + '   (click to dismiss)';
+  lblNotice.Text := Text + IfThen(IsMobile, '   (tap to dismiss)', '   (click to dismiss)');
   if IsError then
-    pnlNotice.Color := $00C8C8FF
+    pnlNotice.Fill.Color := $FFFFC8C8
   else
-    pnlNotice.Color := $00C0F0FF;
+    pnlNotice.Fill.Color := $FFFFF0C0;
   pnlNotice.Visible := True;
 end;
 
-procedure TMainForm.FormResize(Sender: TObject);
-var
-  Others, I: Integer;
-begin
-  if grdLive = nil then
-    Exit;
-  Others := 5;
-  for I := ColValue to grdLive.ColCount - 1 do
-    Inc(Others, grdLive.ColWidths[I]);
-  grdLive.ColWidths[ColName] := Max(ZoomPx(160), grdLive.ClientWidth - Others);
-end;
-
-procedure TMainForm.lblNoticeClick(Sender: TObject);
+procedure TMainForm.pnlNoticeClick(Sender: TObject);
 begin
   pnlNotice.Visible := False;
 end;
@@ -2367,7 +2800,7 @@ begin
     FDisplay.SaveToFile(DisplayFile);
   except
     on E: Exception do
-      MessageDlg('Could not save the display settings: ' + E.Message, mtWarning, [mbOK], 0);
+      ShowWarning('Could not save the display settings: ' + E.Message);
   end;
 end;
 
@@ -2378,7 +2811,7 @@ begin
   FShownRows := nil;
   FRowStyles := nil;
   ApplyRowHeights;
-  grdLive.Invalidate;
+  grdLive.Refresh;
   BuildDashboard;
 end;
 
@@ -2389,8 +2822,12 @@ begin
   P := FCatalog.FindById(PidId);
   if P = nil then
     Exit;
-  if TDisplayEditorForm.Execute(P, FDisplay) then
-    DisplayChanged;
+  TDisplayEditorForm.Execute(P, FDisplay,
+    procedure(Ok: Boolean)
+    begin
+      if Ok then
+        DisplayChanged;
+    end);
 end;
 
 { Opens the log viewer with the log just recorded, or the newest log in the
@@ -2416,56 +2853,10 @@ begin
   TLogViewerForm.ShowViewer(FCatalog, FDisplay, LogFolder, LogViewsFile, Last);
 end;
 
-procedure TMainForm.chkSoundClick(Sender: TObject);
+procedure TMainForm.chkSoundChange(Sender: TObject);
 begin
-  if not chkSound.Checked then
+  if not chkSound.IsChecked then
     StopAlertSound;
-end;
-
-procedure TMainForm.pmPidPopup(Sender: TObject);
-var
-  Pt: TPoint;
-  Col, Row: Integer;
-  Item: TListItem;
-  Name: string;
-begin
-  FMenuPidId := -1;
-  if pmPid.PopupComponent = grdLive then
-  begin
-    Pt := grdLive.ScreenToClient(pmPid.PopupPoint);
-    grdLive.MouseToCell(Pt.X, Pt.Y, Col, Row);
-    if (Row >= 1) and (Row - 1 <= High(FLiveIds)) then
-      FMenuPidId := FLiveIds[Row - 1];
-  end
-  else if pmPid.PopupComponent = lvPids then
-  begin
-    Pt := lvPids.ScreenToClient(pmPid.PopupPoint);
-    Item := lvPids.GetItemAt(Pt.X, Pt.Y);
-    if Item = nil then
-      Item := lvPids.Selected;
-    if Item <> nil then
-    begin
-      Item.Selected := True;
-      FMenuPidId := Integer(Item.Data);
-    end;
-  end;
-  miPidDisplay.Enabled := FMenuPidId >= 0;
-  miPidGauge.Enabled := FMenuPidId >= 0;
-  if FMenuPidId >= 0 then
-    Name := ' for ' + StringReplace(PidName(FMenuPidId), '&', '&&', [rfReplaceAll])
-  else
-    Name := '';
-  miPidDisplay.Caption := 'Display && alerts' + Name + '...';
-end;
-
-procedure TMainForm.miPidDisplayClick(Sender: TObject);
-begin
-  EditDisplay(FMenuPidId);
-end;
-
-procedure TMainForm.miPidGaugeClick(Sender: TObject);
-begin
-  AddGauge(FMenuPidId);
 end;
 
 { Dashboard }
@@ -2478,11 +2869,11 @@ var
   View: TGaugeView;
   Title, Units: string;
 begin
-  sbDash.DisableAlign;
+  for View in FGaugeViews do
+    View.Free;
+  FGaugeViews.Clear;
+  sbDash.BeginUpdate;
   try
-    for View in FGaugeViews do
-      View.Free;
-    FGaugeViews.Clear;
     for I := 0 to FDisplay.Gauges.Count - 1 do
     begin
       G := FDisplay.Gauges[I];
@@ -2501,18 +2892,23 @@ begin
       View.Parent := sbDash;
       View.Tag := I;
       View.PopupMenu := pmGauge;
+      View.OnMouseDown := GaugeMouseDown;
       View.OnDblClick := GaugeDblClick;
+      View.Touch.InteractiveGestures := [TInteractiveGesture.LongTap];
+      View.OnGesture := GaugeGesture;
       View.Setup(G.Style, G.Size, Title, Units, G.MinValue, G.MaxValue,
         FDisplay.Zones(G.PidId, G.MinValue, G.MaxValue));
       FGaugeViews.Add(View);
     end;
   finally
-    sbDash.EnableAlign;
+    sbDash.EndUpdate;
   end;
   if FGaugeViews.Count = 0 then
-    lblDashHint.Caption := 'No gauges yet: press Add gauge, or right-click a PID and choose Add to dashboard.'
+    lblDashHint.Text := IfThen(IsMobile, 'No gauges yet: press Add gauge, or long-press a PID.',
+      'No gauges yet: press Add gauge, or right-click a PID and choose Add to dashboard.')
   else
-    lblDashHint.Caption := 'Right-click a gauge to change, move or remove it. Double-click to edit.';
+    lblDashHint.Text := IfThen(IsMobile, 'Long-press a gauge to change, move or remove it. Double-tap to edit.',
+      'Right-click a gauge to change, move or remove it. Double-click to edit.');
   LayoutDashboard;
   RefreshDashboard;
 end;
@@ -2521,38 +2917,35 @@ end;
 procedure TMainForm.LayoutDashboard;
 var
   View: TGaugeView;
-  I, X, Y, RowH, Gap, Avail: Integer;
-  Sz: TSize;
+  I: Integer;
+  X, Y, RowH, Avail: Single;
+  Sz: TSizeF;
+const
+  Gap = 12;
 begin
-  if FGaugeViews.Count = 0 then
+  if (FGaugeViews = nil) or (FGaugeViews.Count = 0) then
     Exit;
-  Gap := MulDiv(12, CurrentPPI, 96);
-  Avail := sbDash.ClientWidth;
+  Avail := sbDash.Width - 16;
   X := Gap;
   Y := Gap;
   RowH := 0;
-  sbDash.DisableAlign;
-  try
-    for I := 0 to FGaugeViews.Count - 1 do
+  for I := 0 to FGaugeViews.Count - 1 do
+  begin
+    View := FGaugeViews[I];
+    Sz := TGaugeView.PreferredSize(FDisplay.Gauges[I].Style, FDisplay.Gauges[I].Size);
+    if (X > Gap) and (X + Sz.cx + Gap > Avail) then
     begin
-      View := FGaugeViews[I];
-      Sz := TGaugeView.PreferredSize(FDisplay.Gauges[I].Style, FDisplay.Gauges[I].Size, CurrentPPI);
-      if (X > Gap) and (X + Sz.cx + Gap > Avail) then
-      begin
-        X := Gap;
-        Inc(Y, RowH + Gap);
-        RowH := 0;
-      end;
-      View.SetBounds(X - sbDash.HorzScrollBar.Position, Y - sbDash.VertScrollBar.Position, Sz.cx, Sz.cy);
-      Inc(X, Sz.cx + Gap);
-      RowH := Max(RowH, Sz.cy);
+      X := Gap;
+      Y := Y + RowH + Gap;
+      RowH := 0;
     end;
-  finally
-    sbDash.EnableAlign;
+    View.SetBounds(X, Y, Sz.cx, Sz.cy);
+    X := X + Sz.cx + Gap;
+    RowH := Max(RowH, Sz.cy);
   end;
 end;
 
-procedure TMainForm.sbDashResize(Sender: TObject);
+procedure TMainForm.sbDashResized(Sender: TObject);
 begin
   LayoutDashboard;
 end;
@@ -2616,26 +3009,31 @@ begin
   G.Style := gsDial;
   G.Size := gzMedium;
   SuggestScale(FCatalog.FindById(PidId), FDisplay, G.MinValue, G.MaxValue);
-  if not TGaugeEditorForm.Execute(G, FCatalog, FDisplay, 'Add gauge') then
-    Exit;
-  FDisplay.Gauges.Add(G);
-  SaveDisplay;
-  BuildDashboard;
-  pcMain.ActivePage := tsDashboard;
+  TGaugeEditorForm.Execute(G, FCatalog, FDisplay, 'Add gauge',
+    procedure(Ok: Boolean; NewGauge: TGauge)
+    begin
+      if not Ok then
+        Exit;
+      FDisplay.Gauges.Add(NewGauge);
+      SaveDisplay;
+      BuildDashboard;
+      tcMain.ActiveTab := tiDashboard;
+    end);
 end;
 
 procedure TMainForm.EditGauge(Index: Integer);
-var
-  G: TGauge;
 begin
   if (Index < 0) or (Index >= FDisplay.Gauges.Count) then
     Exit;
-  G := FDisplay.Gauges[Index];
-  if not TGaugeEditorForm.Execute(G, FCatalog, FDisplay, 'Edit gauge') then
-    Exit;
-  FDisplay.Gauges[Index] := G;
-  SaveDisplay;
-  BuildDashboard;
+  TGaugeEditorForm.Execute(FDisplay.Gauges[Index], FCatalog, FDisplay, 'Edit gauge',
+    procedure(Ok: Boolean; NewGauge: TGauge)
+    begin
+      if not Ok or (Index >= FDisplay.Gauges.Count) then
+        Exit;
+      FDisplay.Gauges[Index] := NewGauge;
+      SaveDisplay;
+      BuildDashboard;
+    end);
 end;
 
 procedure TMainForm.MoveGauge(Delta: Integer);
@@ -2644,7 +3042,7 @@ begin
     Exit;
   FDisplay.Gauges.Exchange(FMenuGauge, FMenuGauge + Delta);
   SaveDisplay;
-  BuildDashboard;
+  TThread.ForceQueue(nil, BuildDashboard);
 end;
 
 procedure TMainForm.btnAddGaugeClick(Sender: TObject);
@@ -2675,19 +3073,35 @@ begin
     ShowNotice(Format('%d PID(s) ticked - press Restart scan to include them', [Added]), False);
 end;
 
+procedure TMainForm.PrepareGaugeMenu(Index: Integer);
+begin
+  FMenuGauge := Index;
+  miGaugeEarlier.Enabled := FMenuGauge > 0;
+  miGaugeLater.Enabled := (FMenuGauge >= 0) and (FMenuGauge < FDisplay.Gauges.Count - 1);
+  miGaugeDisplay.Enabled := (FMenuGauge >= 0) and (FMenuGauge < FDisplay.Gauges.Count) and
+    (FCatalog.FindById(FDisplay.Gauges[FMenuGauge].PidId) <> nil);
+end;
+
+procedure TMainForm.GaugeMouseDown(Sender: TObject; Button: TMouseButton; Shift: TShiftState; X, Y: Single);
+begin
+  PrepareGaugeMenu(TGaugeView(Sender).Tag);
+end;
+
 procedure TMainForm.GaugeDblClick(Sender: TObject);
 begin
   EditGauge(TGaugeView(Sender).Tag);
 end;
 
-procedure TMainForm.pmGaugePopup(Sender: TObject);
+procedure TMainForm.GaugeGesture(Sender: TObject; const EventInfo: TGestureEventInfo; var Handled: Boolean);
+var
+  Scr: TPointF;
 begin
-  FMenuGauge := -1;
-  if pmGauge.PopupComponent is TGaugeView then
-    FMenuGauge := TGaugeView(pmGauge.PopupComponent).Tag;
-  miGaugeEarlier.Enabled := FMenuGauge > 0;
-  miGaugeLater.Enabled := (FMenuGauge >= 0) and (FMenuGauge < FDisplay.Gauges.Count - 1);
-  miGaugeDisplay.Enabled := (FMenuGauge >= 0) and (FCatalog.FindById(FDisplay.Gauges[FMenuGauge].PidId) <> nil);
+  if EventInfo.GestureID <> igiLongTap then
+    Exit;
+  PrepareGaugeMenu(TGaugeView(Sender).Tag);
+  Scr := TControl(Sender).LocalToScreen(TControl(Sender).AbsoluteToLocal(EventInfo.Location));
+  pmGauge.Popup(Scr.X, Scr.Y);
+  Handled := True;
 end;
 
 procedure TMainForm.miGaugeEditClick(Sender: TObject);
@@ -2732,10 +3146,10 @@ begin
     Result := '#' + IntToStr(Id);
 end;
 
-procedure TMainForm.SetStatus(Panel: Integer; const Text: string);
+procedure TMainForm.SetStatus(Lbl: TLabel; const Text: string);
 begin
-  if sbMain.Panels[Panel].Text <> Text then // avoid repainting the status bar for nothing
-    sbMain.Panels[Panel].Text := Text;
+  if Lbl.Text <> Text then // avoid repainting the status bar for nothing
+    Lbl.Text := Text;
 end;
 
 end.
