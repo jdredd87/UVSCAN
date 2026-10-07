@@ -33,10 +33,12 @@ For development, connect the IDE to the phone over Wi‑Fi (Developer options > 
 - Forms are `.fmx`. The custom controls (`TDataGrid`, `TGaugeView`, `TLogChart`) are not registered components: each form creates them in `FormCreate` inside a `TLayout` placeholder, so the forms open in the designer without a package.
 - Nothing may block on Android: use `UVScan.UI.Common` (`ShowInfo`, `Confirm`, `AskText`, `ShowDialog`) and pass a callback. On Windows these are still modal and the callback runs before the call returns.
 - Colours are `TAlphaColor`; `NoColor` (0) means "the default".
-- One layout on both platforms: top bar, pages in `tcMain` / `tcMore`, status strip and tab bar (built in `BuildChrome`). `ArrangeLayout` docks the PID list and shows the page tool bars on wide Windows windows. Switch pages with `ShowPage`, not `ActiveTab`.
+- One layout on both platforms: top bar, pages in `tcMain` / `tcMore`, status strip and tab bar (built in `BuildChrome`). `ArrangeLayout` docks the PID list and shows the page tool bars on any window at least `WideLayoutWidth` wide (tablets included). Switch pages with `ShowPage`, not `ActiveTab`.
+- Fit by width, not by platform: layouts switch on the window's or the control's width (`ClientWidth < NarrowWidth`, `LiveGridCompact`, `ApplyPageGridColumns`), so a narrow Windows window looks like a phone and a tablet like a desktop. Size things from the active style's text (`FitTextWidth`, `WrappedTextHeight`, `FlowControls`, `ArrangeCaptionRows` in `UVScan.UI.Common`) — Win10Modern's text and fields are bigger than the design's. Editors use `MakePage` for the top bar.
+- `TDataGrid` columns can wrap (`SetColumnWrap`, with `AutoHeights`), shrink their text to fit (`SetColumnShrink`) or stretch; the grid scrolls sideways when the columns are wider than it. Paint with a single clip rectangle: a second `IntersectClipRect` is not undone by `RestoreState` and hides every control painted after it.
 - Themes: `UVScan.UI.Theme` applies Delphi's styles (compiled in from `res\styles` by `UVScan.StylesWin.rc` / `UVScan.StylesAndroid.rc`) and keeps a `Palette` for UVScan's own painted controls, which repaint on `TThemeChangedMessage`. Use palette colours, not literals, for anything drawn or tinted.
 - Menus: FMX `TPopupMenu` does not show on Android; use `ShowActionMenu` / `ShowMenuAsActions` from `UVScan.UI.Common` (the page **⋮** menu uses them on both platforms).
-- `IsMobile` switches the few things that differ on a phone: full-screen dialogs, no file dialogs, padding for the status and navigation bars.
+- `IsMobile` switches the few things that really differ on a phone or tablet: full-screen dialogs, no file dialogs, padding for the status and navigation bars, touch wording ("tap"), taller rows.
 
 The factory data in `data\` is compiled into the exe through `UVScan.Defaults.rc` (`UVScan.Defaults.res` is generated and not in git).
 

@@ -38,7 +38,9 @@ Windows and Android share one layout:
 | Status strip | A dot — grey idle, blue connected, green scanning, red logging, amber paused — then state, port, VIN, OS ID, update rate and logging. Tap it to go to *Connect*. |
 | Tab bar | **Connect · PIDs · Live · Gauges · More** at the bottom. |
 
-On a wide Windows window (about 1000 pixels and up) the PID list stays docked on the left beside the pages (drag the splitter to size it) and the *Live* and *Gauges* pages show their buttons in a bar; on a phone or a narrow window those buttons are in the **⋮** menu.
+On a wide window (about 1000 pixels and up — a big Windows window, or a tablet held sideways) the PID list stays docked on the left beside the pages (drag the splitter to size it) and the *Live* and *Gauges* pages show their buttons in a bar; on a phone or a narrow window those buttons are in the **⋮** menu.
+
+Everything fits the width it has: on a phone or a narrow window the grids drop or narrow their less important columns and wrap long names onto more lines, a number too long for its cell is drawn smaller rather than cut short, and a grid whose columns still do not fit scrolls sideways (drag it with a finger, or Shift + mouse wheel). The editors (gauges, *Display & alerts*, PIDs, real‑time controls, PID search) open as pages with the same top bar: the back arrow cancels, the button on the right saves.
 
 **Themes** (*More → Settings → Theme*): **System default** follows the light / dark setting of Windows or the phone; or pick **Light** or **Dark**. They are Delphi's own styles (Win10Modern on Windows, the Android styles on a phone). **Keep the screen on while UVScan is open** (same page, on by default) stops the phone or PC from going to sleep or blanking the screen.
 
@@ -116,7 +118,7 @@ They follow the **same alert levels** as the grid: the scale shows the levels as
 
 ![Gauge editor](images/gauge-editor.png)
 
-In the gauge editor, **Auto** suggests a scale from the PID's formula (and widens it to show every alert level); drag **Preview value** to see the gauge at any value, including flashing levels.
+The gauge editor shows the gauge at the top; drag **Try a value** to see it at any value, including flashing levels. Tap the **PID** row to pick another PID (with a search box), choose **Dial / Bar / Number** and **Small / Medium / Large**, and set the scale — **Auto** suggests one from the PID's formula and widens it to show every alert level. **Edit alert levels…** opens *Display & alerts* for the PID: each level is a card (tap it to change its name, condition, colours, flashing and sound), **+ Add level** and **Presets…** add more.
 
 ## Test display
 
@@ -156,6 +158,8 @@ While scanning, **Start log (F8)** writes every update to a CSV file named `UVSc
 ![Selecting a stretch](images/log-viewer-selection.png)
 
 **Image…** saves the chart as a PNG (for forum posts or a tuner). You can also drop a log file onto the viewer to open it, and after you stop logging, **F7** opens the log you just recorded.
+
+**On a phone or a narrow window** the viewer is a page: the recent logs and **Demo** at the top, the playback buttons, then the chart above **Channels | Data** (one at a time). The selected channel's colour, scale and alert levels are on a page of their own — **Colour, scale, alerts: …** under the list. **⋮** holds the view set‑ups (pick, **Save view…**, **Delete view**), the chart mode, **Save chart picture** (saved next to the logs), **Follow the cursor**, **Level bands** and **Levels from Display & alerts**. Select a stretch by long‑pressing the chart (or **Select range**) and dragging. The back key (or arrow) leaves the channel page, then the viewer.
 
 **Playback:** **Play** (or Space) runs the cursor through the log in real time — or at 0.25× to 20× — with the chart following (**Follow cursor**), the grid scrolling along and the values on the left updating, like watching the drive again. **|<** and **>|** jump to the start and end; the slider scrubs.
 
@@ -247,7 +251,7 @@ Every PID has a name, short name, category, kind and formula:
 | Calculated | — | other PIDs by their MCI name, e.g. `%RPM%`, plus `RUNTIME`, `LOGTIME` |
 | Analog | AVT analog channel 1–3 | `N0` = the reading |
 
-Formulas use `+ - * /`, `<< >>`, `& |`, comparisons and `? :` (e.g. `N0 > 127 ? N0 - 256 : N0`). The **Try the formula** box evaluates it with bytes or values you type. The problems panel lists everything that would stop the file loading; click one to jump to it. **Save** refuses to write while there are problems; **Cancel** throws everything away.
+Formulas use `+ - * /`, `<< >>`, `& |`, comparisons and `? :` (e.g. `N0 > 127 ? N0 - 256 : N0`). The **Try the formula** box evaluates it with bytes or values you type. The problems panel lists everything that would stop the file loading; click one to jump to it. **Save** refuses to write while there are problems; the back arrow throws everything away. On a phone or a narrow window the editor is two pages: the list (tap a PID) and its details, with **All PIDs** (or the back key) to return to the list.
 
 - **Import…** reads an old UVSCAN `PIDS.csv` and either adds only new PIDs, adds new and updates matching ones, or replaces the whole list.
 - **Defaults…** adds the factory PIDs you are missing, or puts the factory list back completely.
@@ -258,7 +262,7 @@ Formulas use `+ - * /`, `<< >>`, `& |`, comparisons and `? :` (e.g. `N0 > 127 ? 
 
 ![PID search](images/pid-search.png)
 
-Each PID that answers is listed with its size, raw value and what it is already defined as. Tick the new ones and **Add ticked PIDs**: they are added as `PID $xxxx` (category *Other*) and the PID editor opens filtered to them so you can name them and give them a formula — for example after logging them with the engine running to see what they follow.
+Each PID that answers is listed with its size, raw value and what it is already defined as. Tick the new ones and press **Add** (top right): they are added as `PID $xxxx` (category *Other*) and the PID editor opens filtered to them so you can name them and give them a formula — for example after logging them with the engine running to see what they follow.
 
 ## Messages
 
