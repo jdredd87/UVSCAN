@@ -140,7 +140,7 @@ object PidEditorForm: TPidEditorForm
         Top = 10
         Width = 86
         Height = 26
-        Hint = 'Put the factory default PID definitions back'
+        Hint = 'Add missing default PIDs, or put the factory list back'
         Caption = 'Defaults...'
         ParentShowHint = False
         ShowHint = True

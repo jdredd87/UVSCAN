@@ -261,7 +261,9 @@ begin
     ModeReadPid:
       begin
         Pid := (Msg.Data[0] shl 8) or Msg.Data[1];
-        if FRejectedPids.Contains(Pid) then
+        // Answers SAE $0004-$0011 and GM $1100-$13FF except every 8th, like a real PCM answers some.
+        if FRejectedPids.Contains(Pid) or
+          not ((Pid in [$04..$11]) or ((Pid >= $1100) and (Pid <= $13FF) and (Pid mod 8 <> 7))) then
           EmitBus(BytesOf([PriorityRequest, Msg.Source, $10, ModeNegativeResponse, ModeReadPid, Msg.Data[0], Msg.Data[1], $31]))
         else
           EmitBus(ConcatBytes(BytesOf([PriorityRequest, Msg.Source, $10, ModeReadPid + PositiveOffset,

@@ -651,6 +651,36 @@ object MainForm: TMainForm
             OnClick = btnBrowseLogFolderClick
           end
         end
+        object gbDiscover: TGroupBox
+          Left = 12
+          Top = 380
+          Width = 560
+          Height = 66
+          Caption = ' PID discovery '
+          TabOrder = 4
+          object btnDiscoverPids: TButton
+            Left = 12
+            Top = 26
+            Width = 220
+            Height = 26
+            Caption = 'Search PCM for supported PIDs...'
+            TabOrder = 0
+            OnClick = btnDiscoverPidsClick
+          end
+          object lblDiscoverHelp: TLabel
+            Left = 244
+            Top = 31
+            Width = 300
+            Height = 15
+            Caption = 'Find PIDs this PCM answers and add them to define'
+            Font.Charset = DEFAULT_CHARSET
+            Font.Color = clGrayText
+            Font.Height = -12
+            Font.Name = 'Segoe UI'
+            Font.Style = []
+            ParentFont = False
+          end
+        end
         object gbAdvanced: TGroupBox
           Left = 12
           Top = 240

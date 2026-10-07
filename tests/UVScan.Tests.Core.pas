@@ -34,6 +34,7 @@ type
     [Test] procedure WriteVinMatchesLegacyBytes;
     [Test] procedure FormatsDtcs;
     [Test] procedure RejectsBadDpidSlot;
+    [Test] procedure ParsesPidRanges;
   end;
 
   [TestFixture]
@@ -238,6 +239,32 @@ procedure TClass2Tests.RejectsBadDpidSlot;
 begin
   Assert.WillRaise(procedure begin DefineDpidRequest($FE, 6, 2, 1) end, EArgumentException);
   Assert.WillRaise(procedure begin DefineDpidRequest($FE, 0, 1, 1) end, EArgumentException);
+end;
+
+procedure TClass2Tests.ParsesPidRanges;
+var
+  R: TArray<TPidRange>;
+begin
+  R := ParsePidRanges('0000-00FF, $1000-$1FFF;1234');
+  Assert.AreEqual(3, Integer(Length(R)));
+  Assert.AreEqual(256, R[0].Count);
+  Assert.AreEqual(Integer($1000), Integer(R[1].First));
+  Assert.AreEqual(Integer($1FFF), Integer(R[1].Last));
+  Assert.AreEqual(1, R[2].Count);
+  try
+    ParsePidRanges('2000-1000');
+    Assert.Fail('reversed range accepted');
+  except
+    on EConvertError do
+      ;
+  end;
+  try
+    ParsePidRanges('zz');
+    Assert.Fail('garbage accepted');
+  except
+    on EConvertError do
+      ;
+  end;
 end;
 
 { TFormulaTests }

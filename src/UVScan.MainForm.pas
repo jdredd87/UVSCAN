@@ -8,7 +8,8 @@ uses
   Vcl.Graphics, Vcl.Controls, Vcl.Forms, Vcl.Dialogs, Vcl.StdCtrls, Vcl.ExtCtrls,
   Vcl.ComCtrls, Vcl.Grids,
   UVScan.Serial, UVScan.Simulator, UVScan.Pids, UVScan.Dpid, UVScan.Dtc, UVScan.Engine,
-  UVScan.Class2, UVScan.Paths, UVScan.Settings, UVScan.PidEditor, UVScan.PidLists, UVScan.Defaults;
+  UVScan.Class2, UVScan.Paths, UVScan.Settings, UVScan.PidEditor, UVScan.PidLists, UVScan.Defaults,
+  UVScan.PidDiscovery;
 
 type
   TMainForm = class(TForm)
@@ -79,6 +80,9 @@ type
     edtRaw: TEdit;
     btnSendRaw: TButton;
     chkTrace: TCheckBox;
+    gbDiscover: TGroupBox;
+    btnDiscoverPids: TButton;
+    lblDiscoverHelp: TLabel;
     lblRate: TLabel;
     cbRate: TComboBox;
     tsMessages: TTabSheet;
@@ -103,6 +107,7 @@ type
     procedure btnTestPidsClick(Sender: TObject);
     procedure btnClearSelectionClick(Sender: TObject);
     procedure btnEditPidsClick(Sender: TObject);
+    procedure btnDiscoverPidsClick(Sender: TObject);
     procedure cbListsChange(Sender: TObject);
     procedure btnSaveListClick(Sender: TObject);
     procedure btnDeleteListClick(Sender: TObject);
@@ -142,6 +147,8 @@ type
     FAutoLog: Boolean;
     FSettings: TAppSettings;
     FLists: TPidLists;
+    FDiscovery: TPidDiscoveryForm;
+    procedure ReloadCatalog;
     procedure FillLists(const Select: string);
     procedure SaveLists;
     procedure ApplyCommandLine;
@@ -516,15 +523,21 @@ begin
 end;
 
 procedure TMainForm.btnEditPidsClick(Sender: TObject);
-var
-  I: Integer;
-  P: TPidDef;
 begin
   // The engine only uses the catalog while scanning or busy, which this button excludes.
   if not (FState in [esDisconnected, esConnected]) then
     Exit;
   if not TPidEditorForm.Execute(FCatalog, PidsFile) then
     Exit;
+  ReloadCatalog;
+  AddMessage(Format('PID definitions saved (%d PIDs) to %s', [FCatalog.Count, PidsFile]));
+end;
+
+procedure TMainForm.ReloadCatalog;
+var
+  I: Integer;
+  P: TPidDef;
+begin
   try
     FCatalog.LoadFromFile(PidsFile);
   except
@@ -543,7 +556,24 @@ begin
   FSupport.Clear;
   FRejected.Clear;
   FillPidList;
-  AddMessage(Format('PID definitions saved (%d PIDs) to %s', [FCatalog.Count, PidsFile]));
+end;
+
+procedure TMainForm.btnDiscoverPidsClick(Sender: TObject);
+var
+  Added: TArray<Integer>;
+begin
+  if FState <> esConnected then
+    Exit;
+  Added := TPidDiscoveryForm.Execute(FEngine, FCatalog, PidsFile, FDiscovery);
+  if Length(Added) = 0 then
+    Exit;
+  ReloadCatalog;
+  AddMessage(Format('PID search: added %d PIDs to %s', [Length(Added), PidsFile]));
+  if (FState in [esDisconnected, esConnected]) and
+    (MessageDlg(Format('%d new PIDs were added as raw "PID $xxxx" entries (category Other).' + sLineBreak +
+      'Open the PID editor to name and define them now?', [Length(Added)]), mtConfirmation, [mbYes, mbNo], 0) = mrYes) and
+    TPidEditorForm.Execute(FCatalog, PidsFile, 'PID $') then
+    ReloadCatalog;
 end;
 
 { Scan lists }
@@ -822,6 +852,8 @@ var
 begin
   if FClosing then
     Exit;
+  if FDiscovery <> nil then
+    FDiscovery.HandleEngineEvent(Ev);
   case Ev.Kind of
     eeLog:
       AddMessage(Ev.Text);
@@ -966,6 +998,7 @@ begin
   btnCelOff.Enabled := Idle;
   btnWriteVin.Enabled := Idle;
   btnSendRaw.Enabled := Idle;
+  btnDiscoverPids.Enabled := Idle;
   if FState = esScanning then
     pnlTop.Color := $00D8F0D8
   else

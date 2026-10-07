@@ -103,7 +103,7 @@ type
     procedure SetDetailEnabled(Value: Boolean);
   public
     { Edits a copy of Catalog; on Save writes FileName. Returns True if saved. }
-    class function Execute(Catalog: TPidCatalog; const FileName: string): Boolean;
+    class function Execute(Catalog: TPidCatalog; const FileName: string; const Filter: string = ''): Boolean;
   end;
 
 implementation
@@ -116,7 +116,7 @@ uses
 const
   KindCaptions: array[TPidKind] of string = ('Vehicle PID', 'Calculated', 'Analog input');
 
-class function TPidEditorForm.Execute(Catalog: TPidCatalog; const FileName: string): Boolean;
+class function TPidEditorForm.Execute(Catalog: TPidCatalog; const FileName: string; const Filter: string): Boolean;
 var
   F: TPidEditorForm;
 begin
@@ -124,8 +124,11 @@ begin
   try
     F.FFileName := FileName;
     F.FWork.Assign(Catalog);
+    F.edtFilter.Text := Filter; // fills the list
     F.FillList;
-    if F.FWork.Count > 0 then
+    if F.lvList.Items.Count > 0 then
+      F.Select(TPidDef(F.lvList.Items[0].Data))
+    else if F.FWork.Count > 0 then
       F.Select(F.FWork[0])
     else
       F.ShowCurrent;
@@ -807,20 +810,66 @@ begin
 end;
 
 procedure TPidEditorForm.btnDefaultsClick(Sender: TObject);
+var
+  Defaults: TPidCatalog;
+  Task: TTaskDialog;
+  Missing, I: Integer;
+  R: TMergeResult;
+  Msg: string;
 begin
-  if MessageDlg('Replace all PID definitions with the factory defaults?' + sLineBreak + sLineBreak +
-    'Nothing is written until you press Save.', mtConfirmation, [mbYes, mbNo], 0) <> mrYes then
-    Exit;
+  Defaults := TPidCatalog.Create;
+  Task := TTaskDialog.Create(Self);
   try
-    FWork.LoadFromJsonText(DefaultPidsJson);
-  except
-    on E: Exception do
-    begin
-      MessageDlg('Could not load the built-in defaults: ' + E.Message, mtError, [mbOK], 0);
+    try
+      Defaults.LoadFromJsonText(DefaultPidsJson);
+    except
+      on E: Exception do
+      begin
+        MessageDlg('Could not load the built-in defaults: ' + E.Message, mtError, [mbOK], 0);
+        Exit;
+      end;
+    end;
+    Missing := 0;
+    for I := 0 to Defaults.Count - 1 do
+      if FindMatchingPid(FWork, Defaults[I]) = nil then
+        Inc(Missing);
+
+    Task.Caption := 'Default PIDs';
+    Task.MainIcon := tdiInformation;
+    Task.Title := Format('The built-in list has %d PIDs', [Defaults.Count]);
+    Task.Text := Format('%d of them are not in your list.', [Missing]) + sLineBreak +
+      'Nothing is written until you press Save.';
+    Task.CommonButtons := [tcbCancel];
+    Task.Flags := [tfUseCommandLinks, tfAllowDialogCancellation];
+    AddChoice(Task, 'Add the default PIDs I do not have',
+      'Keeps everything in your list, including your own changes and imports.', 101);
+    AddChoice(Task, 'Replace my list with the defaults',
+      'Throws away your changes, imports and added PIDs.', 100);
+    if not Task.Execute then
+      Exit;
+    case Task.ModalResult of
+      101:
+        begin
+          R := MergeCatalog(FWork, Defaults, mmAddNew);
+          Msg := Format('Added %d default PIDs.', [R.Added]);
+          if Length(R.MciCleared) > 0 then
+            Msg := Msg + sLineBreak + Format('%d of them used an MCI name you already have, so it was removed:',
+              [Length(R.MciCleared)]) + sLineBreak + Lines(R.MciCleared, 10);
+        end;
+      100:
+        begin
+          FWork.Assign(Defaults);
+          Msg := Format('Your list is now the %d default PIDs.', [Defaults.Count]);
+        end;
+    else
       Exit;
     end;
+    AfterBulkChange;
+    MessageDlg(Msg, mtInformation, [mbOK], 0);
+  finally
+    Task.Free;
+    Defaults.Free;
   end;
-  AfterBulkChange;
 end;
 
 { Save }

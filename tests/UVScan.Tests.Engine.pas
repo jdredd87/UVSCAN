@@ -34,6 +34,7 @@ type
     [Test] procedure ReadsDtcs;
     [Test] procedure RejectsScanWithNothingSelected;
     [Test] procedure SmallScanAfterLargeScanDoesNotReviveOldDpids;
+    [Test] procedure DiscoversSupportedPids;
   end;
 
 implementation
@@ -315,6 +316,29 @@ begin
   for I := 0 to High(FSim.ActiveDpids) do
     Assert.AreEqual(Integer($FE), Integer(FSim.ActiveDpids[I]), 'stale DPID still streaming');
   Assert.AreEqual(2, Integer(Length(FSim.ActiveDpids)));
+end;
+
+procedure TEngineTests.DiscoversSupportedPids;
+var
+  Cmd: TEngineCommand;
+  Ev, Done: TEngineEvent;
+  Found: TArray<Integer>;
+begin
+  Connect;
+  Cmd := Command(ecDiscoverPids);
+  Cmd.Text := '0000-001F, 1100-110F';
+  FEngine.Post(Cmd);
+  Assert.IsTrue(WaitUntil(function: Boolean begin Result := HasEvent(eePidSearchDone) end, 15000), 'search did not finish');
+  Found := nil;
+  for Ev in FEvents do
+    if Ev.Kind = eePidFound then
+      Found := Found + [Ev.PidId];
+  // Simulator answers $04-$11 (14) and $1100-$110F except $1107/$110F (every 8th) and $1108 (refused): 13
+  Assert.AreEqual(27, Integer(Length(Found)));
+  Assert.IsTrue(FindEvent(eePidSearchDone, Done));
+  Assert.AreEqual(48, Done.Total);
+  Assert.AreEqual(48, Done.Progress);
+  Assert.IsTrue(WaitUntil(function: Boolean begin Result := FState = esConnected end));
 end;
 
 procedure TEngineTests.RejectsScanWithNothingSelected;

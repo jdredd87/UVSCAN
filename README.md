@@ -51,9 +51,15 @@ JSON files are UTF‑8, indented, carry a `"version"`, and are saved via a temp 
 **Edit PIDs…** (under the PID list; not while scanning) opens the editor: add, duplicate, delete and edit every field, with a live formula check, a "try the formula" box (data bytes in hex for vehicle/analog PIDs, `NAME=value` pairs for calculated ones) and a problem count. Save runs the same validation as loading and refuses to write `pids.json` while there are problems; Cancel discards everything.
 
 - **Import…** reads an old UVSCAN `PIDS.csv` and offers *Merge: add new PIDs only*, *Merge: add new and update existing* (matched by ID) or *Replace all*. Rows the old app ignored (`group` ≠ 1) come in disabled; the old `º` degree sign becomes `°`.
-- **Defaults…** puts the factory PID definitions (built into the exe) back.
+- **Defaults…** adds the factory PIDs you don't have yet (keeping your own changes), or puts the factory list back entirely.
 
 Both only change the editor's working copy; nothing is written until **Save**.
+
+### Finding PIDs a PCM supports
+
+**Tools → Search PCM for supported PIDs…** (connected, not scanning) asks the PCM about every PID in the chosen ranges with read‑only mode `$22`: standard SAE `$0000–$00FF` (~10 s), GM enhanced `$1000–$1FFF` (~2 min) and any extra ranges. Each answer is listed with its size, raw value and what it is already defined as. Tick the new ones and **Add ticked PIDs**: they go into `pids.json` as raw `PID $xxxx` entries (category Other), and the PID editor opens filtered to them so you can name them and give them a formula — e.g. after logging them with the engine running to see what they follow.
+
+The factory list includes PIDs from the old UVSCAN `Extra_Pids.csv` that a 2001 3.8L (3800 Series II) PCM answers, checked against the raw values it returned on the bench.
 
 ### Scan lists
 

@@ -32,7 +32,8 @@ type
   end;
 
   TEngineEventKind = (eeLog, eeWarning, eeError, eeState, eeVehicleInfo, eeScanStarted,
-    eePidRejected, eeDtcs, eePidTest, eeLogStarted, eeLogStopped);
+    eePidRejected, eeDtcs, eePidTest, eeLogStarted, eeLogStopped,
+    eePidFound, eePidSearchProgress, eePidSearchDone);
 
   TEngineEvent = record
     Kind: TEngineEventKind;
@@ -43,7 +44,9 @@ type
     PidIds: TArray<Integer>;   // eeScanStarted: scan order
     PidId: Integer;            // eePidRejected / eePidTest
     Supported: Boolean;        // eePidTest
-    Progress, Total: Integer;  // eePidTest
+    Progress, Total: Integer;  // eePidTest, eePidSearchProgress, eePidSearchDone
+    DataBytes: Integer;        // eePidFound: size of the PCM's answer (PidId = PID number)
+    Raw: string;               // eePidFound: data bytes as hex
   end;
 
   TEngineEventHandler = reference to procedure(const Event: TEngineEvent);
@@ -63,7 +66,8 @@ type
 
   TEngineCommandKind = (ecConnect, ecDisconnect, ecReadVehicleInfo, ecStartScan, ecStopScan,
     ecStartLog, ecStopLog, ecPauseLog, ecReadDtcs, ecClearDtcs, ecTestPids, ecSendRaw,
-    ecWriteVin, ecResetLtft, ecCheckEngineLight);
+    ecWriteVin, ecResetLtft, ecCheckEngineLight,
+    ecDiscoverPids);             // Text = PID ranges, e.g. '0000-00FF,1000-1FFF'
 
   TEngineCommand = record
     Kind: TEngineCommandKind;
@@ -157,6 +161,7 @@ type
     procedure DoReadDtcs;
     procedure DoClearDtcs;
     procedure DoTestPids(const Ids: TArray<Integer>);
+    procedure DoDiscoverPids(const Ranges: string);
     procedure DoSendRaw(const Hex: string);
     procedure DoWriteVin(const Vin: string);
     procedure DoSimpleRequest(const Msg: TBytes; const What: string);
@@ -530,6 +535,7 @@ begin
     ecReadDtcs: if RequireConnected then DoReadDtcs;
     ecClearDtcs: if RequireConnected then DoClearDtcs;
     ecTestPids: if RequireConnected then DoTestPids(Cmd.PidIds);
+    ecDiscoverPids: if RequireConnected then DoDiscoverPids(Cmd.Text);
     ecSendRaw: if RequireConnected then DoSendRaw(Cmd.Text);
     ecWriteVin: if RequireConnected then DoWriteVin(Cmd.Text);
     ecResetLtft: if RequireConnected then DoSimpleRequest(ResetLtftRequest, 'Reset fuel trims');
@@ -1354,6 +1360,105 @@ begin
     Log('PID test: %d supported, %d not supported', [Passed, Failed]);
   finally
     List.Free;
+    SetState(esConnected);
+  end;
+end;
+
+{ Asks the PCM for every PID in Ranges (read-only mode $22) and reports each
+  one it answers. Can be stopped with Cancel. }
+procedure TScanEngine.DoDiscoverPids(const Ranges: string);
+var
+  List: TArray<TPidRange>;
+  R: TPidRange;
+  Pid, Done, Total, Found, Timeouts: Integer;
+  P: Word;
+  Msg: TClass2Message;
+  Ev: TEngineEvent;
+  Clock: TStopwatch;
+begin
+  if FStreaming then
+  begin
+    Warn('Stop the scan before searching for PIDs');
+    Exit;
+  end;
+  try
+    List := ParsePidRanges(Ranges);
+  except
+    on E: EConvertError do
+    begin
+      EmitText(eeError, E.Message);
+      Exit;
+    end;
+  end;
+  Total := 0;
+  for R in List do
+    Inc(Total, R.Count);
+
+  SetState(esBusy);
+  Clock := TStopwatch.StartNew;
+  Done := 0;
+  Found := 0;
+  Timeouts := 0;
+  try
+    Log('Searching %d PIDs (%s)...', [Total, Ranges]);
+    for R in List do
+      for Pid := R.First to R.Last do
+      begin
+        if Cancelled then
+        begin
+          Warn('PID search stopped');
+          Exit;
+        end;
+        P := Pid;
+        if Exchange(ReadPidRequest(P),
+          function(const Fr: TAvtFrame): Boolean
+          var
+            M: TClass2Message;
+          begin
+            Result := FromPcm(Fr, M) and (M.Target = AddrToolPidTest) and (Length(M.Data) >= 2) and
+              (((M.Mode = ModeReadPid + PositiveOffset) and (M.Data[0] = Hi(P)) and (M.Data[1] = Lo(P))) or
+               M.IsNegativeFor(ModeReadPid));
+          end, 300, Msg) then
+        begin
+          Timeouts := 0;
+          if Msg.Mode <> ModeNegativeResponse then
+          begin
+            Inc(Found);
+            Ev := Default(TEngineEvent);
+            Ev.Kind := eePidFound;
+            Ev.PidId := P;
+            Ev.DataBytes := Length(Msg.Data) - 2;
+            Ev.Raw := BytesToHex(Copy(Msg.Data, 2, MaxInt));
+            Emit(Ev);
+          end;
+        end
+        else
+        begin
+          Inc(Timeouts);
+          if Timeouts >= 5 then
+          begin
+            EmitText(eeError, Format('The PCM stopped answering at PID $%.4x; search aborted', [P]));
+            Exit;
+          end;
+        end;
+        Inc(Done);
+        if (Done mod 32 = 0) or (Done = Total) then
+        begin
+          Ev := Default(TEngineEvent);
+          Ev.Kind := eePidSearchProgress;
+          Ev.Progress := Done;
+          Ev.Total := Total;
+          Ev.PidId := P;
+          Emit(Ev);
+        end;
+      end;
+    Log('PID search done: %d of %d answered (%.0f s)', [Found, Total, Clock.Elapsed.TotalSeconds]);
+  finally
+    Ev := Default(TEngineEvent);
+    Ev.Kind := eePidSearchDone;
+    Ev.Progress := Done;
+    Ev.Total := Total;
+    Emit(Ev);
     SetState(esConnected);
   end;
 end;

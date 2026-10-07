@@ -95,6 +95,19 @@ function WriteVinRequests(const Vin: string): TArray<TBytes>;
 function ResetLtftRequest: TBytes;
 function CheckEngineLightRequest(TurnOn: Boolean): TBytes;
 
+type
+  TPidRange = record
+    First, Last: Word;
+    function Count: Integer;
+  end;
+
+{ "0000-00FF, 1000-1FFF, 1234" -> ranges. Raises EConvertError on bad input. }
+function ParsePidRanges(const Text: string): TArray<TPidRange>;
+
+const
+  PidRangeSae = '0000-00FF';
+  PidRangeGmEnhanced = '1000-1FFF';
+
 function FormatDtc(Hi, Lo: Byte): string;
 function ModuleName(Address: Byte): string;
 function IsValidVin(const Vin: string): Boolean;
@@ -249,6 +262,43 @@ begin
     Result := BuildMessage(AddrPcm, AddrTool, ModeDeviceControl, [$01, $00, $00, $00, $00, $00, $00])
   else
     Result := BuildMessage(AddrPcm, AddrTool, ModeDeviceControl, [$01, $80, $80, $00, $00, $00, $00]);
+end;
+
+function TPidRange.Count: Integer;
+begin
+  Result := Integer(Last) - Integer(First) + 1;
+end;
+
+function ParsePidRanges(const Text: string): TArray<TPidRange>;
+var
+  Part, A, B: string;
+  Dash, V1, V2: Integer;
+  R: TPidRange;
+begin
+  Result := nil;
+  for Part in Text.Split([',', ';', ' '], TStringSplitOptions.ExcludeEmpty) do
+  begin
+    Dash := Pos('-', Part);
+    if Dash > 0 then
+    begin
+      A := Trim(Copy(Part, 1, Dash - 1));
+      B := Trim(Copy(Part, Dash + 1, MaxInt));
+    end
+    else
+    begin
+      A := Trim(Part);
+      B := A;
+    end;
+    A := StringReplace(A, '$', '', [rfReplaceAll]);
+    B := StringReplace(B, '$', '', [rfReplaceAll]);
+    if not TryStrToInt('$' + A, V1) or not TryStrToInt('$' + B, V2) or (V1 < 0) or (V2 > $FFFF) or (V1 > V2) then
+      raise EConvertError.CreateFmt('"%s" is not a PID range like 1000-1FFF', [Part]);
+    R.First := V1;
+    R.Last := V2;
+    Result := Result + [R];
+  end;
+  if Length(Result) = 0 then
+    raise EConvertError.Create('No PID range given (e.g. 1000-1FFF)');
 end;
 
 function FormatDtc(Hi, Lo: Byte): string;

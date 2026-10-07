@@ -106,6 +106,10 @@
             <Form>PidEditorForm</Form>
             <FormType>dfm</FormType>
         </DCCReference>
+        <DCCReference Include="src\UVScan.PidDiscovery.pas">
+            <Form>PidDiscoveryForm</Form>
+            <FormType>dfm</FormType>
+        </DCCReference>
         <DCCReference Include="src\UVScan.MainForm.pas">
             <Form>MainForm</Form>
             <FormType>dfm</FormType>

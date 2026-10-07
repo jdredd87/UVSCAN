@@ -19,6 +19,7 @@ uses
   UVScan.PidLists in 'src\UVScan.PidLists.pas',
   UVScan.LegacyImport in 'src\UVScan.LegacyImport.pas',
   UVScan.PidEditor in 'src\UVScan.PidEditor.pas' {PidEditorForm},
+  UVScan.PidDiscovery in 'src\UVScan.PidDiscovery.pas' {PidDiscoveryForm},
   UVScan.MainForm in 'src\UVScan.MainForm.pas' {MainForm};
 
 {$R *.res}
