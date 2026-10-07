@@ -629,14 +629,25 @@ object MainForm: TMainForm
             TabOrder = 2
             OnClick = chkTraceClick
           end
-          object chkPadDpid: TCheckBox
+          object lblRate: TLabel
             Left = 12
-            Top = 100
-            Width = 400
-            Height = 17
-            Caption = 'Pad DPID stream requests to 4 entries (legacy behaviour)'
+            Top = 102
+            Width = 120
+            Height = 15
+            Caption = 'Stream speed'
+          end
+          object cbRate: TComboBox
+            Left = 140
+            Top = 98
+            Width = 240
+            Height = 23
+            Style = csDropDownList
             TabOrder = 3
-            OnClick = chkPadDpidClick
+            OnChange = cbRateChange
+            Items.Strings = (
+              'Fast (~10/s up to 24 bytes, ~5/s above)'
+              'Medium'
+              'Slow')
           end
         end
       end

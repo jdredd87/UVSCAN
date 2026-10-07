@@ -37,6 +37,26 @@ const
   BlockVin3 = $03;
   BlockOsid = $0A;
 
+  // $2A "rate" byte, as measured on a bench PCM (AVT-841):
+  //   high nibble = schedule slot. The PCM has two slots ($1x, $2x) of up to
+  //     4 DPIDs each; a request replaces that slot's list. That is why legacy
+  //     UVSCAN used $14 for DPIDs 1-4 and $24 for 5-8.
+  //   low nibble = speed: 4 fast, 3 medium, 2 slow. $34, $0x, $11 are refused.
+  // "2A 00" only pauses; the next request resumes the OTHER slot's old list
+  // too. A slot is cleared by requesting it with no DPIDs (2A x4 00 00 00 00).
+  // Each slot sends each of its DPIDs about 5 times/s at speed 4 (2.7/s at 3).
+  // A DPID listed in both slots is sent twice as often, so up to 4 DPIDs can
+  // run at ~10/s; 5-8 DPIDs need both slots and run at ~5/s (~40 frames/s).
+  StreamSlot1 = $10;
+  StreamSlot2 = $20;
+  StreamSpeedFast = $04;
+  StreamSpeedMedium = $03;
+  StreamSpeedSlow = $02;
+
+  // Response code in "7F 2A ..." replies to a stream request.
+  NrcStreamAccepted = $23;  // accepted, data follows
+  NrcInvalidFormat = $12;   // refused (e.g. fewer than 4 DPIDs, unknown rate)
+
   FirstDpid = $FE;
   DpidDataBytes = 6;
   MaxDpids = 8;            // $FE..$F7, as supported by UVSCAN
@@ -60,9 +80,11 @@ function BuildMessage(Target, Source, Mode: Byte; const Data: array of Byte): TB
 
 function ReadBlockRequest(BlockId: Byte): TBytes;
 function DefineDpidRequest(Dpid, Position, Size: Byte; Pid: Word): TBytes;
-{ Rate byte as used by legacy UVSCAN: $14 for the first group of 4 DPIDs, $24 for the second. }
-function RequestDpidsRequest(Rate: Byte; const Dpids: array of Byte; PadToFour: Boolean): TBytes;
+{ The PCM only accepts exactly 4 DPIDs per request; unused entries are 00. }
+function RequestDpidsRequest(Rate: Byte; const Dpids: array of Byte): TBytes;
 function StopDpidsRequest: TBytes;
+{ Empties one schedule slot so it cannot resume later. }
+function ClearStreamSlotRequest(Slot: Byte): TBytes;
 function TesterPresentRequest: TBytes;
 function ReadPidRequest(Pid: Word): TBytes;
 function DiscoverModulesRequest: TBytes;
@@ -127,7 +149,7 @@ begin
     [Dpid, $40 or (Position shl 3) or Size, Hi(Pid), Lo(Pid), $FF, $FF]);
 end;
 
-function RequestDpidsRequest(Rate: Byte; const Dpids: array of Byte; PadToFour: Boolean): TBytes;
+function RequestDpidsRequest(Rate: Byte; const Dpids: array of Byte): TBytes;
 var
   Data: TBytes;
   I: Integer;
@@ -137,15 +159,19 @@ begin
   Data := BytesOf([Rate]);
   for I := 0 to High(Dpids) do
     Data := ConcatBytes(Data, BytesOf([Dpids[I]]));
-  if PadToFour then
-    for I := Length(Dpids) to DpidsPerRequest - 1 do
-      Data := ConcatBytes(Data, BytesOf([$00]));
+  for I := Length(Dpids) to DpidsPerRequest - 1 do
+    Data := ConcatBytes(Data, BytesOf([$00]));
   Result := ConcatBytes(BytesOf([PriorityRequest, AddrPcm, AddrTool, ModeRequestDpids]), Data);
 end;
 
 function StopDpidsRequest: TBytes;
 begin
   Result := BuildMessage(AddrPcm, AddrTool, ModeRequestDpids, [$00]);
+end;
+
+function ClearStreamSlotRequest(Slot: Byte): TBytes;
+begin
+  Result := BuildMessage(AddrPcm, AddrTool, ModeRequestDpids, [Slot or StreamSpeedFast, 0, 0, 0, 0]);
 end;
 
 function TesterPresentRequest: TBytes;

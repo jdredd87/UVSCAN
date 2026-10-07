@@ -10,7 +10,7 @@ Rewrite of the 2008 UVSCAN (Delphi 2007, kept in [`legacy/`](legacy) for referen
 - Calculated PIDs (`%MCI%` formulas, `RUNTIME`, `LOGTIME`) and AVT analog inputs
 - CSV logging (F8 start/stop, F9 pause)
 - PID support test, trouble code read/clear, fuel trim reset, check engine light on/off, VIN write, raw frame send
-- Built‑in **simulator** (choose port `Simulator`) so everything can be exercised without hardware
+- Built‑in **simulator** (choose port `Simulator`) that mimics the PCM behaviour measured on the bench
 
 ## Build
 
@@ -20,11 +20,11 @@ Open `UVScan.dproj` in Delphi 13 (Win32 or Win64), or from a command prompt:
 build.cmd [Debug|Release] [Win32|Win64]
 ```
 
-This builds the app and the DUnitX tests (`tests/UVScanTests.dproj`) and runs the tests.
+This builds the app and the DUnitX tests (`tests/UVScanTests.dproj`), runs the tests, and builds the bench probe (`tools\Win32\UVScanProbe.exe`).
 The app looks for `pids.csv` / `dtcs.csv` next to the exe, then in a `data` folder up the directory tree (so running from `Win32\Debug` finds `data\`).
 Settings are stored in `%APPDATA%\UVScan\settings.ini`.
 
-Command line (same idea as legacy UVSCAN): `UVScan.exe -port COM6 -connect -scan -log`
+Command line (same idea as legacy UVSCAN): `UVScan.exe -port COM9 -connect -scan -log`
 
 ## Layout
 
@@ -33,7 +33,7 @@ Command line (same idea as legacy UVSCAN): `UVScan.exe -port COM6 -connect -scan
 | `src/UVScan.Serial.pas` | Win32 serial port (no AsyncPro), COM port enumeration |
 | `src/UVScan.Avt.pas` | AVT frame encoding/parsing (header = kind nibble + length nibble) |
 | `src/UVScan.Class2.pas` | GM Class 2 message builders/parsers, DTC formatting |
-| `src/UVScan.Dpid.pas` | Packs PIDs into DPIDs ($FE down, 6 data bytes each) |
+| `src/UVScan.Dpid.pas` | Packs PIDs into DPIDs ($FE down, 6 data bytes each) and builds stream requests |
 | `src/UVScan.Formula.pas` | PID formula evaluator (replaces ArtFormula) |
 | `src/UVScan.Pids.pas` | `pids.csv` loader and value formatting |
 | `src/UVScan.Engine.pas` | Background thread that owns the port and runs everything |
@@ -41,34 +41,45 @@ Command line (same idea as legacy UVSCAN): `UVScan.exe -port COM6 -connect -scan
 | `src/UVScan.MainForm.*` | UI |
 | `data/` | `pids.csv` (UTF‑8), `dtcs.csv` |
 | `tests/` | DUnitX tests, incl. end‑to‑end engine tests against the simulator |
+| `tools/UVScanProbe.dpr` | Console bench tool for real hardware |
 | `legacy/` | Original source, dead code stripped; `uvscan.doc` documents the CSV formats |
 
 ## How scanning works
 
+Verified on an AVT‑841 talking to a bench PCM (OS ID 9389759).
+
 1. Selected vehicle PIDs are packed into DPIDs: each DPID carries 6 data bytes (positions 1–6), starting at `$FE` and counting down, max 8 DPIDs (48 bytes). PIDs are placed largest first and never split.
-2. Each slot is defined with `6C 10 F1 2C <dpid> <01 pos size> <pid hi> <pid lo> FF FF`, and the engine **waits for the PCM's reply** (`6C` accepted / `7F 2C` rejected) before sending the next one.
-3. Streaming starts with `6C 10 F1 2A <rate> <dpids…>` (4 DPIDs per request, rates `$14`, `$24` as in legacy).
-4. The PCM sends `6C F1 10 6A <dpid> d1..d6`; a cycle completes when every planned DPID has arrived, then calculated PIDs are computed and a log row is written.
-5. Tester present (`6C FE F1 3F`) is sent every 2 s from the same thread, so it can never interleave with another exchange.
-6. Stop sends `6C 10 F1 2A 00` before anything else is redefined.
+2. Each slot is defined with `6C 10 F1 2C <dpid> <01 pos size> <pid hi> <pid lo> FF FF`. The PCM confirms each with `6C F1 10 6C <dpid> <cfg>` (or `7F 2C` to reject), and the engine waits for that before sending the next.
+3. Streaming uses `6C 10 F1 2A <slot|speed> d1 d2 d3 d4`, always with exactly 4 DPID entries (unused = `00`); anything else gets `7F 2A … 12` and no data. `7F 2A … 23` means *accepted*.
+4. The PCM has **two schedule slots** (`$1x`, `$2x`) of up to 4 DPIDs each; a request replaces its slot's list. The low nibble is the speed (4 fast, 3 medium, 2 slow). Each slot sends each DPID about 5 times/s at speed 4.
+   - ≤ 4 DPIDs (≤ 24 bytes): the same list goes in both slots → **~10 updates/s**.
+   - 5–8 DPIDs: first four in slot 1, the rest in slot 2 → **~5 updates/s**.
+5. `2A 00` only **pauses**; the next request resumes the other slot's old list. So the engine sends `2A 00` and clears both slots (`2A 14 00 00 00 00`, `2A 24 00 00 00 00`) before every scan and when stopping.
+6. The PCM sends `6C F1 10 6A <dpid> d1..d6`; a cycle completes when every planned DPID has arrived, then calculated PIDs are computed and a log row is written.
+7. Tester present (`6C FE F1 3F`) every 2 s from the engine thread keeps the stream alive.
+
+AVT‑841 framing: header byte = kind nibble + length nibble. Init: `E1 33` → `91 07`, `B0` → `92 04 13` (firmware). Every bus message sent is confirmed by the AVT with `01 60`. Received bus messages are `0N 00 <message>` (status byte 00). A single duplicated header byte was seen once; the parser recovers from it.
 
 ### Legacy PID‑send bugs this fixes
 
-- When the last DPID was exactly full, legacy requested the **next, never‑defined DPID** in the `$2A` message, and calculated PIDs/log rows (triggered by that DPID) silently stopped.
+- **Stale DPIDs came back to life.** Legacy never cleared the PCM's schedule slots, and `2A 00` only pauses. After a scan with more than 4 DPIDs, any later scan resumed the old slot‑2 DPIDs, so the PCM streamed data nobody asked for and the bus filled with stale frames.
+- When the last DPID was exactly full, legacy requested the **next, never‑defined DPID**, and calculated PIDs/log rows (triggered by that DPID) silently stopped.
 - The 48‑byte limit check used an uninitialised variable, so more than 8 DPIDs could be defined; the extras were never requested or decoded.
-- Definitions were sent on fixed delays without waiting for replies, never stopped the previous stream, and a rejected PID restarted the whole definition loop mid‑stream.
+- Definitions were sent on fixed delays without waiting for the PCM's confirmation, and a rejected PID restarted the whole definition loop mid‑stream.
+- Legacy's `$14`/`$24` split was right for 5–8 DPIDs, but small scans ran at 5 Hz where 10 Hz is possible.
 
-## Bench test checklist (AVT‑841 + PCM)
+## Bench tool
 
-Things the simulator cannot prove. Turn on **Tools → Show raw traffic** and save the Messages tab:
+```
+UVScanProbe COM9 raw                        AVT init frames, raw bytes
+UVScanProbe COM9 run 5 1,3,12 [-notest] [-nodtc] [-speed 4]
+                                            connect, PID test, 5 s scan, DTC read (read-only)
+UVScanProbe COM9 rawscan | rates | multi    byte-level stream experiments
+```
 
-- [ ] Connect: reply to `E1 33` (expect `C1 00`) and `B0` (expect `92 xx yy`)
-- [ ] VIN (`3C 01/02/03`) and OS ID (`3C 0A`) read correctly
-- [ ] Does the PCM answer each `$2C` with a positive `6C`? (Engine continues on timeout but logs a warning.)
-- [ ] Streaming works with **Pad DPID requests** on (legacy) — and try off
-- [ ] Does `2A 00` stop the stream?
-- [ ] Rejected PID shows as "rejected", the rest keep updating
-- [ ] Update rate with 1, 2, 5 and 8 DPIDs
+## Still to check on a running vehicle
+
+- [ ] Values with the engine running (the bench PCM only shows defaults)
 - [ ] Analog inputs (`52 59 01` → `64 58 a1 a2 a3`)
-- [ ] DTC read: module discovery (`20` broadcast) and code list; clear codes
-- [ ] Any AVT frame with header `$11` (extended length) — the parser assumes it, unconfirmed
+- [ ] DTC list with real codes; clear codes, fuel trim reset, check engine light, VIN write (not run on the bench)
+- [ ] AVT frames with header `$11` (extended length) — the parser assumes them, unconfirmed

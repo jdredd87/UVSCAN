@@ -33,6 +33,7 @@ type
     [Test] procedure TestsPids;
     [Test] procedure ReadsDtcs;
     [Test] procedure RejectsScanWithNothingSelected;
+    [Test] procedure SmallScanAfterLargeScanDoesNotReviveOldDpids;
   end;
 
 implementation
@@ -147,7 +148,7 @@ var
 begin
   Connect;
   Assert.IsTrue(FindEvent(eeVehicleInfo, Ev));
-  Assert.AreEqual('0E', Ev.Vehicle.Firmware);
+  Assert.AreEqual('04 0E', Ev.Vehicle.Firmware);
   Assert.AreEqual(SimulatedVin, Ev.Vehicle.Vin);
   Assert.AreEqual(IntToStr(SimulatedOsid), Ev.Vehicle.Osid);
   Assert.IsFalse(HasEvent(eeError));
@@ -277,6 +278,48 @@ begin
   Assert.AreEqual(2, Integer(Length(Ev.Dtcs)));
   Assert.AreEqual('P0300', Ev.Dtcs[0].Code);
   Assert.AreEqual('P0171', Ev.Dtcs[1].Code);
+end;
+
+procedure TEngineTests.SmallScanAfterLargeScanDoesNotReviveOldDpids;
+var
+  Cmd: TEngineCommand;
+  I: Integer;
+  Lines: TStringList;
+begin
+  // 5 DPIDs (two schedule slots), then a 1-DPID scan. On the real PCM the
+  // second scan would resume the old slot unless the engine clears it.
+  Lines := TStringList.Create;
+  try
+    Lines.Add('Counter,Long Name,Desc,Formula,Units,Datalength,PID,group,shortname,Results,PidCat,txtMCI');
+    for I := 0 to 14 do
+      Lines.Add(Format('%d,P%d,,N0,,2,%.4x,1,P%d,,1,%%P%d%%', [100 + I, I, $2000 + I, I, I]));
+    FCatalog.LoadFromStrings(Lines);
+  finally
+    Lines.Free;
+  end;
+  Connect;
+  Cmd := Command(ecStartScan);
+  for I := 0 to 14 do
+    Cmd.PidIds := Cmd.PidIds + [100 + I];
+  FEngine.Post(Cmd);
+  Assert.IsTrue(WaitUntil(function: Boolean begin Result := FEngine.GetSnapshot.Cycles >= 2 end), 'large scan');
+  Assert.AreEqual(5, Integer(Length(FSim.ActiveDpids)));
+
+  Cmd := Command(ecStartScan);
+  Cmd.PidIds := [100];
+  FEngine.Post(Cmd);
+  Assert.IsTrue(WaitUntil(
+    function: Boolean
+    var
+      S: TLiveSnapshot;
+    begin
+      S := FEngine.GetSnapshot;
+      Result := (Length(S.PidIds) = 1) and (S.Cycles >= 3);
+    end), 'small scan');
+  // Only $FE (scheduled in both slots), none of the earlier DPIDs.
+  for I := 0 to High(FSim.ActiveDpids) do
+    Assert.AreEqual(Integer($FE), Integer(FSim.ActiveDpids[I]), 'stale DPID still streaming');
+  Assert.AreEqual(2, Integer(Length(FSim.ActiveDpids)));
 end;
 
 procedure TEngineTests.RejectsScanWithNothingSelected;

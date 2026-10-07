@@ -73,7 +73,8 @@ type
     edtRaw: TEdit;
     btnSendRaw: TButton;
     chkTrace: TCheckBox;
-    chkPadDpid: TCheckBox;
+    lblRate: TLabel;
+    cbRate: TComboBox;
     tsMessages: TTabSheet;
     memLog: TMemo;
     pnlLogFooter: TPanel;
@@ -107,7 +108,7 @@ type
     procedure btnBrowseLogFolderClick(Sender: TObject);
     procedure btnSendRawClick(Sender: TObject);
     procedure chkTraceClick(Sender: TObject);
-    procedure chkPadDpidClick(Sender: TObject);
+    procedure cbRateChange(Sender: TObject);
     procedure btnClearMessagesClick(Sender: TObject);
     procedure tmrRefreshTimer(Sender: TObject);
     procedure lblNoticeClick(Sender: TObject);
@@ -207,7 +208,7 @@ begin
   LoadSettings;
   FillPidList;
   FEngine := TScanEngine.Create(FCatalog, HandleEvent);
-  FEngine.PadDpidRequests := chkPadDpid.Checked;
+  cbRateChange(nil);
   FEngine.SetTrace(chkTrace.Checked);
   grdLive.ColWidths[ColName] := 220;
   grdLive.ColWidths[ColValue] := 140;
@@ -317,7 +318,7 @@ begin
       cbBaud.ItemIndex := 0;
     edtLogFolder.Text := Ini.ReadString('Logging', 'Folder',
       TPath.Combine(TPath.GetDocumentsPath, 'UVScan Logs'));
-    chkPadDpid.Checked := Ini.ReadBool('Advanced', 'PadDpidRequests', True);
+    cbRate.ItemIndex := EnsureRange(Ini.ReadInteger('Advanced', 'StreamRate', 0), 0, cbRate.Items.Count - 1);
     chkTrace.Checked := Ini.ReadBool('Advanced', 'Trace', False);
     for Id in Ini.ReadString('Scan', 'Selected', '').Split([',']) do
       if TryStrToInt(Id, N) and (FCatalog.FindById(N) <> nil) and not FSelected.Contains(N) then
@@ -351,7 +352,7 @@ begin
     Ini.WriteString('Connection', 'Port', cbPort.Text);
     Ini.WriteString('Connection', 'Baud', cbBaud.Text);
     Ini.WriteString('Logging', 'Folder', edtLogFolder.Text);
-    Ini.WriteBool('Advanced', 'PadDpidRequests', chkPadDpid.Checked);
+    Ini.WriteInteger('Advanced', 'StreamRate', cbRate.ItemIndex);
     Ini.WriteBool('Advanced', 'Trace', chkTrace.Checked);
     for Id in FSelected do
       Ids.Add(IntToStr(Id));
@@ -1025,10 +1026,12 @@ begin
     FEngine.SetTrace(chkTrace.Checked);
 end;
 
-procedure TMainForm.chkPadDpidClick(Sender: TObject);
+procedure TMainForm.cbRateChange(Sender: TObject);
+const
+  Speeds: array[0..2] of Byte = (StreamSpeedFast, StreamSpeedMedium, StreamSpeedSlow);
 begin
-  if FEngine <> nil then
-    FEngine.PadDpidRequests := chkPadDpid.Checked;
+  if (FEngine <> nil) and (cbRate.ItemIndex >= 0) then
+    FEngine.StreamSpeed := Speeds[cbRate.ItemIndex]; // applies from the next scan start
 end;
 
 { Messages }

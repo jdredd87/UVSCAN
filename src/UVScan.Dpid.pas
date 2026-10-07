@@ -42,8 +42,10 @@ type
     Dpids: TArray<TDpidDef>;
     function TotalBytes: Integer;
     function IndexOfDpid(Id: Byte): Integer;
-    { $2A request messages: up to 4 DPIDs each. }
-    function StreamRequests(PadToFour: Boolean): TArray<TBytes>;
+    { $2A requests at the given speed nibble. Up to 4 DPIDs are put in both
+      PCM schedule slots (twice the update rate); 5-8 DPIDs use slot 1 for the
+      first four and slot 2 for the rest. }
+    function StreamRequests(Speed: Byte): TArray<TBytes>;
   end;
 
 function PlanDpids(const Requests: TArray<TDpidRequest>): TDpidPlan;
@@ -141,14 +143,25 @@ begin
   Result := -1;
 end;
 
-function TDpidPlan.StreamRequests(PadToFour: Boolean): TArray<TBytes>;
+function TDpidPlan.StreamRequests(Speed: Byte): TArray<TBytes>;
 var
-  Group, I, Start, N: Integer;
+  I, Start, N: Integer;
   Ids: TArray<Byte>;
+  Slot: Byte;
 begin
   Result := nil;
-  Group := 0;
   Start := 0;
+  Slot := StreamSlot1;
+  if (Length(Dpids) > 0) and (Length(Dpids) <= DpidsPerRequest) then
+  begin
+    SetLength(Ids, Length(Dpids));
+    for I := 0 to High(Dpids) do
+      Ids[I] := Dpids[I].Id;
+    SetLength(Result, 2);
+    Result[0] := RequestDpidsRequest(StreamSlot1 or Speed, Ids);
+    Result[1] := RequestDpidsRequest(StreamSlot2 or Speed, Ids);
+    Exit;
+  end;
   while Start < Length(Dpids) do
   begin
     N := Length(Dpids) - Start;
@@ -157,9 +170,9 @@ begin
     SetLength(Ids, N);
     for I := 0 to N - 1 do
       Ids[I] := Dpids[Start + I].Id;
-    Result := Result + [RequestDpidsRequest($14 + Group * $10, Ids, PadToFour)];
+    Result := Result + [RequestDpidsRequest(Slot or Speed, Ids)];
+    Slot := StreamSlot2;
     Inc(Start, N);
-    Inc(Group);
   end;
 end;
 

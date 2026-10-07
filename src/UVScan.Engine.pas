@@ -56,6 +56,7 @@ type
     Cycles: Int64;
     CyclesPerSecond: Double;
     LogRows: Int64;
+    StrayFrames: Int64;  // stream frames for DPIDs that are not part of this scan
     Logging: Boolean;
     LogPaused: Boolean;
   end;
@@ -81,7 +82,7 @@ type
     FCommands: TThreadedQueue<TEngineCommand>;
     FCancel: Integer;          // set by Cancel; checked by long operations
     FTrace: Integer;           // log raw traffic when <> 0
-    FPadDpidRequests: Boolean;
+    FStreamSpeed: Byte;
 
     // Owned by the engine thread only
     FPort: ISerialPort;
@@ -109,6 +110,7 @@ type
     FRateClock: TStopwatch;
     FRateCycles: Int64;
     FRate: Double;
+    FStray: Int64;
 
     // Logging
     FLog: TStreamWriter;
@@ -148,6 +150,7 @@ type
     procedure DoStartScan(const Ids: TArray<Integer>);
     procedure DoStopScan;
     procedure StopStreaming;
+    procedure ResetStreamSlots;
     procedure DoStartLog(const FileName: string);
     procedure DoStopLog;
     procedure DoReadDtcs;
@@ -174,7 +177,8 @@ type
     procedure Cancel;
     function GetSnapshot: TLiveSnapshot;
     procedure SetTrace(Enabled: Boolean);
-    property PadDpidRequests: Boolean read FPadDpidRequests write FPadDpidRequests;
+    { $2A speed nibble (StreamSpeedFast/Medium/Slow); applies from the next scan. }
+    property StreamSpeed: Byte read FStreamSpeed write FStreamSpeed;
   end;
 
 function Command(Kind: TEngineCommandKind): TEngineCommand;
@@ -213,7 +217,7 @@ begin
   FParser := TAvtFrameParser.Create;
   FPending := TQueue<TAvtFrame>.Create;
   FLock := TCriticalSection.Create;
-  FPadDpidRequests := True; // legacy UVSCAN always sent 4 DPIDs per request, padded with 00
+  FStreamSpeed := StreamSpeedFast;
   inherited Create(False);
   NameThreadForDebugging('UVScan engine');
 end;
@@ -340,12 +344,17 @@ begin
     F := FPending.Dequeue;
     Exit(True);
   end;
-  if FParser.TryNext(F) then
-    Exit(True);
-  N := FPort.Read(FReadBuf, SizeOf(FReadBuf), TimeoutMs);
-  if N > 0 then
-    FParser.Push(FReadBuf, N);
   Result := FParser.TryNext(F);
+  if not Result then
+  begin
+    N := FPort.Read(FReadBuf, SizeOf(FReadBuf), TimeoutMs);
+    if N > 0 then
+      FParser.Push(FReadBuf, N);
+    Result := FParser.TryNext(F);
+  end;
+  // Trace everything except the high-rate stream data.
+  if Result and (FTrace <> 0) and not (FStreaming and F.IsBusMessage) then
+    Log('RX  ' + F.ToHex);
 end;
 
 function TScanEngine.WaitFor(const Match: TFrameMatch; TimeoutMs: Cardinal; out Reply: TAvtFrame): Boolean;
@@ -361,8 +370,6 @@ begin
       Exit(False);
     if NextFrame(Min(Left, 50), F) then
     begin
-      if (FTrace <> 0) and not (FStreaming and F.IsBusMessage) then
-        Log('RX  ' + F.ToHex);
       if Match(F) then
       begin
         Reply := F;
@@ -409,6 +416,11 @@ procedure TScanEngine.HandleUnsolicited(const F: TAvtFrame);
 var
   Msg: TClass2Message;
 begin
+  if F.IsBusMessage and (Length(F.Data) = 1) then
+    Exit; // AVT transmit status for a message we sent (01 60 = sent OK)
+  if F.IsBusMessage and TryParseClass2(F.BusMessage, Msg) and (Msg.Mode = $6A) and
+    (Length(Msg.Data) = 1) and (Msg.Data[0] = 0) then
+    Exit; // PCM acknowledging "stop streaming" (6A 00)
   if F.IsBusMessage and TryParseClass2(F.BusMessage, Msg) then
   begin
     if FStreaming and (Msg.Mode = $6A) and (Msg.Source = AddrPcm) then
@@ -554,7 +566,7 @@ begin
   if not WaitFor(
     function(const Fr: TAvtFrame): Boolean
     begin
-      Result := Fr.Kind = $C;
+      Result := (Fr.Header = $91) or (Fr.Kind = $C); // AVT-841 answers 91 07
     end, 500, F) then
     Warn('No reply to AVT mode command (E1 33)');
 
@@ -569,7 +581,7 @@ begin
     DoDisconnect;
     Exit;
   end;
-  FVehicle.Firmware := IntToHex(F.Data[1], 2);
+  FVehicle.Firmware := BytesToHex(F.Data); // AVT-841: 92 04 13 -> '04 13'
   Log('AVT firmware %s', [FVehicle.Firmware]);
   SetState(esConnected);
   DoReadVehicleInfo;
@@ -661,12 +673,33 @@ end;
 
 procedure TScanEngine.StopStreaming;
 begin
-  SendBus(StopDpidsRequest);
   if FAnalogOn then
     SendFrame(EncodeAvtFrame($5, BytesOf([$59, $00])));
   FStreaming := False;
   FAnalogOn := False;
-  Drain(150); // let in-flight stream frames arrive and be discarded
+  ResetStreamSlots;
+end;
+
+{ Stop streaming and empty both PCM schedule slots. "2A 00" alone only pauses:
+  the next request would revive whatever an earlier scan left in the other
+  slot, flooding the bus with DPIDs nobody asked for. }
+procedure TScanEngine.ResetStreamSlots;
+var
+  Msg: TClass2Message;
+  Slot: Byte;
+begin
+  SendBus(StopDpidsRequest);
+  Drain(100); // let in-flight stream frames arrive and be discarded
+  for Slot in [StreamSlot1, StreamSlot2] do
+    Exchange(ClearStreamSlotRequest(Slot),
+      function(const Fr: TAvtFrame): Boolean
+      var
+        M: TClass2Message;
+      begin
+        Result := FromPcm(Fr, M) and M.IsNegativeFor(ModeRequestDpids);
+      end, ReplyTimeoutMs, Msg);
+  SendBus(StopDpidsRequest);
+  Drain(100);
   FPending.Clear;
 end;
 
@@ -688,9 +721,11 @@ var
   Rejected: TList<Integer>;
   Request: TBytes;
 begin
-  if FStreaming then
-    StopStreaming;
   DoStopLog;
+  if FStreaming then
+    StopStreaming
+  else
+    ResetStreamSlots;
 
   Pids := TList<TPidDef>.Create;
   Rejected := TList<Integer>.Create;
@@ -821,6 +856,7 @@ begin
     FCycles := 0;
     FRateCycles := 0;
     FRate := 0;
+    FStray := 0;
     FScanClock := TStopwatch.StartNew;
     FRateClock := TStopwatch.StartNew;
     FLastData := TStopwatch.StartNew;
@@ -832,9 +868,29 @@ begin
       SendFrame(EncodeAvtFrame($5, BytesOf([$59, $01])));
       FAnalogOn := True;
     end;
-    for Request in FPlan.StreamRequests(FPadDpidRequests) do
-      SendBus(Request);
+    // Streaming must be on before the requests go out so the first data
+    // frames, which can arrive before the PCM's status reply, are decoded.
     FStreaming := True;
+    for Request in FPlan.StreamRequests(FStreamSpeed) do
+    begin
+      if Exchange(Request,
+        function(const Fr: TAvtFrame): Boolean
+        var
+          M: TClass2Message;
+        begin
+          Result := FromPcm(Fr, M) and M.IsNegativeFor(ModeRequestDpids);
+        end, ReplyTimeoutMs, Msg) then
+      begin
+        if Msg.Data[High(Msg.Data)] <> NrcStreamAccepted then
+        begin
+          EmitText(eeError, Format('The PCM refused the stream request (%s)', [Msg.ToHex]));
+          StopStreaming;
+          Exit;
+        end;
+      end
+      else
+        Warn('No status reply to the stream request; continuing');
+    end;
 
     Log('Scanning %d PIDs in %d DPIDs (%d bytes)', [Length(FScanPids), Length(FPlan.Dpids), FPlan.TotalBytes]);
     Ev := Default(TEngineEvent);
@@ -875,7 +931,10 @@ begin
     Exit;
   Idx := FPlan.IndexOfDpid(Msg.Data[0]);
   if Idx < 0 then
+  begin
+    Inc(FStray);
     Exit;
+  end;
   FLastData := TStopwatch.StartNew;
   FNoDataWarned := False;
   for S in FPlan.Dpids[Idx].Slots do
@@ -992,6 +1051,7 @@ begin
   S.Cycles := FCycles;
   S.CyclesPerSecond := FRate;
   S.LogRows := FLogRows;
+  S.StrayFrames := FStray;
   S.Logging := FLog <> nil;
   S.LogPaused := FLogPaused;
   FLock.Enter;

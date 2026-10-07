@@ -10,12 +10,13 @@ unit UVScan.Avt;
   the byte after the header holds the length.
 
   Frames seen in the legacy UVSCAN code:
-    host -> AVT  E1 33        (set VPW mode)    AVT -> host  C1 00
+    host -> AVT  E1 33        (init)             AVT -> host  91 07   (seen on AVT-841)
     host -> AVT  B0           (version request)  AVT -> host  92 xx yy
     host -> AVT  F1 A5        (reset)            AVT -> host  91 07
     host -> AVT  52 59 01/00  (analog inputs on/off)
     AVT -> host  64 58 a1 a2 a3  (analog sample)
     host -> AVT  05 6C 10 F1 3C 01   (bus message, 5 bytes)
+    AVT -> host  01 60        (transmit status: message sent; seen on AVT-841)
     AVT -> host  0C 00 6C F1 10 7C 01 00 ...  (status 00 + bus message) }
 
 interface
@@ -43,6 +44,7 @@ type
   private
     FBuffer: TBytes;
     FCount: Integer;
+    FResyncs: Integer;
     procedure Consume(N: Integer);
   public
     procedure Push(const Data; Count: Integer); overload;
@@ -50,6 +52,8 @@ type
     function TryNext(out Frame: TAvtFrame): Boolean;
     procedure Clear;
     property Pending: Integer read FCount;
+    { Number of stray bytes dropped to regain framing. }
+    property Resyncs: Integer read FResyncs;
   end;
 
 function EncodeAvtFrame(Kind: Byte; const Payload: TBytes): TBytes;
@@ -155,6 +159,17 @@ begin
   end;
   if FCount < HeaderLen + DataLen then
     Exit;
+
+  // Resync: a received bus frame starts with status 00. If this one does not,
+  // but the next byte is a bus header followed by 00, the first byte was a
+  // stray duplicate (seen once on an AVT-841 at 115200). Drop it.
+  if (Header shr 4 = AvtKindBus) and (DataLen >= 2) and (FBuffer[1] <> 0) and
+    (FBuffer[1] shr 4 = AvtKindBus) and (FBuffer[1] and $0F >= 2) and (FBuffer[2] = 0) then
+  begin
+    Consume(1);
+    Inc(FResyncs);
+    Exit(TryNext(Frame));
+  end;
 
   Frame.Header := Header;
   if Header = AvtExtendedHeader then

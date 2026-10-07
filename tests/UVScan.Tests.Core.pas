@@ -22,6 +22,7 @@ type
     [Test] procedure ParsesFramesSplitAcrossReads;
     [Test] procedure ParsesNonBusFrames;
     [Test] procedure ParsesExtendedLengthFrame;
+    [Test] procedure ResyncsAfterStrayHeaderByte;
   end;
 
   [TestFixture]
@@ -168,6 +169,25 @@ begin
   end;
 end;
 
+procedure TAvtFramingTests.ResyncsAfterStrayHeaderByte;
+var
+  P: TAvtFrameParser;
+  F: TAvtFrame;
+begin
+  // Captured on an AVT-841: a duplicated 0C header byte ahead of a stream frame.
+  P := TAvtFrameParser.Create;
+  try
+    P.Push(HexToBytes('0C 0C 00 6C F1 10 6A FE 00 00 01 75 00 00 01 60'));
+    Assert.IsTrue(P.TryNext(F));
+    Assert.AreEqual('6C F1 10 6A FE 00 00 01 75 00 00', BytesToHex(F.BusMessage));
+    Assert.AreEqual(1, P.Resyncs);
+    Assert.IsTrue(P.TryNext(F));
+    Assert.AreEqual('01 60', F.ToHex);
+  finally
+    P.Free;
+  end;
+end;
+
 { TClass2Tests }
 
 procedure TClass2Tests.ReadVinBlockMatchesLegacyBytes;
@@ -187,10 +207,9 @@ end;
 
 procedure TClass2Tests.RequestDpidsMatchesLegacyBytes;
 begin
+  // The PCM refuses anything but 4 DPID slots (verified on a bench PCM).
   Assert.AreEqual('09 6C 10 F1 2A 14 FE FD 00 00',
-    BytesToHex(EncodeBusMessage(RequestDpidsRequest($14, [$FE, $FD], True))));
-  Assert.AreEqual('07 6C 10 F1 2A 14 FE FD',
-    BytesToHex(EncodeBusMessage(RequestDpidsRequest($14, [$FE, $FD], False))));
+    BytesToHex(EncodeBusMessage(RequestDpidsRequest($14, [$FE, $FD]))));
 end;
 
 procedure TClass2Tests.WriteVinMatchesLegacyBytes;
@@ -431,9 +450,11 @@ begin
   Assert.AreEqual(1, Integer(Length(Plan.Dpids)));
   Assert.AreEqual(6, Plan.Dpids[0].Used);
   Assert.AreEqual(Integer(5), Integer(Plan.Dpids[0].Slots[2].Position));
-  Msgs := Plan.StreamRequests(False);
-  Assert.AreEqual(1, Integer(Length(Msgs)));
-  Assert.AreEqual('6C 10 F1 2A 14 FE', BytesToHex(Msgs[0]));
+  Msgs := Plan.StreamRequests(StreamSpeedFast);
+  // Up to 4 DPIDs go in both PCM schedule slots: twice the update rate.
+  Assert.AreEqual(2, Integer(Length(Msgs)));
+  Assert.AreEqual('6C 10 F1 2A 14 FE 00 00 00', BytesToHex(Msgs[0]));
+  Assert.AreEqual('6C 10 F1 2A 24 FE 00 00 00', BytesToHex(Msgs[1]));
 end;
 
 procedure TDpidPlannerTests.PacksLargestFirstWithoutSplitting;
@@ -460,10 +481,11 @@ var
 begin
   for I := 0 to 14 do
     Reqs := Reqs + [Req(I, I + 1, 2)]; // 30 bytes -> 5 DPIDs
-  Msgs := PlanDpids(Reqs).StreamRequests(True);
+  Msgs := PlanDpids(Reqs).StreamRequests(StreamSpeedMedium);
   Assert.AreEqual(2, Integer(Length(Msgs)));
-  Assert.AreEqual('6C 10 F1 2A 14 FE FD FC FB', BytesToHex(Msgs[0]));
-  Assert.AreEqual('6C 10 F1 2A 24 FA 00 00 00', BytesToHex(Msgs[1]));
+  // Two PCM schedule slots; a second request in the same slot would replace the first.
+  Assert.AreEqual('6C 10 F1 2A 13 FE FD FC FB', BytesToHex(Msgs[0]));
+  Assert.AreEqual('6C 10 F1 2A 23 FA 00 00 00', BytesToHex(Msgs[1]));
 end;
 
 procedure TDpidPlannerTests.RejectsTooManyBytes;

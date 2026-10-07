@@ -17,6 +17,12 @@ type
     Size: Byte;
   end;
 
+  TSimStream = record
+    Id: Byte;
+    IntervalMs: Integer;
+    NextMs: Int64;
+  end;
+
   TSimulatedAvt = class(TInterfacedObject, ISerialPort)
   private
     FOpen: Boolean;
@@ -25,13 +31,14 @@ type
     FClock: TStopwatch;
     FVin: string;
     FDpids: TDictionary<Byte, TList<TSimSlot>>;
-    FStreaming: TList<Byte>;
-    FStreamIndex: Integer;
-    FNextStreamMs: Int64;
+    FStreaming: TList<TSimStream>;   // active DPIDs (both slots)
+    FSlots: array[1..2] of TArray<Byte>;
+    FSlotSpeed: array[1..2] of Integer;
+    FPaused: Boolean;
     FAnalogOn: Boolean;
     FNextAnalogMs: Int64;
     FRejectedPids: TList<Word>;
-    FStreamIntervalMs: Integer;
+    procedure RebuildStreams;
     procedure Emit(const Frame: TBytes);
     procedure EmitBus(const Msg: TBytes);
     procedure Reply(Source, Mode: Byte; const Data: array of Byte);
@@ -52,7 +59,8 @@ type
     function Description: string;
     { PIDs the simulated PCM refuses (negative response to $22 and $2C). }
     property RejectedPids: TList<Word> read FRejectedPids;
-    property StreamIntervalMs: Integer read FStreamIntervalMs write FStreamIntervalMs;
+    { DPIDs currently being streamed. }
+    function ActiveDpids: TArray<Byte>;
   end;
 
 const
@@ -66,11 +74,10 @@ begin
   inherited;
   FParser := TAvtFrameParser.Create;
   FDpids := TObjectDictionary<Byte, TList<TSimSlot>>.Create([doOwnsValues]);
-  FStreaming := TList<Byte>.Create;
+  FStreaming := TList<TSimStream>.Create;
   FRejectedPids := TList<Word>.Create;
   FRejectedPids.Add($1108); // Boost Solenoid PWM: shows how rejections are handled
   FVin := SimulatedVin;
-  FStreamIntervalMs := 20;
   FClock := TStopwatch.StartNew;
 end;
 
@@ -151,7 +158,7 @@ var
   Msg: TClass2Message;
 begin
   case F.Header of
-    $E1: Emit(HexToBytes('C1 00'));
+    $E1: Emit(HexToBytes('91 07'));
     $B0: Emit(HexToBytes('92 04 0E'));
     $F1: Emit(HexToBytes('91 07'));
     $52:
@@ -161,9 +168,12 @@ begin
         FNextAnalogMs := FClock.ElapsedMilliseconds;
       end;
   else
-    // Host bus messages carry no status byte.
+    // Host bus messages carry no status byte. The AVT confirms each one with 01 60.
     if F.IsBusMessage and TryParseClass2(F.Data, Msg) then
+    begin
+      Emit(HexToBytes('01 60'));
       HandleBusMessage(Msg);
+    end;
   end;
 end;
 
@@ -194,6 +204,7 @@ var
   I: Integer;
   Id: Byte;
   Vin: TBytes;
+  SlotNo: Byte;
 begin
   if Msg.Mode = ModeTesterPresent then
     Exit;
@@ -282,19 +293,39 @@ begin
 
     ModeRequestDpids:
       begin
-        FStreaming.Clear;
+        // Behaves like the bench PCM: 2A 00 pauses (6A 00). Otherwise exactly
+        // 4 DPID entries, slot $1x/$2x and speed 2..4 are required, answered
+        // with 7F ... 23. A request replaces its slot's list and resumes the
+        // other slot's list, which is how stale DPIDs come back to life.
         if Msg.Data[0] = $00 then
-          Exit; // stop
+        begin
+          FPaused := True;
+          RebuildStreams;
+          Reply($10, ModeRequestDpids + PositiveOffset, [$00]);
+          Exit;
+        end;
+        SlotNo := Msg.Data[0] shr 4;
+        if (Length(Msg.Data) <> 1 + DpidsPerRequest) or not (SlotNo in [1, 2]) or
+          not ((Msg.Data[0] and $0F) in [2..4]) then
+        begin
+          EmitBus(ConcatBytes(BytesOf([PriorityRequest, AddrTool, $10, ModeNegativeResponse, ModeRequestDpids]),
+            ConcatBytes(Msg.Data, BytesOf([NrcInvalidFormat]))));
+          Exit;
+        end;
+        EmitBus(ConcatBytes(BytesOf([PriorityRequest, AddrTool, $10, ModeNegativeResponse, ModeRequestDpids]),
+          ConcatBytes(Msg.Data, BytesOf([NrcStreamAccepted]))));
+        FSlots[SlotNo] := nil;
         for I := 1 to High(Msg.Data) do
-          if Msg.Data[I] <> $00 then
-          begin
-            if FDpids.ContainsKey(Msg.Data[I]) then
-              FStreaming.Add(Msg.Data[I])
-            else
-              Reply($10, ModeNegativeResponse, [ModeRequestDpids, Msg.Data[I], $31]);
-          end;
-        FStreamIndex := 0;
-        FNextStreamMs := FClock.ElapsedMilliseconds;
+          if (Msg.Data[I] <> $00) and FDpids.ContainsKey(Msg.Data[I]) then
+            FSlots[SlotNo] := FSlots[SlotNo] + [Msg.Data[I]];
+        case Msg.Data[0] and $0F of
+          4: FSlotSpeed[SlotNo] := 200;  // measured on a bench PCM
+          3: FSlotSpeed[SlotNo] := 375;
+        else
+          FSlotSpeed[SlotNo] := 667;
+        end;
+        FPaused := False;
+        RebuildStreams;
       end;
 
     ModeReadDtcs:
@@ -315,6 +346,33 @@ begin
   else
     Reply($10, ModeNegativeResponse, [Msg.Mode, $11]);
   end;
+end;
+
+procedure TSimulatedAvt.RebuildStreams;
+var
+  Slot, I: Integer;
+  S: TSimStream;
+begin
+  FStreaming.Clear;
+  if FPaused then
+    Exit;
+  for Slot := 1 to 2 do
+    for I := 0 to High(FSlots[Slot]) do
+    begin
+      S.Id := FSlots[Slot][I];
+      S.IntervalMs := FSlotSpeed[Slot];
+      S.NextMs := FClock.ElapsedMilliseconds + 10 * (I + 1) + 5 * Slot;
+      FStreaming.Add(S);
+    end;
+end;
+
+function TSimulatedAvt.ActiveDpids: TArray<Byte>;
+var
+  S: TSimStream;
+begin
+  Result := nil;
+  for S in FStreaming do
+    Result := Result + [S.Id];
 end;
 
 function TSimulatedAvt.PidValue(Pid: Word; Size: Byte): TBytes;
@@ -348,12 +406,18 @@ var
   Slot: TSimSlot;
   V: TBytes;
   A: Double;
+  I: Integer;
+  Stream: TSimStream;
 begin
   NowMs := FClock.ElapsedMilliseconds;
-  if (FStreaming.Count > 0) and (NowMs >= FNextStreamMs) then
+  for I := 0 to FStreaming.Count - 1 do
   begin
-    Id := FStreaming[FStreamIndex mod FStreaming.Count];
-    Inc(FStreamIndex);
+    Stream := FStreaming[I];
+    if NowMs < Stream.NextMs then
+      Continue;
+    Id := Stream.Id;
+    Stream.NextMs := NowMs + Stream.IntervalMs;
+    FStreaming[I] := Stream;
     SetLength(Data, DpidDataBytes);
     FillChar(Data[0], Length(Data), 0);
     for Slot in FDpids[Id] do
@@ -363,7 +427,6 @@ begin
         Move(V[0], Data[Slot.Position - 1], Slot.Size);
     end;
     EmitBus(ConcatBytes(BytesOf([PriorityRequest, AddrTool, AddrPcm, $6A, Id]), Data));
-    FNextStreamMs := NowMs + FStreamIntervalMs;
   end;
   if FAnalogOn and (NowMs >= FNextAnalogMs) then
   begin
