@@ -8,7 +8,7 @@ uses
   Vcl.Graphics, Vcl.Controls, Vcl.Forms, Vcl.Dialogs, Vcl.StdCtrls, Vcl.ExtCtrls,
   Vcl.ComCtrls, Vcl.Grids,
   UVScan.Serial, UVScan.Simulator, UVScan.Pids, UVScan.Dpid, UVScan.Dtc, UVScan.Engine,
-  UVScan.Class2;
+  UVScan.Class2, UVScan.Paths;
 
 type
   TMainForm = class(TForm)
@@ -134,7 +134,6 @@ type
     procedure LoadData;
     procedure LoadSettings;
     procedure SaveSettings;
-    function SettingsFile: string;
     procedure FillPorts(const Select: string);
     procedure FillPidList;
     procedure SetSelected(Id: Integer; Checked: Boolean);
@@ -170,28 +169,6 @@ const
   PanelOsid = 3;
   PanelRate = 4;
   PanelLog = 5;
-
-function FindDataFile(const Name: string): string;
-var
-  Dir: string;
-  I: Integer;
-begin
-  Dir := ExtractFilePath(ParamStr(0));
-  Result := TPath.Combine(Dir, Name);
-  if FileExists(Result) then
-    Exit;
-  // During development the exe sits in Win32\Debug etc.; look for ..\data upwards.
-  for I := 0 to 4 do
-  begin
-    Result := TPath.Combine(TPath.Combine(Dir, 'data'), Name);
-    if FileExists(Result) then
-      Exit;
-    Dir := ExtractFilePath(ExcludeTrailingPathDelimiter(Dir));
-    if Dir = '' then
-      Break;
-  end;
-  Result := '';
-end;
 
 { TMainForm }
 
@@ -284,9 +261,9 @@ procedure TMainForm.LoadData;
 var
   F: string;
 begin
-  F := FindDataFile('pids.csv');
-  if F = '' then
-    ShowNotice('pids.csv not found next to the program or in a data folder', True)
+  F := PidsFile;
+  if not FileExists(F) then
+    ShowNotice('PID definitions not found: ' + F, True)
   else
   begin
     FCatalog.LoadFromFile(F);
@@ -294,14 +271,11 @@ begin
     for F in FCatalog.Warnings do
       AddMessage('pids.csv: ' + F);
   end;
-  F := FindDataFile('dtcs.csv');
-  if F <> '' then
-    FDtcs.LoadFromFile(F);
-end;
-
-function TMainForm.SettingsFile: string;
-begin
-  Result := TPath.Combine(TPath.Combine(TPath.GetHomePath, 'UVScan'), 'settings.ini');
+  F := DtcsFile;
+  if FileExists(F) then
+    FDtcs.LoadFromFile(F)
+  else
+    AddMessage('Trouble code descriptions not found: ' + F);
 end;
 
 procedure TMainForm.LoadSettings;

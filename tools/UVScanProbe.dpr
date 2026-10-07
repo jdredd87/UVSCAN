@@ -19,7 +19,8 @@ uses
   UVScan.Formula in '..\src\UVScan.Formula.pas',
   UVScan.Pids in '..\src\UVScan.Pids.pas',
   UVScan.Dpid in '..\src\UVScan.Dpid.pas',
-  UVScan.Engine in '..\src\UVScan.Engine.pas';
+  UVScan.Engine in '..\src\UVScan.Engine.pas',
+  UVScan.Paths in '..\src\UVScan.Paths.pas';
 
 var
   Clock: TStopwatch;
@@ -236,21 +237,6 @@ begin
   end;
 end;
 
-function FindPidsFile: string;
-var
-  Dir: string;
-  I: Integer;
-begin
-  Dir := ExtractFilePath(ParamStr(0));
-  for I := 0 to 5 do
-  begin
-    Result := Dir + 'data\pids.csv';
-    if FileExists(Result) then
-      Exit;
-    Dir := ExtractFilePath(ExcludeTrailingPathDelimiter(Dir));
-  end;
-  raise Exception.Create('data\pids.csv not found');
-end;
 
 procedure Pump(Ms: Integer);
 var
@@ -291,7 +277,7 @@ var
 begin
   Catalog := TPidCatalog.Create;
   try
-    Catalog.LoadFromFile(FindPidsFile);
+    Catalog.LoadFromFile(PidsFile);
     Engine := TScanEngine.Create(Catalog,
       procedure(const Ev: TEngineEvent)
       var
