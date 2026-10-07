@@ -133,6 +133,18 @@ object MainForm: TMainForm
       TabOrder = 8
       OnClick = btnPauseClick
     end
+    object btnLogViewer: TButton
+      Left = 1076
+      Top = 13
+      Width = 96
+      Height = 26
+      Hint = 'Open logs as a chart and grid, with playback (F7)'
+      Caption = 'Log viewer'
+      ParentShowHint = False
+      ShowHint = True
+      TabOrder = 10
+      OnClick = btnLogViewerClick
+    end
     object chkSound: TCheckBox
       Left = 966
       Top = 17
@@ -555,6 +567,255 @@ object MainForm: TMainForm
           OnResize = sbDashResize
         end
       end
+      object tsControls: TTabSheet
+        Caption = 'Real-time controls'
+        ImageIndex = 5
+        object pnlCtlWarn: TPanel
+          Left = 0
+          Top = 0
+          Width = 759
+          Height = 44
+          Align = alTop
+          BevelOuter = bvNone
+          Color = 12644607
+          Padding.Left = 10
+          Padding.Top = 4
+          Padding.Right = 10
+          Padding.Bottom = 4
+          ParentBackground = False
+          TabOrder = 0
+          object lblCtlWarn: TLabel
+            Left = 10
+            Top = 4
+            Width = 739
+            Height = 36
+            Align = alClient
+            Caption =
+              'These commands make a module switch outputs, hold a value or re' +
+              'set what it has learned. Use only ones you understand, ideally ' +
+              'with the engine off. Anything still active is released by Relea' +
+              'se all, Disconnect or closing UVScan.'
+            ShowAccelChar = False
+            WordWrap = True
+          end
+        end
+        object pnlCtlBar: TPanel
+          Left = 0
+          Top = 44
+          Width = 759
+          Height = 40
+          Align = alTop
+          BevelOuter = bvNone
+          TabOrder = 1
+          object btnCtlAdd: TButton
+            Left = 6
+            Top = 7
+            Width = 80
+            Height = 26
+            Caption = 'Add...'
+            TabOrder = 0
+            OnClick = btnCtlAddClick
+          end
+          object btnCtlEdit: TButton
+            Left = 90
+            Top = 7
+            Width = 80
+            Height = 26
+            Caption = 'Edit...'
+            TabOrder = 1
+            OnClick = btnCtlEditClick
+          end
+          object btnCtlDup: TButton
+            Left = 174
+            Top = 7
+            Width = 80
+            Height = 26
+            Caption = 'Duplicate'
+            TabOrder = 2
+            OnClick = btnCtlDupClick
+          end
+          object btnCtlDelete: TButton
+            Left = 258
+            Top = 7
+            Width = 80
+            Height = 26
+            Caption = 'Delete'
+            TabOrder = 3
+            OnClick = btnCtlDeleteClick
+          end
+          object btnCtlRestore: TButton
+            Left = 342
+            Top = 7
+            Width = 120
+            Height = 26
+            Hint = 'Add back any built-in control that was deleted'
+            Caption = 'Restore built-ins'
+            ParentShowHint = False
+            ShowHint = True
+            TabOrder = 4
+            OnClick = btnCtlRestoreClick
+          end
+          object btnReleaseAll: TButton
+            Left = 643
+            Top = 7
+            Width = 110
+            Height = 26
+            Anchors = [akTop, akRight]
+            Caption = 'Release all'
+            Font.Charset = DEFAULT_CHARSET
+            Font.Color = clWindowText
+            Font.Height = -12
+            Font.Name = 'Segoe UI'
+            Font.Style = [fsBold]
+            ParentFont = False
+            TabOrder = 5
+            OnClick = btnReleaseAllClick
+          end
+        end
+        object lvControls: TListView
+          Left = 0
+          Top = 84
+          Width = 759
+          Height = 387
+          Align = alClient
+          Columns = <
+            item
+              Caption = 'Control'
+              Width = 230
+            end
+            item
+              Caption = 'Type'
+              Width = 120
+            end
+            item
+              Caption = 'Command'
+              Width = 210
+            end
+            item
+              Caption = 'Last result'
+              Width = 300
+            end>
+          GroupView = True
+          HideSelection = False
+          ReadOnly = True
+          RowSelect = True
+          TabOrder = 2
+          ViewStyle = vsReport
+          OnCustomDrawItem = lvControlsCustomDrawItem
+          OnDblClick = btnCtlEditClick
+          OnSelectItem = lvControlsSelectItem
+        end
+        object pnlCtlRun: TPanel
+          Left = 0
+          Top = 471
+          Width = 759
+          Height = 100
+          Align = alBottom
+          BevelOuter = bvNone
+          TabOrder = 3
+          object lblCtlName: TLabel
+            Left = 12
+            Top = 8
+            Width = 600
+            Height = 17
+            AutoSize = False
+            Caption = 'Select a control'
+            Font.Charset = DEFAULT_CHARSET
+            Font.Color = clWindowText
+            Font.Height = -13
+            Font.Name = 'Segoe UI'
+            Font.Style = [fsBold]
+            ParentFont = False
+            ShowAccelChar = False
+          end
+          object lblCtlNotes: TLabel
+            Left = 12
+            Top = 28
+            Width = 735
+            Height = 32
+            Anchors = [akLeft, akTop, akRight]
+            AutoSize = False
+            Font.Charset = DEFAULT_CHARSET
+            Font.Color = clGrayText
+            Font.Height = -12
+            Font.Name = 'Segoe UI'
+            Font.Style = []
+            ParentFont = False
+            ShowAccelChar = False
+            WordWrap = True
+          end
+          object lblCtlUnits: TLabel
+            Left = 394
+            Top = 70
+            Width = 40
+            Height = 15
+            ShowAccelChar = False
+          end
+          object btnCtlSend: TButton
+            Left = 12
+            Top = 64
+            Width = 110
+            Height = 28
+            Caption = 'Send'
+            TabOrder = 0
+            OnClick = btnCtlSendClick
+          end
+          object btnCtlOn: TButton
+            Left = 12
+            Top = 64
+            Width = 90
+            Height = 28
+            Caption = 'On'
+            TabOrder = 1
+            OnClick = btnCtlOnClick
+          end
+          object btnCtlHold: TButton
+            Left = 12
+            Top = 64
+            Width = 160
+            Height = 28
+            Caption = 'Hold to run'
+            TabOrder = 2
+            OnMouseDown = btnCtlHoldMouseDown
+            OnMouseUp = btnCtlHoldMouseUp
+          end
+          object tbCtlValue: TTrackBar
+            Left = 12
+            Top = 64
+            Width = 300
+            Height = 28
+            TabOrder = 3
+            ThumbLength = 18
+            TickStyle = tsNone
+            OnChange = tbCtlValueChange
+          end
+          object edtCtlValue: TEdit
+            Left = 318
+            Top = 66
+            Width = 70
+            Height = 23
+            TabOrder = 4
+          end
+          object btnCtlApply: TButton
+            Left = 440
+            Top = 64
+            Width = 80
+            Height = 28
+            Caption = 'Apply'
+            TabOrder = 5
+            OnClick = btnCtlApplyClick
+          end
+          object btnCtlOff: TButton
+            Left = 106
+            Top = 64
+            Width = 90
+            Height = 28
+            Caption = 'Off'
+            TabOrder = 6
+            OnClick = btnCtlOffClick
+          end
+        end
+      end
       object tsVehicle: TTabSheet
         Caption = 'Vehicle && codes'
         ImageIndex = 1
@@ -715,44 +976,9 @@ object MainForm: TMainForm
       object tsTools: TTabSheet
         Caption = 'Tools'
         ImageIndex = 2
-        object gbPcm: TGroupBox
-          Left = 12
-          Top = 12
-          Width = 560
-          Height = 66
-          Caption = ' PCM functions '
-          TabOrder = 0
-          object btnResetLtft: TButton
-            Left = 12
-            Top = 26
-            Width = 150
-            Height = 26
-            Caption = 'Reset fuel trims'
-            TabOrder = 0
-            OnClick = btnResetLtftClick
-          end
-          object btnCelOn: TButton
-            Left = 168
-            Top = 26
-            Width = 150
-            Height = 26
-            Caption = 'Check engine light on'
-            TabOrder = 1
-            OnClick = btnCelOnClick
-          end
-          object btnCelOff: TButton
-            Left = 324
-            Top = 26
-            Width = 150
-            Height = 26
-            Caption = 'Check engine light off'
-            TabOrder = 2
-            OnClick = btnCelOffClick
-          end
-        end
         object gbWriteVin: TGroupBox
           Left = 12
-          Top = 88
+          Top = 12
           Width = 560
           Height = 66
           Caption = ' Write VIN '
@@ -779,7 +1005,7 @@ object MainForm: TMainForm
         end
         object gbLogging: TGroupBox
           Left = 12
-          Top = 164
+          Top = 88
           Width = 560
           Height = 66
           Caption = ' Logging '
@@ -810,7 +1036,7 @@ object MainForm: TMainForm
         end
         object gbDiscover: TGroupBox
           Left = 12
-          Top = 380
+          Top = 304
           Width = 560
           Height = 66
           Caption = ' PID discovery '
@@ -840,7 +1066,7 @@ object MainForm: TMainForm
         end
         object gbAdvanced: TGroupBox
           Left = 12
-          Top = 240
+          Top = 164
           Width = 560
           Height = 130
           Caption = ' Advanced '

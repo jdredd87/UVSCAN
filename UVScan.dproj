@@ -110,6 +110,18 @@
             <Form>GaugeEditorForm</Form>
             <FormType>dfm</FormType>
         </DCCReference>
+        <DCCReference Include="src\UVScan.Controls.pas"/>
+        <DCCReference Include="src\UVScan.ControlEditor.pas">
+            <Form>ControlEditorForm</Form>
+            <FormType>dfm</FormType>
+        </DCCReference>
+        <DCCReference Include="src\UVScan.LogData.pas"/>
+        <DCCReference Include="src\UVScan.LogViews.pas"/>
+        <DCCReference Include="src\UVScan.LogChart.pas"/>
+        <DCCReference Include="src\UVScan.LogViewer.pas">
+            <Form>LogViewerForm</Form>
+            <FormType>dfm</FormType>
+        </DCCReference>
         <RcCompile Include="UVScan.Defaults.rc">
             <Form>UVScan.Defaults.res</Form>
         </RcCompile>

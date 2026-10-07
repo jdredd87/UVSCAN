@@ -11,7 +11,7 @@ program UVScanProbe;
 {$APPTYPE CONSOLE}
 
 uses
-  System.SysUtils, System.Classes, System.Diagnostics, System.Math,
+  System.SysUtils, System.Classes, System.Diagnostics, System.Math, System.StrUtils,
   UVScan.Hex in '..\src\UVScan.Hex.pas',
   UVScan.Serial in '..\src\UVScan.Serial.pas',
   UVScan.Avt in '..\src\UVScan.Avt.pas',
@@ -308,6 +308,355 @@ begin
   end;
 end;
 
+{ Sends one Class 2 request to the PCM and returns the PCM's answer for that
+  mode (positive or 7F negative) as hex, '' if none within TimeoutMs. }
+function Ask(const Port: ISerialPort; Parser: TAvtFrameParser; const Msg: TBytes; TimeoutMs: Integer): string;
+var
+  Buf: array[0..255] of Byte;
+  N: Integer;
+  W: TStopwatch;
+  Fr: TAvtFrame;
+  M: TClass2Message;
+  Mode: Byte;
+begin
+  Result := '';
+  Mode := Msg[3];
+  Parser.Clear;
+  Port.Write(EncodeBusMessage(Msg));
+  W := TStopwatch.StartNew;
+  while W.ElapsedMilliseconds < TimeoutMs do
+  begin
+    N := Port.Read(Buf, SizeOf(Buf), 30);
+    if N > 0 then
+      Parser.Push(Buf, N);
+    while Parser.TryNext(Fr) do
+      if Fr.IsBusMessage and TryParseClass2(Fr.BusMessage, M) and (M.Source = AddrPcm) and
+        (M.IsPositiveFor(Mode) or M.IsNegativeFor(Mode)) then
+        Exit(M.ToHex);
+  end;
+end;
+
+{ Device control survey: sends mode $AE for each CPID with all six control
+  bytes zero (= control nothing / reset nothing) and prints the PCM's answer,
+  then returns the PCM to normal mode ($20). }
+procedure CpidSurvey(const PortName: string; Lo, Hi: Integer);
+var
+  Port: ISerialPort;
+  Parser: TAvtFrameParser;
+  Cpid: Integer;
+  Reply: string;
+  Counts: TStringList;
+begin
+  Port := TWin32SerialPort.Create(PortName, 115200, fcRtsCts);
+  Parser := TAvtFrameParser.Create;
+  Counts := TStringList.Create;
+  try
+    Port.Open;
+    Port.Write(HexToBytes('E1 33'));
+    RawListen(Port, 200);
+    for Cpid := Lo to Hi do
+    begin
+      Reply := Ask(Port, Parser, BuildMessage(AddrPcm, AddrTool, ModeDeviceControl,
+        [Byte(Cpid), 0, 0, 0, 0, 0, 0]), 400);
+      if Reply = '' then
+        Reply := '(no answer)';
+      Say(Format('CPID %.2x -> %s', [Cpid, Reply]));
+      Sleep(30);
+    end;
+    Say('Return to normal ($20) -> ' + Ask(Port, Parser, BuildMessage(AddrPcm, AddrTool, $20, []), 500));
+    Port.Close;
+  finally
+    Counts.Free;
+    Parser.Free;
+  end;
+end;
+
+{ For each CPID, tries 0..8 zero control bytes: shows which lengths the PCM accepts. }
+procedure CpidLengths(const PortName: string; const Cpids: string);
+var
+  Port: ISerialPort;
+  Parser: TAvtFrameParser;
+  S: string;
+  Cpid, N: Integer;
+  Data: TArray<Byte>;
+begin
+  Port := TWin32SerialPort.Create(PortName, 115200, fcRtsCts);
+  Parser := TAvtFrameParser.Create;
+  try
+    Port.Open;
+    Port.Write(HexToBytes('E1 33'));
+    RawListen(Port, 200);
+    for S in Cpids.Split([',']) do
+    begin
+      Cpid := StrToInt('$' + S);
+      for N := 0 to 8 do
+      begin
+        SetLength(Data, N + 1);
+        FillChar(Data[0], Length(Data), 0);
+        Data[0] := Cpid;
+        Say(Format('CPID %.2x + %d bytes -> %s', [Cpid, N, Ask(Port, Parser,
+          BuildMessage(AddrPcm, AddrTool, ModeDeviceControl, Data), 400)]));
+      end;
+    end;
+    Say('Return to normal ($20) -> ' + Ask(Port, Parser, BuildMessage(AddrPcm, AddrTool, $20, []), 500));
+    Port.Close;
+  finally
+    Parser.Free;
+  end;
+end;
+
+{ Maps device-control bits to PIDs. Reads every PID listed in PidFile (lines
+  "PID xxxx ..." as printed by sweep) twice for a baseline, then for each CPID
+  and each bit sets the bit in both bytes of a mask/value pair - pairs (1,2)
+  (3,4) (5,6) and split (1,4) (2,5) (3,6) - reads all PIDs again, prints what
+  changed, and releases the CPID (all zero) before the next test. Finishes
+  with mode $20 (return to normal). }
+procedure CpidMap(const PortName, PidFile, Cpids: string);
+type
+  TSnap = TArray<string>;
+var
+  Port: ISerialPort;
+  Parser: TAvtFrameParser;
+  Pids: TArray<Word>;
+  Base, Base2, Now_: TSnap;
+  Noisy: TArray<Boolean>;
+  Line, S, Reply, Changes: string;
+  I, Cpid, Layout, Pair, Bit, A, B: Integer;
+  Data: TArray<Byte>;
+  Lines: TStringList;
+
+  function Snap: TSnap;
+  var
+    K: Integer;
+    R: string;
+  begin
+    SetLength(Result, Length(Pids));
+    for K := 0 to High(Pids) do
+    begin
+      R := Ask(Port, Parser, ReadPidRequest(Pids[K]), 300);
+      // "6C F0 10 62 hi lo data..." -> data
+      if (Length(R) > 18) and (Copy(R, 10, 2) = '62') then
+        Result[K] := Copy(R, 19, MaxInt)
+      else
+        Result[K] := '?';
+    end;
+  end;
+
+  procedure Release(C: Integer);
+  begin
+    Ask(Port, Parser, BuildMessage(AddrPcm, AddrTool, ModeDeviceControl, [Byte(C), 0, 0, 0, 0, 0, 0]), 300);
+  end;
+
+begin
+  Lines := TStringList.Create;
+  try
+    Lines.LoadFromFile(PidFile);
+    for Line in Lines do
+      if Line.StartsWith('PID ') then
+        Pids := Pids + [Word(StrToInt('$' + Copy(Line, 5, 4)))];
+  finally
+    Lines.Free;
+  end;
+  Say(Format('%d PIDs to watch', [Length(Pids)]));
+  Port := TWin32SerialPort.Create(PortName, 115200, fcRtsCts);
+  Parser := TAvtFrameParser.Create;
+  try
+    Port.Open;
+    Port.Write(HexToBytes('E1 33'));
+    RawListen(Port, 200);
+    Base := Snap;
+    Base2 := Snap;
+    SetLength(Noisy, Length(Pids));
+    for I := 0 to High(Pids) do
+    begin
+      Noisy[I] := Base[I] <> Base2[I];
+      if Noisy[I] then
+        Say(Format('  PID %.4x changes on its own (%s -> %s), ignored', [Pids[I], Base[I], Base2[I]]));
+    end;
+    for S in Cpids.Split([',']) do
+    begin
+      Cpid := StrToInt('$' + S);
+      for Layout := 0 to 1 do
+        for Pair := 0 to 2 do
+          for Bit := 7 downto 0 do
+          begin
+            if Layout = 0 then
+            begin
+              A := 1 + 2 * Pair;
+              B := A + 1;
+            end
+            else
+            begin
+              A := 1 + Pair;
+              B := A + 3;
+            end;
+            SetLength(Data, 7);
+            FillChar(Data[0], 7, 0);
+            Data[0] := Cpid;
+            Data[A] := 1 shl Bit;
+            Data[B] := 1 shl Bit;
+            Reply := Ask(Port, Parser, BuildMessage(AddrPcm, AddrTool, ModeDeviceControl, Data), 400);
+            if (Reply = '') or (Pos(' 7F ', Reply) > 0) then
+            begin
+              Say(Format('CPID %.2x %s : %s', [Cpid, BytesToHex(Copy(Data, 1, 6)), IfThen(Reply = '', 'no answer', Reply)]));
+              Release(Cpid);
+              Continue;
+            end;
+            Sleep(400);
+            Now_ := Snap;
+            Changes := '';
+            for I := 0 to High(Pids) do
+              if not Noisy[I] and (Now_[I] <> Base[I]) then
+                Changes := Changes + Format('  %.4x:%s->%s', [Pids[I], Base[I], Now_[I]]);
+            Say(Format('CPID %.2x %s : OK%s', [Cpid, BytesToHex(Copy(Data, 1, 6)),
+              IfThen(Changes = '', '  (no PID changed)', Changes)]));
+            Release(Cpid);
+            Sleep(300);
+          end;
+    end;
+    Say('Return to normal ($20) -> ' + Ask(Port, Parser, BuildMessage(AddrPcm, AddrTool, $20, []), 500));
+    Now_ := Snap;
+    Changes := '';
+    for I := 0 to High(Pids) do
+      if not Noisy[I] and (Now_[I] <> Base[I]) then
+        Changes := Changes + Format('  %.4x:%s->%s', [Pids[I], Base[I], Now_[I]]);
+    Say('After the run, still different from the start:' + IfThen(Changes = '', ' nothing', Changes));
+    Port.Close;
+  finally
+    Parser.Free;
+  end;
+end;
+
+{ Confirms device-control effects on a few PIDs. For the CPID, tries every
+  single bit of the 6 control bytes and every split pair (byte n and n+3), each
+  Reps times: set, read the PIDs, release, read again. Prints only effects
+  seen on every repeat that also go away on release. }
+procedure CpidConfirm(const PortName, Cpids, PidList: string; Reps, FirstTest: Integer);
+var
+  Port: ISerialPort;
+  Parser: TAvtFrameParser;
+  Pids: TArray<Word>;
+  S: string;
+  Cpid, Test, Bit, A, B, R, I: Integer;
+  Data: TArray<Byte>;
+  Base, OnV, OffV: TArray<string>;
+  Consistent: TArray<Boolean>;
+  Seen: TArray<string>;
+  Line, Reply: string;
+
+  function Read: TArray<string>;
+  var
+    K: Integer;
+    X: string;
+  begin
+    SetLength(Result, Length(Pids));
+    for K := 0 to High(Pids) do
+    begin
+      X := Ask(Port, Parser, ReadPidRequest(Pids[K]), 300);
+      if (Length(X) > 18) and (Copy(X, 10, 2) = '62') then
+        Result[K] := Copy(X, 19, MaxInt)
+      else
+        Result[K] := '?';
+    end;
+  end;
+
+  function Send(const D: TArray<Byte>): string;
+  begin
+    Result := Ask(Port, Parser, BuildMessage(AddrPcm, AddrTool, ModeDeviceControl, D), 400);
+  end;
+
+begin
+  for S in PidList.Split([',']) do
+    Pids := Pids + [Word(StrToInt('$' + S))];
+  Port := TWin32SerialPort.Create(PortName, 115200, fcRtsCts);
+  Parser := TAvtFrameParser.Create;
+  try
+    Port.Open;
+    Port.Write(HexToBytes('E1 33'));
+    RawListen(Port, 200);
+    for S in Cpids.Split([',']) do
+    begin
+      Cpid := StrToInt('$' + S);
+      Send([Byte(Cpid), 0, 0, 0, 0, 0, 0]);
+      Sleep(300);
+      Base := Read;
+      Line := '';
+      for I := 0 to High(Pids) do
+        Line := Line + Format('  %.4x=%s', [Pids[I], Base[I]]);
+      Say(Format('CPID %.2x released:%s', [Cpid, Line]));
+      // tests 0..47: single bit (byte Test div 8 + 1); 48..71: split pair (n, n+3);
+      // 72..95: mask / value pair (1,2) (3,4) (5,6). FirstTest skips ahead.
+      for Test := FirstTest to 95 do
+      begin
+        SetLength(Data, 7);
+        FillChar(Data[0], 7, 0);
+        Data[0] := Cpid;
+        if Test < 48 then
+        begin
+          A := Test div 8 + 1;
+          Bit := 7 - Test mod 8;
+          Data[A] := 1 shl Bit;
+        end
+        else if Test >= 72 then
+        begin
+          A := 2 * ((Test - 72) div 8) + 1;
+          Bit := 7 - (Test - 72) mod 8;
+          Data[A] := 1 shl Bit;
+          Data[A + 1] := 1 shl Bit;
+        end
+        else
+        begin
+          A := (Test - 48) div 8 + 1;
+          B := A + 3;
+          Bit := 7 - (Test - 48) mod 8;
+          Data[A] := 1 shl Bit;
+          Data[B] := 1 shl Bit;
+        end;
+        SetLength(Consistent, Length(Pids));
+        SetLength(Seen, Length(Pids));
+        for I := 0 to High(Pids) do
+        begin
+          Consistent[I] := True;
+          Seen[I] := '';
+        end;
+        Reply := '';
+        for R := 1 to Reps do
+        begin
+          Reply := Send(Data);
+          if (Reply = '') or (Pos(' 7F ', Reply) > 0) then
+            Break;
+          Sleep(300);
+          OnV := Read;
+          Send([Byte(Cpid), 0, 0, 0, 0, 0, 0]);
+          Sleep(300);
+          OffV := Read;
+          for I := 0 to High(Pids) do
+          begin
+            if (OnV[I] = Base[I]) or (OffV[I] <> Base[I]) or ((Seen[I] <> '') and (Seen[I] <> OnV[I])) then
+              Consistent[I] := False;
+            Seen[I] := OnV[I];
+          end;
+        end;
+        if (Reply = '') or (Pos(' 7F ', Reply) > 0) then
+        begin
+          Say(Format('CPID %.2x %s : %s', [Cpid, BytesToHex(Copy(Data, 1, 6)), IfThen(Reply = '', 'no answer', Reply)]));
+          Continue;
+        end;
+        Line := '';
+        for I := 0 to High(Pids) do
+          if Consistent[I] then
+            Line := Line + Format('  %.4x:%s->%s', [Pids[I], Base[I], Seen[I]]);
+        if Line <> '' then
+          Say(Format('CPID %.2x %s :%s', [Cpid, BytesToHex(Copy(Data, 1, 6)), Line]));
+      end;
+    end;
+    Say('Return to normal ($20) -> ' + Ask(Port, Parser, BuildMessage(AddrPcm, AddrTool, $20, []), 500));
+    Port.Close;
+  finally
+    Parser.Free;
+  end;
+end;
+
 procedure Pump(Ms: Integer);
 var
   W: TStopwatch;
@@ -464,7 +813,15 @@ begin
       Writeln('UVScanProbe <port> rawscan | rates | multi');
       Halt(1);
     end;
-    if SameText(ParamStr(2), 'sweep') then
+    if SameText(ParamStr(2), 'cpidconfirm') then
+      CpidConfirm(ParamStr(1), ParamStr(3), ParamStr(4), StrToIntDef(ParamStr(5), 3), StrToIntDef(ParamStr(6), 0))
+    else if SameText(ParamStr(2), 'cpidmap') then
+      CpidMap(ParamStr(1), ParamStr(3), ParamStr(4))
+    else if SameText(ParamStr(2), 'cpidlen') then
+      CpidLengths(ParamStr(1), ParamStr(3))
+    else if SameText(ParamStr(2), 'cpids') then
+      CpidSurvey(ParamStr(1), StrToIntDef('$' + ParamStr(3), 0), StrToIntDef('$' + ParamStr(4), $FF))
+    else if SameText(ParamStr(2), 'sweep') then
       Sweep(ParamStr(1), ParamStr(3))
     else if SameText(ParamStr(2), 'multi') then
       MultiTest(ParamStr(1))

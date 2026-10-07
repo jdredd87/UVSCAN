@@ -9,7 +9,7 @@ uses
   Vcl.ComCtrls, Vcl.Grids, Vcl.Menus,
   UVScan.Serial, UVScan.Simulator, UVScan.Pids, UVScan.Dpid, UVScan.Dtc, UVScan.Engine,
   UVScan.Class2, UVScan.Paths, UVScan.Settings, UVScan.PidEditor, UVScan.PidLists, UVScan.Defaults,
-  UVScan.PidDiscovery, UVScan.Display, UVScan.Alerts, UVScan.Gauge;
+  UVScan.PidDiscovery, UVScan.Display, UVScan.Alerts, UVScan.Gauge, UVScan.Controls;
 
 type
   TMainForm = class(TForm)
@@ -27,6 +27,7 @@ type
     btnLog: TButton;
     btnPause: TButton;
     chkSound: TCheckBox;
+    btnLogViewer: TButton;
     pnlPids: TPanel;
     pnlListBar: TPanel;
     lblList: TLabel;
@@ -62,6 +63,28 @@ type
     btnTickDashPids: TButton;
     btnDashTest: TButton;
     sbDash: TScrollBox;
+    tsControls: TTabSheet;
+    pnlCtlWarn: TPanel;
+    lblCtlWarn: TLabel;
+    pnlCtlBar: TPanel;
+    btnCtlAdd: TButton;
+    btnCtlEdit: TButton;
+    btnCtlDup: TButton;
+    btnCtlDelete: TButton;
+    btnCtlRestore: TButton;
+    btnReleaseAll: TButton;
+    lvControls: TListView;
+    pnlCtlRun: TPanel;
+    lblCtlName: TLabel;
+    lblCtlNotes: TLabel;
+    lblCtlUnits: TLabel;
+    btnCtlSend: TButton;
+    btnCtlOn: TButton;
+    btnCtlHold: TButton;
+    tbCtlValue: TTrackBar;
+    edtCtlValue: TEdit;
+    btnCtlApply: TButton;
+    btnCtlOff: TButton;
     tsVehicle: TTabSheet;
     gbVehicle: TGroupBox;
     lblVinCaption: TLabel;
@@ -77,10 +100,6 @@ type
     btnReadDtcs: TButton;
     btnClearDtcs: TButton;
     tsTools: TTabSheet;
-    gbPcm: TGroupBox;
-    btnResetLtft: TButton;
-    btnCelOn: TButton;
-    btnCelOff: TButton;
     gbWriteVin: TGroupBox;
     edtNewVin: TEdit;
     btnWriteVin: TButton;
@@ -140,9 +159,22 @@ type
     procedure btnReadInfoClick(Sender: TObject);
     procedure btnReadDtcsClick(Sender: TObject);
     procedure btnClearDtcsClick(Sender: TObject);
-    procedure btnResetLtftClick(Sender: TObject);
-    procedure btnCelOnClick(Sender: TObject);
-    procedure btnCelOffClick(Sender: TObject);
+    procedure btnCtlAddClick(Sender: TObject);
+    procedure btnCtlEditClick(Sender: TObject);
+    procedure btnCtlDupClick(Sender: TObject);
+    procedure btnCtlDeleteClick(Sender: TObject);
+    procedure btnCtlRestoreClick(Sender: TObject);
+    procedure btnReleaseAllClick(Sender: TObject);
+    procedure lvControlsSelectItem(Sender: TObject; Item: TListItem; Selected: Boolean);
+    procedure lvControlsCustomDrawItem(Sender: TCustomListView; Item: TListItem; State: TCustomDrawState;
+      var DefaultDraw: Boolean);
+    procedure btnCtlSendClick(Sender: TObject);
+    procedure btnCtlOnClick(Sender: TObject);
+    procedure btnCtlOffClick(Sender: TObject);
+    procedure btnCtlHoldMouseDown(Sender: TObject; Button: TMouseButton; Shift: TShiftState; X, Y: Integer);
+    procedure btnCtlHoldMouseUp(Sender: TObject; Button: TMouseButton; Shift: TShiftState; X, Y: Integer);
+    procedure tbCtlValueChange(Sender: TObject);
+    procedure btnCtlApplyClick(Sender: TObject);
     procedure btnWriteVinClick(Sender: TObject);
     procedure btnBrowseLogFolderClick(Sender: TObject);
     procedure btnSendRawClick(Sender: TObject);
@@ -153,6 +185,7 @@ type
     procedure lblNoticeClick(Sender: TObject);
     procedure FormResize(Sender: TObject);
     procedure chkSoundClick(Sender: TObject);
+    procedure btnLogViewerClick(Sender: TObject);
     procedure btnAddGaugeClick(Sender: TObject);
     procedure btnTickDashPidsClick(Sender: TObject);
     procedure btnTestDisplayClick(Sender: TObject);
@@ -205,6 +238,11 @@ type
     FTestMode: Boolean;              // "Test display": made-up values instead of the PCM
     FTestStart: UInt64;
     FTestLo, FTestHi: TArray<Double>;
+    FControls: TControlList;         // controls.json
+    FControlResult: TDictionary<string, string>;  // control name -> last result
+    FControlActive: TDictionary<string, Boolean>; // control name -> held by the engine
+    FHolding: Boolean;               // "hold to run" button is down
+    FLogViewerOpened: Boolean;
     FZoom: Integer;                  // live grid zoom, percent
     FBaseRowHeight: Integer;         // the grid's row height at 100%
     procedure SetZoom(Percent: Integer);
@@ -213,6 +251,14 @@ type
     function ZoomPx(N: Integer): Integer;
     function ZoomPt(Points: Integer): Integer;
     function LastLiveCol: Integer;
+    procedure LoadControls;
+    procedure SaveControls;
+    procedure FillControls(const Select: string);
+    function SelectedControl: TControlDef;
+    procedure UpdateControlPanel;
+    function ControlsUsable: Boolean;
+    procedure SendControl(C: TControlDef; TurnOn: Boolean; const Value: Double = 0);
+    procedure EditControl(C: TControlDef; IsNew: Boolean);
     procedure SetupLiveRows(const Ids: TArray<Integer>);
     procedure StartTest;
     procedure StopTest;
@@ -266,7 +312,8 @@ implementation
 {$R *.dfm}
 
 uses
-  System.JSON, UVScan.JsonFile, UVScan.DisplayEditor, UVScan.GaugeEditor;
+  System.JSON, UVScan.JsonFile, UVScan.DisplayEditor, UVScan.GaugeEditor, UVScan.ControlEditor,
+  UVScan.LogViewer;
 
 const
   SimulatorPort = 'Simulator';
@@ -297,6 +344,9 @@ begin
   FPendingLog := TStringList.Create;
   FLists := TPidLists.Create;
   FDisplay := TDisplaySettings.Create;
+  FControls := TControlList.Create;
+  FControlResult := TDictionary<string, string>.Create;
+  FControlActive := TDictionary<string, Boolean>.Create;
   FAlerts := TAlertTracker.Create;
   FGaugeViews := TList<TGaugeView>.Create;
   FMenuPidId := -1;
@@ -350,6 +400,9 @@ begin
   FPendingLog.Free;
   FLists.Free;
   FDisplay.Free;
+  FControls.Free;
+  FControlResult.Free;
+  FControlActive.Free;
   FAlerts.Free;
   FGaugeViews.Free; // the views themselves are owned by the form
   FDtcs.Free;
@@ -372,6 +425,12 @@ end;
 
 procedure TMainForm.FormKeyDown(Sender: TObject; var Key: Word; Shift: TShiftState);
 begin
+  if (Key = VK_F7) and (Shift = []) then
+  begin
+    btnLogViewer.Click;
+    Key := 0;
+    Exit;
+  end;
   if (Shift = [ssCtrl]) and (pcMain.ActivePage = tsLive) and
     ((Key = VK_ADD) or (Key = VK_OEM_PLUS) or (Key = VK_SUBTRACT) or (Key = VK_OEM_MINUS) or (Key = Ord('0')) or (Key = VK_NUMPAD0)) then
   begin
@@ -438,6 +497,7 @@ begin
   if FCatalog.Warnings.Count > 0 then
     ShowNotice(Format('%d problem(s) in the PID definitions - see Messages', [FCatalog.Warnings.Count]), False);
   LoadDisplay;
+  LoadControls;
   F := DtcsFile;
   if not FileExists(F) then
     AddMessage('Trouble code descriptions not found: ' + F)
@@ -1010,6 +1070,8 @@ begin
         end;
         if FState = esDisconnected then
         begin
+          FControlActive.Clear; // the engine released everything
+          FillControls('');
           FLogging := False;
           SetStatus(PanelRate, '');
         end;
@@ -1081,6 +1143,14 @@ begin
         SetStatus(PanelLog, 'Logging to ' + ExtractFileName(Ev.Text));
         UpdateControls;
       end;
+    eeControl:
+      begin
+        FControlResult.AddOrSetValue(Ev.Text, FormatDateTime('hh:nn:ss  ', Now) + Ev.Raw);
+        FControlActive.AddOrSetValue(Ev.Text, Ev.Flag);
+        if not Ev.Supported then
+          ShowNotice(Ev.Text + ': ' + Ev.Raw, True);
+        FillControls('');
+      end;
     eeLogStopped:
       begin
         FLogging := False;
@@ -1115,12 +1185,10 @@ begin
   btnReadInfo.Enabled := Idle;
   btnReadDtcs.Enabled := Idle;
   btnClearDtcs.Enabled := Idle;
-  btnResetLtft.Enabled := Idle;
-  btnCelOn.Enabled := Idle;
-  btnCelOff.Enabled := Idle;
   btnWriteVin.Enabled := Idle;
   btnSendRaw.Enabled := Idle;
   btnDiscoverPids.Enabled := Idle;
+  UpdateControlPanel;
   btnLiveTest.Enabled := FTestMode or not (FState in [esScanning, esBusy]);
   btnLiveTest.Caption := IfThen(FTestMode, 'Stop test', 'Test display');
   btnDashTest.Enabled := btnLiveTest.Enabled;
@@ -1694,28 +1762,416 @@ begin
     Post(ecClearDtcs);
 end;
 
-procedure TMainForm.btnResetLtftClick(Sender: TObject);
+{ Real-time controls }
+
+procedure TMainForm.LoadControls;
+var
+  W: string;
+  Defaults: TControlList;
+  N: Integer;
 begin
-  if MessageDlg('Reset long-term fuel trims?', mtConfirmation, [mbYes, mbNo], 0) = mrYes then
-    Post(ecResetLtft);
+  if not FileExists(ControlsFile) then
+    Exit;
+  try
+    FControls.LoadFromFile(ControlsFile);
+    for W in FControls.Warnings do
+      AddMessage('Real-time controls: ' + W);
+    // A newer UVScan ships more built-in controls: add the new ones once.
+    Defaults := TControlList.Create;
+    try
+      Defaults.LoadFromJsonText(DefaultControlsJson);
+      if FControls.DefaultsVersion < Defaults.DefaultsVersion then
+      begin
+        N := FControls.RestoreBuiltIns(Defaults);
+        FControls.DefaultsVersion := Defaults.DefaultsVersion;
+        SaveControls;
+        if N > 0 then
+          AddMessage(Format('Added %d new built-in real-time control(s)', [N]));
+      end;
+    finally
+      Defaults.Free;
+    end;
+  except
+    on E: Exception do
+      AddMessage('Could not load real-time controls: ' + E.Message);
+  end;
+  FillControls('');
 end;
 
-procedure TMainForm.btnCelOnClick(Sender: TObject);
+procedure TMainForm.SaveControls;
+begin
+  try
+    FControls.SaveToFile(ControlsFile);
+  except
+    on E: Exception do
+      MessageDlg('Could not save the real-time controls: ' + E.Message, mtWarning, [mbOK], 0);
+  end;
+end;
+
+procedure TMainForm.FillControls(const Select: string);
+var
+  I: Integer;
+  C: TControlDef;
+  Item: TListItem;
+  Groups: TStringList;
+  G, Keep, Res: string;
+begin
+  Keep := Select;
+  if (Keep = '') and (SelectedControl <> nil) then
+    Keep := SelectedControl.Name;
+  Groups := TStringList.Create;
+  lvControls.Items.BeginUpdate;
+  try
+    lvControls.Items.Clear;
+    lvControls.Groups.Clear;
+    for I := 0 to FControls.Count - 1 do
+    begin
+      G := IfThen(FControls[I].Group = '', 'Other', FControls[I].Group);
+      if Groups.IndexOf(G) < 0 then
+        Groups.AddObject(G, TObject(lvControls.Groups.Add.GroupID));
+      lvControls.Groups[Groups.IndexOf(G)].Header := G;
+    end;
+    for I := 0 to FControls.Count - 1 do
+    begin
+      C := FControls[I];
+      Item := lvControls.Items.Add;
+      Item.Caption := C.Name;
+      Item.SubItems.Add(ControlKindCaptions[C.Kind]);
+      Item.SubItems.Add(ModuleName(C.Module) + ': ' + C.OnText);
+      if C.Problem <> '' then
+        Res := 'Needs fixing: ' + C.Problem
+      else if not FControlResult.TryGetValue(C.Name, Res) then
+        Res := '';
+      if FControlActive.ContainsKey(C.Name) and FControlActive[C.Name] then
+        Res := 'ACTIVE  ' + Res;
+      Item.SubItems.Add(Res);
+      Item.Data := C;
+      Item.GroupID := Integer(Groups.Objects[Groups.IndexOf(IfThen(C.Group = '', 'Other', C.Group))]);
+      if SameText(C.Name, Keep) then
+        Item.Selected := True;
+    end;
+  finally
+    lvControls.Items.EndUpdate;
+    Groups.Free;
+  end;
+  UpdateControlPanel;
+end;
+
+function TMainForm.SelectedControl: TControlDef;
+begin
+  if (lvControls.Selected <> nil) and (FControls <> nil) and
+    (FControls.IndexOfName(TControlDef(lvControls.Selected.Data).Name) >= 0) then
+    Result := TControlDef(lvControls.Selected.Data)
+  else
+    Result := nil;
+end;
+
+function TMainForm.ControlsUsable: Boolean;
+begin
+  Result := FState in [esConnected, esScanning];
+end;
+
+{ Shows the buttons that fit the selected control's kind. }
+procedure TMainForm.UpdateControlPanel;
+var
+  C: TControlDef;
+  Ok, Active: Boolean;
+begin
+  if FControls = nil then
+    Exit;
+  C := SelectedControl;
+  Ok := (C <> nil) and (C.Problem = '') and ControlsUsable;
+  Active := (C <> nil) and FControlActive.ContainsKey(C.Name) and FControlActive[C.Name];
+  btnCtlSend.Visible := (C <> nil) and (C.Kind = ckAction);
+  btnCtlOn.Visible := (C <> nil) and (C.Kind = ckToggle);
+  btnCtlHold.Visible := (C <> nil) and (C.Kind = ckHold);
+  tbCtlValue.Visible := (C <> nil) and (C.Kind = ckValue);
+  edtCtlValue.Visible := tbCtlValue.Visible;
+  lblCtlUnits.Visible := tbCtlValue.Visible;
+  btnCtlApply.Visible := tbCtlValue.Visible;
+  btnCtlOff.Visible := (C <> nil) and (C.Kind in [ckToggle, ckValue]);
+  if (C <> nil) and (C.Kind = ckValue) then
+  begin
+    btnCtlOff.Left := btnCtlApply.Left + btnCtlApply.Width + 6;
+    btnCtlOff.Caption := 'Release';
+  end
+  else
+  begin
+    btnCtlOff.Left := btnCtlOn.Left + btnCtlOn.Width + 6;
+    btnCtlOff.Caption := 'Off';
+  end;
+  for var B in TArray<TButton>.Create(btnCtlSend, btnCtlOn, btnCtlHold, btnCtlApply, btnCtlOff) do
+    B.Enabled := Ok;
+  tbCtlValue.Enabled := Ok;
+  btnCtlEdit.Enabled := C <> nil;
+  btnCtlDup.Enabled := C <> nil;
+  btnCtlDelete.Enabled := C <> nil;
+  btnReleaseAll.Enabled := ControlsUsable;
+  if C = nil then
+  begin
+    lblCtlName.Caption := IfThen(FControls.Count = 0, 'No controls yet - press Add', 'Select a control');
+    lblCtlNotes.Caption := '';
+    Exit;
+  end;
+  lblCtlName.Caption := C.Name + IfThen(Active, '   (active)', '');
+  if C.Problem <> '' then
+    lblCtlNotes.Caption := 'Needs fixing: ' + C.Problem
+  else if not ControlsUsable then
+    lblCtlNotes.Caption := 'Connect first. ' + C.Notes
+  else
+    lblCtlNotes.Caption := C.Notes;
+  if C.Kind = ckValue then
+  begin
+    tbCtlValue.OnChange := nil;
+    tbCtlValue.Max := Max(1, Round((C.MaxValue - C.MinValue) / C.Step));
+    tbCtlValue.OnChange := tbCtlValueChange;
+    lblCtlUnits.Caption := C.Units;
+    if edtCtlValue.Tag <> NativeInt(C) then
+    begin
+      edtCtlValue.Tag := NativeInt(C);
+      tbCtlValue.Position := 0;
+      tbCtlValueChange(nil);
+    end;
+  end;
+end;
+
+procedure TMainForm.lvControlsSelectItem(Sender: TObject; Item: TListItem; Selected: Boolean);
+begin
+  UpdateControlPanel;
+end;
+
+procedure TMainForm.lvControlsCustomDrawItem(Sender: TCustomListView; Item: TListItem; State: TCustomDrawState;
+  var DefaultDraw: Boolean);
+var
+  C: TControlDef;
+begin
+  C := TControlDef(Item.Data);
+  if (C <> nil) and FControlActive.ContainsKey(C.Name) and FControlActive[C.Name] then
+  begin
+    Sender.Canvas.Brush.Color := $0080E6FF; // amber: something is being controlled
+    Sender.Canvas.Font.Style := [fsBold];
+  end
+  else if (C <> nil) and (C.Problem <> '') then
+    Sender.Canvas.Font.Color := clGrayText;
+end;
+
+procedure TMainForm.SendControl(C: TControlDef; TurnOn: Boolean; const Value: Double);
 var
   Cmd: TEngineCommand;
 begin
-  Cmd := Command(ecCheckEngineLight);
-  Cmd.Flag := True;
+  if (C = nil) or (C.Problem <> '') or not ControlsUsable then
+    Exit;
+  Cmd := Command(ecControl);
+  Cmd.Text := C.Name;
+  try
+    if TurnOn then
+    begin
+      Cmd.Data := C.OnMessage(Value);
+      Cmd.Release := C.OffMessage;
+      Cmd.Flag := C.HoldsControl;
+    end
+    else
+    begin
+      Cmd.Data := C.OffMessage;
+      Cmd.Flag := False;
+      if Length(Cmd.Data) = 0 then
+        Exit;
+    end;
+  except
+    on E: EControlError do
+    begin
+      ShowNotice(C.Name + ': ' + E.Message, True);
+      Exit;
+    end;
+  end;
   Post(Cmd);
 end;
 
-procedure TMainForm.btnCelOffClick(Sender: TObject);
+procedure TMainForm.btnCtlSendClick(Sender: TObject);
 var
-  Cmd: TEngineCommand;
+  C: TControlDef;
 begin
-  Cmd := Command(ecCheckEngineLight);
-  Cmd.Flag := False;
-  Post(Cmd);
+  C := SelectedControl;
+  if (C <> nil) and (C.Confirm <> '') and
+    (MessageDlg(C.Confirm, mtConfirmation, [mbYes, mbNo], 0) <> mrYes) then
+    Exit;
+  SendControl(C, True);
+end;
+
+procedure TMainForm.btnCtlOnClick(Sender: TObject);
+begin
+  btnCtlSendClick(Sender);
+end;
+
+procedure TMainForm.btnCtlOffClick(Sender: TObject);
+begin
+  SendControl(SelectedControl, False);
+end;
+
+procedure TMainForm.btnCtlHoldMouseDown(Sender: TObject; Button: TMouseButton; Shift: TShiftState; X, Y: Integer);
+var
+  C: TControlDef;
+begin
+  C := SelectedControl;
+  if (Button <> mbLeft) or (C = nil) or not btnCtlHold.Enabled then
+    Exit;
+  if (C.Confirm <> '') and (MessageDlg(C.Confirm, mtConfirmation, [mbYes, mbNo], 0) <> mrYes) then
+    Exit;
+  FHolding := True;
+  btnCtlHold.Caption := 'Running - let go to stop';
+  SendControl(C, True);
+end;
+
+procedure TMainForm.btnCtlHoldMouseUp(Sender: TObject; Button: TMouseButton; Shift: TShiftState; X, Y: Integer);
+begin
+  if not FHolding then
+    Exit;
+  FHolding := False;
+  btnCtlHold.Caption := 'Hold to run';
+  SendControl(SelectedControl, False);
+end;
+
+procedure TMainForm.tbCtlValueChange(Sender: TObject);
+var
+  C: TControlDef;
+begin
+  C := SelectedControl;
+  if (C = nil) or (C.Kind <> ckValue) then
+    Exit;
+  edtCtlValue.Text := FormatFloat('0.###', C.MinValue + tbCtlValue.Position * C.Step);
+end;
+
+procedure TMainForm.btnCtlApplyClick(Sender: TObject);
+var
+  C: TControlDef;
+  V: Double;
+begin
+  C := SelectedControl;
+  if C = nil then
+    Exit;
+  if not TryParseNumber(edtCtlValue.Text, V) or (V < C.MinValue) or (V > C.MaxValue) then
+  begin
+    ShowNotice(Format('Enter a value from %s to %s', [FormatFloat('0.###', C.MinValue),
+      FormatFloat('0.###', C.MaxValue)]), True);
+    Exit;
+  end;
+  if (C.Confirm <> '') and not (FControlActive.ContainsKey(C.Name) and FControlActive[C.Name]) and
+    (MessageDlg(C.Confirm, mtConfirmation, [mbYes, mbNo], 0) <> mrYes) then
+    Exit;
+  SendControl(C, True, V);
+end;
+
+procedure TMainForm.btnReleaseAllClick(Sender: TObject);
+begin
+  Post(ecReleaseControls);
+end;
+
+procedure TMainForm.EditControl(C: TControlDef; IsNew: Boolean);
+var
+  Work, Original: TControlDef;
+  Groups: TStringList;
+  I: Integer;
+begin
+  if (C <> nil) and FControlActive.ContainsKey(C.Name) and FControlActive[C.Name] then
+  begin
+    ShowNotice('Release "' + C.Name + '" before changing it', True);
+    Exit;
+  end;
+  Work := TControlDef.Create;
+  Groups := TStringList.Create;
+  try
+    Groups.Sorted := True;
+    Groups.Duplicates := dupIgnore;
+    for I := 0 to FControls.Count - 1 do
+      if FControls[I].Group <> '' then
+        Groups.Add(FControls[I].Group);
+    if C <> nil then
+      Work.Assign(C);
+    if IsNew and (C <> nil) then
+    begin
+      Work.Name := C.Name + ' (copy)';
+      Work.BuiltIn := False;
+    end;
+    if IsNew then
+      Original := nil
+    else
+      Original := C;
+    if not TControlEditorForm.Execute(Work, Groups, FControls, Original) then
+      Exit;
+    if IsNew then
+    begin
+      FControls.Add(Work);
+      Work := nil;
+      FillControls(FControls[FControls.Count - 1].Name);
+    end
+    else
+    begin
+      C.Assign(Work);
+      FillControls(C.Name);
+    end;
+    SaveControls;
+  finally
+    Work.Free;
+    Groups.Free;
+  end;
+end;
+
+procedure TMainForm.btnCtlAddClick(Sender: TObject);
+begin
+  EditControl(nil, True);
+end;
+
+procedure TMainForm.btnCtlEditClick(Sender: TObject);
+begin
+  if SelectedControl <> nil then
+    EditControl(SelectedControl, False);
+end;
+
+procedure TMainForm.btnCtlDupClick(Sender: TObject);
+begin
+  if SelectedControl <> nil then
+    EditControl(SelectedControl, True);
+end;
+
+procedure TMainForm.btnCtlDeleteClick(Sender: TObject);
+var
+  C: TControlDef;
+begin
+  C := SelectedControl;
+  if C = nil then
+    Exit;
+  if FControlActive.ContainsKey(C.Name) and FControlActive[C.Name] then
+  begin
+    ShowNotice('Release "' + C.Name + '" before deleting it', True);
+    Exit;
+  end;
+  if MessageDlg(Format('Delete the control "%s"?', [C.Name]), mtConfirmation, [mbYes, mbNo], 0) <> mrYes then
+    Exit;
+  FControls.Delete(FControls.IndexOfName(C.Name));
+  SaveControls;
+  FillControls('');
+end;
+
+procedure TMainForm.btnCtlRestoreClick(Sender: TObject);
+var
+  Defaults: TControlList;
+  N: Integer;
+begin
+  Defaults := TControlList.Create;
+  try
+    Defaults.LoadFromJsonText(DefaultControlsJson);
+    N := FControls.RestoreBuiltIns(Defaults);
+  finally
+    Defaults.Free;
+  end;
+  if N = 0 then
+    ShowNotice('All built-in controls are already in the list', False)
+  else
+  begin
+    SaveControls;
+    FillControls('');
+    AddMessage(Format('Restored %d built-in control(s)', [N]));
+  end;
 end;
 
 procedure TMainForm.btnWriteVinClick(Sender: TObject);
@@ -1931,6 +2387,27 @@ begin
     Exit;
   if TDisplayEditorForm.Execute(P, FDisplay) then
     DisplayChanged;
+end;
+
+procedure TMainForm.btnLogViewerClick(Sender: TObject);
+var
+  Last: string;
+  Files: TArray<string>;
+  F: string;
+begin
+  // Open the newest log the first time; afterwards just bring the viewer up.
+  Last := '';
+  if TDirectory.Exists(LogFolder) then
+  begin
+    Files := TDirectory.GetFiles(LogFolder, '*.csv');
+    for F in Files do
+      if (Last = '') or (TFile.GetLastWriteTime(F) > TFile.GetLastWriteTime(Last)) then
+        Last := F;
+  end;
+  if FLogViewerOpened then
+    Last := '';
+  FLogViewerOpened := True;
+  TLogViewerForm.ShowViewer(FCatalog, FDisplay, LogFolder, LogViewsFile, Last);
 end;
 
 procedure TMainForm.chkSoundClick(Sender: TObject);

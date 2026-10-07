@@ -121,6 +121,12 @@ const
 function ColorToHex(C: TColor): string;
 function HexToColor(const S: string; Default: TColor): TColor;
 function NewLevel: TDisplayLevel;
+{ Coloured stretches of a scale for these levels (lowest priority first). }
+function ZonesFromLevels(const Levels: TArray<TDisplayLevel>; const MinValue, MaxValue: Double): TArray<TGaugeZone>;
+{ First level that matches V, -1 if none. }
+function LevelIndexFor(const Levels: TArray<TDisplayLevel>; const V: Double): Integer;
+function LevelsToJson(const Levels: TArray<TDisplayLevel>): TJSONArray;
+function LevelsFromJson(Arr: TJSONArray): TArray<TDisplayLevel>;
 { Normal look + the first matching level; D may be nil (all defaults). }
 function ResolveDisplay(D: TPidDisplay; const Value: Double): TResolvedStyle;
 type
@@ -379,18 +385,32 @@ end;
 function TDisplaySettings.Zones(PidId: Integer; const MinValue, MaxValue: Double): TArray<TGaugeZone>;
 var
   D: TPidDisplay;
+begin
+  Result := nil;
+  D := Find(PidId);
+  if D <> nil then
+    Result := ZonesFromLevels(D.Levels, MinValue, MaxValue);
+end;
+
+function LevelIndexFor(const Levels: TArray<TDisplayLevel>; const V: Double): Integer;
+begin
+  for Result := 0 to High(Levels) do
+    if Levels[Result].Matches(V) then
+      Exit;
+  Result := -1;
+end;
+
+function ZonesFromLevels(const Levels: TArray<TDisplayLevel>; const MinValue, MaxValue: Double): TArray<TGaugeZone>;
+var
   I: Integer;
   L: TDisplayLevel;
   Z: TGaugeZone;
 begin
   Result := nil;
-  D := Find(PidId);
-  if D = nil then
-    Exit;
   // Lowest priority first so the first (winning) level is drawn on top.
-  for I := High(D.Levels) downto 0 do
+  for I := High(Levels) downto 0 do
   begin
-    L := D.Levels[I];
+    L := Levels[I];
     if L.RowColor = clNone then
       Continue;
     case L.Op of
@@ -436,13 +456,67 @@ begin
     Result := Default;
 end;
 
+function LevelsFromJson(Arr: TJSONArray): TArray<TDisplayLevel>;
+var
+  J: Integer;
+  LE: TJSONObject;
+  L: TDisplayLevel;
+begin
+  Result := nil;
+  if Arr = nil then
+    Exit;
+  for J := 0 to Arr.Count - 1 do
+    if Arr.Items[J] is TJSONObject then
+    begin
+      LE := TJSONObject(Arr.Items[J]);
+      L := NewLevel;
+      L.Name := JStr(LE, 'name', 'Level ' + IntToStr(J + 1));
+      L.Op := TCompareOp(KeyIndexOf(CompareOpKeys, JStr(LE, 'when', '>='), 0));
+      L.Value := JFloat(LE, 'value', 0);
+      L.RowColor := HexToColor(JStr(LE, 'rowColor'), clNone);
+      L.TextColor := HexToColor(JStr(LE, 'textColor'), clNone);
+      L.Flash := JBool(LE, 'flash', False);
+      L.Sound := TAlertSound(KeyIndexOf(AlertSoundKeys, JStr(LE, 'sound', 'none'), 0));
+      L.SoundFile := JStr(LE, 'soundFile');
+      L.RepeatSound := JBool(LE, 'repeat', False);
+      Result := Result + [L];
+    end;
+end;
+
+function LevelsToJson(const Levels: TArray<TDisplayLevel>): TJSONArray;
+var
+  L: TDisplayLevel;
+  LE: TJSONObject;
+begin
+  Result := TJSONArray.Create;
+  for L in Levels do
+  begin
+    LE := TJSONObject.Create;
+    LE.AddPair('name', L.Name);
+    LE.AddPair('when', CompareOpKeys[L.Op]);
+    LE.AddPair('value', TJSONNumber.Create(L.Value));
+    if L.RowColor <> clNone then
+      LE.AddPair('rowColor', ColorToHex(L.RowColor));
+    if L.TextColor <> clNone then
+      LE.AddPair('textColor', ColorToHex(L.TextColor));
+    if L.Flash then
+      LE.AddPair('flash', TJSONBool.Create(True));
+    if L.Sound <> asNone then
+      LE.AddPair('sound', AlertSoundKeys[L.Sound]);
+    if (L.Sound = asFile) and (L.SoundFile <> '') then
+      LE.AddPair('soundFile', L.SoundFile);
+    if L.RepeatSound then
+      LE.AddPair('repeat', TJSONBool.Create(True));
+    Result.AddElement(LE);
+  end;
+end;
+
 procedure TDisplaySettings.LoadFromJson(Root: TJSONObject);
 var
-  Arr, LArr: TJSONArray;
-  I, J: Integer;
-  E, LE: TJSONObject;
+  Arr: TJSONArray;
+  I: Integer;
+  E: TJSONObject;
   D: TPidDisplay;
-  L: TDisplayLevel;
   G: TGauge;
 begin
   Clear;
@@ -463,24 +537,7 @@ begin
         D.FontSize := EnsureRange(JInt(E, 'fontSize', 0), 0, 72);
         D.TextColor := HexToColor(JStr(E, 'textColor'), clNone);
         D.RowColor := HexToColor(JStr(E, 'rowColor'), clNone);
-        LArr := JArr(E, 'levels');
-        if LArr <> nil then
-          for J := 0 to LArr.Count - 1 do
-            if LArr.Items[J] is TJSONObject then
-            begin
-              LE := TJSONObject(LArr.Items[J]);
-              L := NewLevel;
-              L.Name := JStr(LE, 'name', 'Level ' + IntToStr(J + 1));
-              L.Op := TCompareOp(KeyIndexOf(CompareOpKeys, JStr(LE, 'when', '>='), 0));
-              L.Value := JFloat(LE, 'value', 0);
-              L.RowColor := HexToColor(JStr(LE, 'rowColor'), clNone);
-              L.TextColor := HexToColor(JStr(LE, 'textColor'), clNone);
-              L.Flash := JBool(LE, 'flash', False);
-              L.Sound := TAlertSound(KeyIndexOf(AlertSoundKeys, JStr(LE, 'sound', 'none'), 0));
-              L.SoundFile := JStr(LE, 'soundFile');
-              L.RepeatSound := JBool(LE, 'repeat', False);
-              D.Levels := D.Levels + [L];
-            end;
+        D.Levels := LevelsFromJson(JArr(E, 'levels'));
         FPids.AddOrSetValue(D.PidId, D);
         D := nil;
       finally
@@ -534,12 +591,11 @@ end;
 
 function TDisplaySettings.ToJson: TJSONObject;
 var
-  Arr, LArr: TJSONArray;
-  E, LE: TJSONObject;
+  Arr: TJSONArray;
+  E: TJSONObject;
   Ids: TArray<Integer>;
   Id: Integer;
   D: TPidDisplay;
-  L: TDisplayLevel;
   G: TGauge;
 begin
   Result := TJSONObject.Create;
@@ -560,30 +616,7 @@ begin
     if D.RowColor <> clNone then
       E.AddPair('rowColor', ColorToHex(D.RowColor));
     if Length(D.Levels) > 0 then
-    begin
-      LArr := TJSONArray.Create;
-      for L in D.Levels do
-      begin
-        LE := TJSONObject.Create;
-        LE.AddPair('name', L.Name);
-        LE.AddPair('when', CompareOpKeys[L.Op]);
-        LE.AddPair('value', TJSONNumber.Create(L.Value));
-        if L.RowColor <> clNone then
-          LE.AddPair('rowColor', ColorToHex(L.RowColor));
-        if L.TextColor <> clNone then
-          LE.AddPair('textColor', ColorToHex(L.TextColor));
-        if L.Flash then
-          LE.AddPair('flash', TJSONBool.Create(True));
-        if L.Sound <> asNone then
-          LE.AddPair('sound', AlertSoundKeys[L.Sound]);
-        if (L.Sound = asFile) and (L.SoundFile <> '') then
-          LE.AddPair('soundFile', L.SoundFile);
-        if L.RepeatSound then
-          LE.AddPair('repeat', TJSONBool.Create(True));
-        LArr.AddElement(LE);
-      end;
-      E.AddPair('levels', LArr);
-    end;
+      E.AddPair('levels', LevelsToJson(D.Levels));
     Arr.AddElement(E);
   end;
 

@@ -29,7 +29,12 @@ uses
   UVScan.Tests.Data in 'UVScan.Tests.Data.pas',
   UVScan.Display in '..\src\UVScan.Display.pas',
   UVScan.Alerts in '..\src\UVScan.Alerts.pas',
-  UVScan.Tests.Display in 'UVScan.Tests.Display.pas';
+  UVScan.Tests.Display in 'UVScan.Tests.Display.pas',
+  UVScan.Controls in '..\src\UVScan.Controls.pas',
+  UVScan.Tests.Controls in 'UVScan.Tests.Controls.pas',
+  UVScan.LogData in '..\src\UVScan.LogData.pas',
+  UVScan.LogViews in '..\src\UVScan.LogViews.pas',
+  UVScan.Tests.Logs in 'UVScan.Tests.Logs.pas';
 
 {$R 'UVScan.Defaults.res' '..\UVScan.Defaults.rc'}
 

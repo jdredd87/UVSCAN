@@ -33,7 +33,8 @@ type
 
   TEngineEventKind = (eeLog, eeWarning, eeError, eeState, eeVehicleInfo, eeScanStarted,
     eePidRejected, eeDtcs, eePidTest, eeLogStarted, eeLogStopped,
-    eePidFound, eePidSearchProgress, eePidSearchDone);
+    eePidFound, eePidSearchProgress, eePidSearchDone,
+    eeControl);                // Text = control name, Supported = accepted, Raw = details
 
   TEngineEvent = record
     Kind: TEngineEventKind;
@@ -46,7 +47,8 @@ type
     Supported: Boolean;        // eePidTest
     Progress, Total: Integer;  // eePidTest, eePidSearchProgress, eePidSearchDone
     DataBytes: Integer;        // eePidFound: size of the PCM's answer (PidId = PID number)
-    Raw: string;               // eePidFound: data bytes as hex
+    Raw: string;               // eePidFound: data bytes as hex; eeControl: details
+    Flag: Boolean;             // eeControl: the control is now active (held)
   end;
 
   TEngineEventHandler = reference to procedure(const Event: TEngineEvent);
@@ -66,8 +68,11 @@ type
 
   TEngineCommandKind = (ecConnect, ecDisconnect, ecReadVehicleInfo, ecStartScan, ecStopScan,
     ecStartLog, ecStopLog, ecPauseLog, ecReadDtcs, ecClearDtcs, ecTestPids, ecSendRaw,
-    ecWriteVin, ecResetLtft, ecCheckEngineLight,
-    ecDiscoverPids);             // Text = PID ranges, e.g. '0000-00FF,1000-1FFF'
+    ecWriteVin,
+    ecDiscoverPids,              // Text = PID ranges, e.g. '0000-00FF,1000-1FFF'
+    ecControl,                   // Text = name, Data = message, Release = message that undoes it,
+                                 // Flag = the control stays active until released
+    ecReleaseControls);          // send the release of every active control
 
   TEngineCommand = record
     Kind: TEngineCommandKind;
@@ -75,9 +80,16 @@ type
     Text: string;
     Flag: Boolean;
     Factory: TPortFactory;
+    Data: TBytes;
+    Release: TBytes;
   end;
 
   TFrameMatch = reference to function(const F: TAvtFrame): Boolean;
+
+  THeldControl = record
+    OnMsg: TBytes;        // what turned it on
+    Release: TBytes;      // what turns it off
+  end;
 
   TScanEngine = class(TThread)
   private
@@ -100,6 +112,7 @@ type
     FLastHeartbeat: TStopwatch;
     FLastData: TStopwatch;
     FNoDataWarned: Boolean;
+    FHeld: TDictionary<string, THeldControl>; // active real-time controls by name
 
     // Current scan
     FScanPids: TArray<TPidDef>;
@@ -164,7 +177,10 @@ type
     procedure DoDiscoverPids(const Ranges: string);
     procedure DoSendRaw(const Hex: string);
     procedure DoWriteVin(const Vin: string);
-    procedure DoSimpleRequest(const Msg: TBytes; const What: string);
+    procedure DoControl(const Cmd: TEngineCommand);
+    procedure DoReleaseControls;
+    function SendControl(const Msg: TBytes; out Detail: string): Boolean;
+    function MergeDeviceControl(const Msg: TBytes; const Except_: string): TBytes;
     function RequireConnected: Boolean;
 
     // Scan data
@@ -222,6 +238,7 @@ begin
   FCommands := TThreadedQueue<TEngineCommand>.Create(256, 1000, 0);
   FParser := TAvtFrameParser.Create;
   FPending := TQueue<TAvtFrame>.Create;
+  FHeld := TDictionary<string, THeldControl>.Create;
   FLock := TCriticalSection.Create;
   FStreamSpeed := StreamSpeedFast;
   inherited Create(False);
@@ -236,6 +253,7 @@ begin
   FCommands.Free;
   FParser.Free;
   FPending.Free;
+  FHeld.Free;
   FLock.Free;
 end;
 
@@ -454,13 +472,15 @@ begin
   end;
   if NextFrame(20, F) then
     HandleUnsolicited(F);
+  // Tester present keeps the stream running and device control in force
+  // (GM modules drop both a few seconds after the tester goes quiet).
+  if (FStreaming or (FHeld.Count > 0)) and (FLastHeartbeat.ElapsedMilliseconds >= HeartbeatMs) then
+  begin
+    SendBus(TesterPresentRequest);
+    FLastHeartbeat := TStopwatch.StartNew;
+  end;
   if FStreaming then
   begin
-    if FLastHeartbeat.ElapsedMilliseconds >= HeartbeatMs then
-    begin
-      SendBus(TesterPresentRequest);
-      FLastHeartbeat := TStopwatch.StartNew;
-    end;
     if (FLastData.ElapsedMilliseconds >= NoDataWarningMs) and not FNoDataWarned then
     begin
       Warn('No data from the PCM for 3 seconds. Is the key on?');
@@ -538,10 +558,8 @@ begin
     ecDiscoverPids: if RequireConnected then DoDiscoverPids(Cmd.Text);
     ecSendRaw: if RequireConnected then DoSendRaw(Cmd.Text);
     ecWriteVin: if RequireConnected then DoWriteVin(Cmd.Text);
-    ecResetLtft: if RequireConnected then DoSimpleRequest(ResetLtftRequest, 'Reset fuel trims');
-    ecCheckEngineLight:
-      if RequireConnected then
-        DoSimpleRequest(CheckEngineLightRequest(Cmd.Flag), IfThen(Cmd.Flag, 'Check engine light ON', 'Check engine light OFF'));
+    ecControl: if RequireConnected then DoControl(Cmd);
+    ecReleaseControls: if (FPort <> nil) and FPort.IsOpen then DoReleaseControls;
   end;
 end;
 
@@ -601,6 +619,13 @@ begin
     SetState(esDisconnected);
     Exit;
   end;
+  try
+    if FPort.IsOpen and (FHeld.Count > 0) then
+      DoReleaseControls;
+  except
+    // port may already be gone
+  end;
+  FHeld.Clear;
   try
     if FPort.IsOpen and FStreaming then
       StopStreaming;
@@ -1520,36 +1545,131 @@ begin
   end;
 end;
 
-procedure TScanEngine.DoSimpleRequest(const Msg: TBytes; const What: string);
+{ Real-time controls }
+
+{ Sends one control message (header included) and waits for the module's
+  answer. Works while scanning: stream frames that arrive meanwhile are
+  handled as usual. Detail = the answer, or why it failed. }
+function TScanEngine.SendControl(const Msg: TBytes; out Detail: string): Boolean;
 var
   Reply: TClass2Message;
-  Mode: Byte;
+  Mode, Target: Byte;
 begin
-  if FStreaming then
+  Result := False;
+  if Length(Msg) < 4 then
   begin
-    Warn('Stop the scan first');
+    Detail := 'empty command';
     Exit;
   end;
+  Target := Msg[1];
   Mode := Msg[3];
-  SetState(esBusy);
-  try
-    if Exchange(Msg,
-      function(const Fr: TAvtFrame): Boolean
-      var
-        M: TClass2Message;
-      begin
-        Result := FromPcm(Fr, M) and (M.IsPositiveFor(Mode) or M.IsNegativeFor(Mode));
-      end, 1000, Reply) then
+  if not Exchange(Msg,
+    function(const Fr: TAvtFrame): Boolean
+    var
+      M: TClass2Message;
     begin
-      if Reply.Mode = ModeNegativeResponse then
-        Warn(What + ': rejected by the PCM')
-      else
-        Log(What + ': OK');
-    end
+      Result := Fr.IsBusMessage and TryParseClass2(Fr.BusMessage, M) and (M.Source = Target) and
+        (M.IsPositiveFor(Mode) or M.IsNegativeFor(Mode));
+    end, 1000, Reply) then
+  begin
+    Detail := 'no answer from ' + ModuleName(Target);
+    Exit;
+  end;
+  if Reply.Mode = ModeNegativeResponse then
+    Detail := 'refused: ' + NrcText(Reply.Data[High(Reply.Data)]) + '  (' + Reply.ToHex + ')'
+  else
+  begin
+    Detail := 'OK  (' + Reply.ToHex + ')';
+    Result := True;
+  end;
+end;
+
+function IsDeviceControl(const Msg: TBytes): Boolean;
+begin
+  // 6C <module> F1 AE <cpid> + 6 bytes of mask / value pairs
+  Result := (Length(Msg) = 11) and (Msg[3] = ModeDeviceControl);
+end;
+
+{ Several active controls can share one GM device-control packet (for
+  example two lamps in CPID $01). The module only knows the last packet it
+  got, so every packet sent has to carry all of them: the bytes of every
+  other active control for the same module and CPID are OR-ed in. Except_
+  is the control being switched off (left out). }
+function TScanEngine.MergeDeviceControl(const Msg: TBytes; const Except_: string): TBytes;
+var
+  Pair: TPair<string, THeldControl>;
+  I: Integer;
+begin
+  Result := Copy(Msg);
+  if not IsDeviceControl(Msg) then
+    Exit;
+  for Pair in FHeld do
+    if (Pair.Key <> Except_) and IsDeviceControl(Pair.Value.OnMsg) and (Pair.Value.OnMsg[1] = Msg[1]) and
+      (Pair.Value.OnMsg[4] = Msg[4]) then
+      for I := 5 to 10 do
+        Result[I] := Result[I] or Pair.Value.OnMsg[I];
+end;
+
+procedure TScanEngine.DoControl(const Cmd: TEngineCommand);
+var
+  Ok: Boolean;
+  Detail: string;
+  Ev: TEngineEvent;
+  Msg: TBytes;
+  H: THeldControl;
+begin
+  // On: this control plus the others; off: just the others that stay in force.
+  Msg := MergeDeviceControl(Cmd.Data, Cmd.Text);
+  Log('Control "%s": %s', [Cmd.Text, BytesToHex(Msg)]);
+  Ok := SendControl(Msg, Detail);
+  if Ok and Cmd.Flag then
+  begin
+    H.OnMsg := Cmd.Data;
+    H.Release := Cmd.Release;
+    FHeld.AddOrSetValue(Cmd.Text, H);
+    FLastHeartbeat := TStopwatch.StartNew;
+  end
+  else if Ok then
+    FHeld.Remove(Cmd.Text);
+  Log('Control "%s": %s', [Cmd.Text, Detail]);
+  Ev := Default(TEngineEvent);
+  Ev.Kind := eeControl;
+  Ev.Text := Cmd.Text;
+  Ev.Supported := Ok;
+  Ev.Flag := Ok and Cmd.Flag;
+  Ev.Raw := Detail;
+  Emit(Ev);
+end;
+
+{ Undoes every active control, then (when not scanning) tells the PCM to go
+  back to normal operation, which ends any device control we missed. }
+procedure TScanEngine.DoReleaseControls;
+var
+  Pair: TPair<string, THeldControl>;
+  Detail: string;
+  Ev: TEngineEvent;
+  Held: TArray<TPair<string, THeldControl>>;
+begin
+  Held := FHeld.ToArray;
+  FHeld.Clear;
+  for Pair in Held do
+  begin
+    if Length(Pair.Value.Release) > 0 then
+      SendControl(Pair.Value.Release, Detail)
     else
-      Warn(What + ': no reply');
-  finally
-    SetState(esConnected);
+      Detail := 'nothing to send';
+    Log('Released "%s": %s', [Pair.Key, Detail]);
+    Ev := Default(TEngineEvent);
+    Ev.Kind := eeControl;
+    Ev.Text := Pair.Key;
+    Ev.Supported := True;
+    Ev.Raw := 'released';
+    Emit(Ev);
+  end;
+  if not FStreaming then
+  begin
+    SendControl(BuildMessage(AddrPcm, AddrTool, ModeReturnToNormal, []), Detail);
+    Log('PCM back to normal operation: %s', [Detail]);
   end;
 end;
 

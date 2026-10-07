@@ -16,6 +16,8 @@ function DefaultListsJson: string;
 { Examples for display.json. PIDs are named by "pidCode" because ids differ
   between catalogs; ResolveSeedJson (UVScan.Display) turns them into ids. }
 function DefaultDisplayJson: string;
+function DefaultControlsJson: string;
+function DefaultLogViewsJson: string;
 
 { Writes the default for each data file that does not exist yet. Returns the
   files that were created. }
@@ -64,6 +66,16 @@ begin
   Result := ResourceText('DEFAULT_DISPLAY');
 end;
 
+function DefaultControlsJson: string;
+begin
+  Result := ResourceText('DEFAULT_CONTROLS');
+end;
+
+function DefaultLogViewsJson: string;
+begin
+  Result := ResourceText('DEFAULT_LOGVIEWS');
+end;
+
 function CreateMissingDataFiles: TArray<string>;
 
   procedure Ensure(const FileName, Json, Source: string);
@@ -86,6 +98,8 @@ begin
   Ensure(PidsFile, DefaultPidsJson, 'default pids.json');
   Ensure(DtcsFile, DefaultDtcsJson, 'default dtcs.json');
   Ensure(ListsFile, DefaultListsJson, 'default lists.json');
+  Ensure(ControlsFile, DefaultControlsJson, 'default controls.json');
+  Ensure(LogViewsFile, DefaultLogViewsJson, 'default logviews.json');
 end;
 
 end.

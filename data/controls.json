@@ -1,0 +1,97 @@
+{
+  "version": 1,
+  "defaults": 3,
+  "controls": [
+    {
+      "name": "Check engine light on",
+      "group": "Lamps",
+      "kind": "toggle",
+      "module": "10",
+      "on": "AE 01 80 80 00 00 00 00",
+      "off": "AE 01 00 00 00 00 00 00",
+      "notes": "CPID $01 bank 1, bit $80 (mask + value). Off gives the lamp back to the PCM. Found on a 2001 3.8L PCM (OS 9389759); watch PID $1104 bit 0.",
+      "builtIn": true
+    },
+    {
+      "name": "Check engine light off",
+      "group": "Lamps",
+      "kind": "toggle",
+      "module": "10",
+      "on": "AE 01 80 00 00 00 00 00",
+      "off": "AE 01 00 00 00 00 00 00",
+      "notes": "Forces the MIL off while active (mask $80, value 0). Checked on the bench: PID $1104 bit 0 goes to 0 and back when released.",
+      "builtIn": true
+    },
+    {
+      "name": "Change oil light on",
+      "group": "Lamps",
+      "kind": "toggle",
+      "module": "10",
+      "on": "AE 01 20 20 00 00 00 00",
+      "off": "AE 01 00 00 00 00 00 00",
+      "notes": "CPID $01 bank 1, bit $20. Checked on the bench: PID $1104 bit 4 follows.",
+      "builtIn": true
+    },
+    {
+      "name": "Low oil light on",
+      "group": "Lamps",
+      "kind": "toggle",
+      "module": "10",
+      "on": "AE 01 10 10 00 00 00 00",
+      "off": "AE 01 00 00 00 00 00 00",
+      "notes": "CPID $01 bank 1, bit $10 (PID $1104 bit 2). On the bench the lamp was already on; forcing it off (10 00) was checked.",
+      "builtIn": true
+    },
+    {
+      "name": "Generator (battery) light on",
+      "group": "Lamps",
+      "kind": "toggle",
+      "module": "10",
+      "on": "AE 01 08 08 00 00 00 00",
+      "off": "AE 01 00 00 00 00 00 00",
+      "notes": "CPID $01 bank 1, bit $08 (PID $1104 bit 3). On the bench the lamp was already on; forcing it off (08 00) was checked.",
+      "builtIn": true
+    },
+    {
+      "name": "Engine hot light on",
+      "group": "Lamps",
+      "kind": "toggle",
+      "module": "10",
+      "on": "AE 01 04 04 00 00 00 00",
+      "off": "AE 01 00 00 00 00 00 00",
+      "notes": "CPID $01 bank 1, bit $04 (PID $1104 bit 1). On the bench the lamp was already on; forcing it off (04 00) was checked.",
+      "builtIn": true
+    },
+    {
+      "name": "Cooling fan 1 on",
+      "group": "Outputs",
+      "kind": "toggle",
+      "module": "10",
+      "on": "AE 01 00 00 80 80 00 00",
+      "off": "AE 01 00 00 00 00 00 00",
+      "confirm": "Run cooling fan 1? Keep hands clear of the fan.",
+      "notes": "CPID $01 bank 2, bit $80. Checked on the bench: PID $1103 bit 6 (fan 1 command) follows.",
+      "builtIn": true
+    },
+    {
+      "name": "EVAP vent solenoid on",
+      "group": "Outputs",
+      "kind": "toggle",
+      "module": "10",
+      "on": "AE 01 00 00 08 08 00 00",
+      "off": "AE 01 00 00 00 00 00 00",
+      "notes": "CPID $01 bank 2, bit $08. Checked on the bench: PID $1107 bit 2 follows.",
+      "builtIn": true
+    },
+    {
+      "name": "Reset long-term fuel trims",
+      "group": "Resets",
+      "kind": "action",
+      "module": "10",
+      "send": "AE 02 40 00 00 00 00 00",
+      "confirm": "Reset the long-term fuel trims the PCM has learned?",
+      "notes": "CPID $02, reset bit $40 (from the original UVSCAN). The PCM accepts it; the trims relearn while driving.",
+      "builtIn": true
+    }
+  ]
+}

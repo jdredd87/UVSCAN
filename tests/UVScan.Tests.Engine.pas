@@ -7,7 +7,7 @@ interface
 uses
   System.SysUtils, System.Classes, System.Math, System.Diagnostics, System.IOUtils,
   System.Generics.Collections, DUnitX.TestFramework,
-  UVScan.Serial, UVScan.Pids, UVScan.Engine, UVScan.Simulator;
+  UVScan.Serial, UVScan.Pids, UVScan.Engine, UVScan.Simulator, UVScan.Class2, UVScan.Hex;
 
 type
   [TestFixture]
@@ -35,6 +35,8 @@ type
     [Test] procedure RejectsScanWithNothingSelected;
     [Test] procedure SmallScanAfterLargeScanDoesNotReviveOldDpids;
     [Test] procedure DiscoversSupportedPids;
+    [Test] procedure DeviceControlsShareAPacket;
+    [Test] procedure DeviceControlRefusalIsReported;
   end;
 
 implementation
@@ -351,6 +353,101 @@ begin
   FEngine.Post(Cmd);
   Assert.IsTrue(WaitUntil(function: Boolean begin Result := HasEvent(eeError) end));
   Assert.AreEqual(Ord(esConnected), Ord(FState));
+end;
+
+
+function ControlCmd(const Name, OnHex, OffHex: string; TurnOn: Boolean): TEngineCommand;
+var
+  B: TBytes;
+begin
+  Result := Command(ecControl);
+  Result.Text := Name;
+  if TurnOn then
+    B := HexToBytes(OnHex)
+  else
+    B := HexToBytes(OffHex);
+  Result.Data := BuildMessage(AddrPcm, AddrTool, B[0], Copy(B, 1, MaxInt));
+  B := HexToBytes(OffHex);
+  Result.Release := BuildMessage(AddrPcm, AddrTool, B[0], Copy(B, 1, MaxInt));
+  Result.Flag := TurnOn;
+end;
+
+{ Two lamps in CPID $01 must both stay on: the second packet carries both,
+  and switching one off sends the one that is still on. }
+procedure TEngineTests.DeviceControlsShareAPacket;
+const
+  Off = 'AE 01 00 00 00 00 00 00';
+var
+  Sent: TList<string>;
+  E, Ev2: TEngineEvent;
+  Results: Integer;
+begin
+  Connect;
+  FEngine.SetTrace(True);
+  FEvents.Clear;
+  FEngine.Post(ControlCmd('MIL', 'AE 01 80 80 00 00 00 00', Off, True));
+  FEngine.Post(ControlCmd('Fan', 'AE 01 00 00 80 80 00 00', Off, True));
+  FEngine.Post(ControlCmd('MIL', 'AE 01 80 80 00 00 00 00', Off, False));
+  Assert.IsTrue(WaitUntil(
+    function: Boolean
+    var
+      Ev: TEngineEvent;
+      N: Integer;
+    begin
+      N := 0;
+      for Ev in FEvents do
+        if Ev.Kind = eeControl then
+          Inc(N);
+      Result := N = 3;
+    end), 'three control results');
+  Sent := TList<string>.Create;
+  try
+    Results := 0;
+    for Ev2 in FEvents do
+    begin
+      if (Ev2.Kind = eeLog) and Ev2.Text.StartsWith('Control "') and (Pos(': 6C 10 F1 AE', Ev2.Text) > 0) then
+        Sent.Add(Copy(Ev2.Text, Pos(': 6C', Ev2.Text) + 2, MaxInt));
+      if Ev2.Kind = eeControl then
+      begin
+        Assert.IsTrue(Ev2.Supported, Ev2.Raw);
+        Inc(Results);
+      end;
+    end;
+    Assert.AreEqual(3, Results);
+    Assert.AreEqual(3, Integer(Sent.Count));
+    Assert.AreEqual('6C 10 F1 AE 01 80 80 00 00 00 00', Sent[0]);
+    Assert.AreEqual('6C 10 F1 AE 01 80 80 80 80 00 00', Sent[1], 'fan on keeps the MIL on');
+    Assert.AreEqual('6C 10 F1 AE 01 00 00 80 80 00 00', Sent[2], 'MIL off keeps the fan on');
+  finally
+    Sent.Free;
+  end;
+  // Release all ends the fan too and returns the PCM to normal.
+  FEvents.Clear;
+  FEngine.Post(Command(ecReleaseControls));
+  Assert.IsTrue(WaitUntil(
+    function: Boolean
+    begin
+      Result := FindEvent(eeControl, E);
+    end));
+  Assert.AreEqual('Fan', E.Text);
+  Assert.AreEqual('released', E.Raw);
+end;
+
+procedure TEngineTests.DeviceControlRefusalIsReported;
+var
+  E: TEngineEvent;
+begin
+  Connect;
+  FEvents.Clear;
+  FEngine.Post(ControlCmd('Bad', 'AE 09 00 00 00 00 00 00', 'AE 09 00 00 00 00 00 00', True));
+  Assert.IsTrue(WaitUntil(
+    function: Boolean
+    begin
+      Result := FindEvent(eeControl, E);
+    end));
+  Assert.IsFalse(E.Supported);
+  Assert.IsFalse(E.Flag, 'a refused control is not held');
+  Assert.Contains(E.Raw, 'out of range');
 end;
 
 initialization

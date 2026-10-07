@@ -92,8 +92,6 @@ function ReadDtcCountRequest(Module: Byte): TBytes;
 function ReadDtcsRequest(Module: Byte): TBytes;
 function ClearDtcRequests: TArray<TBytes>;
 function WriteVinRequests(const Vin: string): TArray<TBytes>;
-function ResetLtftRequest: TBytes;
-function CheckEngineLightRequest(TurnOn: Boolean): TBytes;
 
 type
   TPidRange = record
@@ -110,6 +108,8 @@ const
 
 function FormatDtc(Hi, Lo: Byte): string;
 function ModuleName(Address: Byte): string;
+{ Plain-language meaning of a negative response code (last byte of 7F ...). }
+function NrcText(Code: Byte): string;
 function IsValidVin(const Vin: string): Boolean;
 
 implementation
@@ -251,19 +251,6 @@ begin
     ConcatBytes(BuildMessage(AddrPcm, AddrTool, ModeWriteBlock, [BlockVin3]), AsciiBytes(Copy(Vin, 12, 6)))];
 end;
 
-function ResetLtftRequest: TBytes;
-begin
-  Result := BuildMessage(AddrPcm, AddrTool, ModeDeviceControl, [$02, $40, $00, $00, $00, $00, $00]);
-end;
-
-function CheckEngineLightRequest(TurnOn: Boolean): TBytes;
-begin
-  if TurnOn then
-    Result := BuildMessage(AddrPcm, AddrTool, ModeDeviceControl, [$01, $00, $00, $00, $00, $00, $00])
-  else
-    Result := BuildMessage(AddrPcm, AddrTool, ModeDeviceControl, [$01, $80, $80, $00, $00, $00, $00]);
-end;
-
 function TPidRange.Count: Integer;
 begin
   Result := Integer(Last) - Integer(First) + 1;
@@ -307,6 +294,21 @@ const
 begin
   // SAE J2012: bits 15-14 system, bits 13-12 first digit, rest are hex digits.
   Result := Systems[Hi shr 6] + IntToStr((Hi shr 4) and $03) + IntToHex(Hi and $0F, 1) + IntToHex(Lo, 2);
+end;
+
+function NrcText(Code: Byte): string;
+begin
+  case Code of
+    $10: Result := 'general reject';
+    $11: Result := 'mode not supported';
+    $12: Result := 'not supported / wrong length';
+    $22: Result := 'conditions not correct (engine running? vehicle moving?)';
+    $31: Result := 'request out of range (not supported by this module)';
+    $33: Result := 'security access required';
+    $78: Result := 'busy, answer pending';
+  else
+    Result := 'code $' + IntToHex(Code, 2);
+  end;
 end;
 
 function ModuleName(Address: Byte): string;

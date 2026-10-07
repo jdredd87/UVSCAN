@@ -1,0 +1,85 @@
+# Development
+
+## Building
+
+Delphi 13 (RAD Studio 37.0), VCL, Win32 and Win64. No third‑party components: the serial port, AVT protocol, formula evaluator, JSON handling and gauges are all in `src\`.
+
+Open `UVScan.dproj` in the IDE, or from a command prompt:
+
+```
+build.cmd [Debug|Release] [Win32|Win64]
+```
+
+That builds the app (`Win32\Debug\UVScan.exe`), builds and runs the DUnitX tests (`tests\UVScanTests.dproj`), and builds the bench tool (`tools\Win32\UVScanProbe.exe`). It stops at the first failure.
+
+The factory data in `data\` is compiled into the exe through `UVScan.Defaults.rc` (`UVScan.Defaults.res` is generated and not in git).
+
+## Tests
+
+`tests\` holds DUnitX tests for the protocol pieces (AVT framing, Class 2 messages, DPID planning, the formula evaluator), the JSON files, the legacy CSV import, display levels and alerts, real‑time controls (including how active device controls are merged), log reading and saved views, and end‑to‑end engine runs against the simulator (connect, scan, log, PID test, discovery, stop/restart). They run on both platforms and report memory leaks.
+
+## Simulator
+
+`UVScan.Simulator.pas` is an `ISerialPort` that behaves like an AVT‑841 with a PCM behind it, built from what the bench PCM actually did: AVT init answers, `01 60` transmit confirmations, DPID definition replies, the two stream slots and their rates, `2A 00` pausing, NRC codes for bad requests, mode $22 PIDs, trouble codes in several modules, VIN blocks, and mode $AE device control (CPIDs $01‑$04 with exactly 6 bytes, NRC $12 / $31 otherwise). Choose port **Simulator** in the app; the tests use it too. When the bench shows new behaviour, add it here.
+
+## Bench tool
+
+`tools\UVScanProbe.dpr` is a console program for real hardware. Close UVScan first (only one program can open the COM port).
+
+```
+UVScanProbe COM9 raw [baud] [rtscts|none]   AVT init frames, raw bytes
+UVScanProbe COM9 run 5 1,3,12 [-notest] [-nodtc] [-speed 4]
+                                            connect, PID test, 5 s scan, DTC read (read-only)
+UVScanProbe COM9 rawscan | rates | multi    stream experiments (DPID slots and rates)
+UVScanProbe COM9 sweep 0000-00FF,1000-1FFF  list every PID the PCM answers (mode $22, read-only)
+UVScanProbe COM9 cpids 00 FF                device control survey: each CPID with all-zero data
+UVScanProbe COM9 cpidlen 01,02              which control lengths each CPID accepts
+UVScanProbe COM9 cpidmap pids.txt 01,02     set control bits one by one, read every PID, show changes
+UVScanProbe COM9 cpidconfirm 01 1104,110C 3 repeat single-bit tests, keep effects that follow every time
+```
+
+`cpids`, `cpidlen`, `cpidmap` and `cpidconfirm` **send device control commands**; `cpidmap` on CPID $02 resets learned values. They end with mode $20 (return to normal). See [protocol notes](protocol.md#device-control-mode-ae).
+
+## Source layout
+
+| Path | Purpose |
+|---|---|
+| `src/UVScan.Serial.pas` | Win32 serial port (no AsyncPro), COM port list |
+| `src/UVScan.Avt.pas` | AVT frame encoding / parsing (header = kind nibble + length nibble) |
+| `src/UVScan.Class2.pas` | GM Class 2 message builders and parsers, DTC formatting, NRC texts |
+| `src/UVScan.Dpid.pas` | Packs PIDs into DPIDs ($FE down, 6 data bytes each) and builds stream requests |
+| `src/UVScan.Formula.pas` | PID formula evaluator (replaces ArtFormula) |
+| `src/UVScan.Engine.pas` | Background thread that owns the port: connect, scan, log, codes, PID search, real‑time controls |
+| `src/UVScan.Simulator.pas` | Simulated AVT + PCM |
+| `src/UVScan.Pids.pas` | `TPidCatalog` (pids.json): load / save, validation, value formatting |
+| `src/UVScan.PidLists.pas` | `TPidLists` (lists.json) |
+| `src/UVScan.Display.pas` | `TDisplaySettings` (display.json): looks, alert levels, gauge zones |
+| `src/UVScan.Alerts.pas` | Alert sounds (built‑in tones) and when to play them |
+| `src/UVScan.Gauge.pas` | `TGaugeView`: dial / bar / number gauge drawn with GDI+ |
+| `src/UVScan.Controls.pas` | `TControlList` (controls.json): command templates, value scaling |
+| `src/UVScan.LogData.pas` | `TLogData`: reads UVScan CSV logs; the made‑up demo drive |
+| `src/UVScan.LogViews.pas` | `TLogViewList` (logviews.json): saved log viewer set‑ups |
+| `src/UVScan.LogChart.pas` | `TLogChart`: lanes / overlay / shared chart with cursor, zoom and pan (GDI+) |
+| `src/UVScan.Dtc.pas` | `TDtcCatalog` (dtcs.json) |
+| `src/UVScan.Settings.pas` | `TAppSettings` (settings.json) |
+| `src/UVScan.LegacyImport.pas` | Old `PIDS.csv` import and catalog merge |
+| `src/UVScan.Defaults.pas` | Factory defaults built into the exe; creates missing data files |
+| `src/UVScan.Paths.pas` | Data folder (`C:\ProgramData\UVScan`) |
+| `src/UVScan.JsonFile.pas` | JSON helpers (atomic save) |
+| `src/UVScan.Hex.pas` | Hex / byte helpers |
+| `src/UVScan.MainForm.*` | Main window |
+| `src/UVScan.PidEditor.*` | PID editor |
+| `src/UVScan.PidDiscovery.*` | PID search dialog |
+| `src/UVScan.DisplayEditor.*` | Display & alerts dialog |
+| `src/UVScan.GaugeEditor.*` | Gauge dialog |
+| `src/UVScan.ControlEditor.*` | Real‑time control dialog |
+| `src/UVScan.LogViewer.*` | Log viewer window |
+| `data/` | Factory defaults, compiled into the exe |
+| `tests/` | DUnitX tests |
+| `tools/UVScanProbe.dpr` | Console bench tool |
+| `docs/` | This documentation and its screenshots |
+| `legacy/` | The original 2008 source, for reference only; not used by the new app |
+
+## Threading
+
+One `TThread` (`TScanEngine`) owns the port. The UI posts commands to a `TThreadedQueue`; the engine handles them strictly one after another (request, wait for the matching reply or a timeout, next request), sends tester‑present from the same loop so it never lands in the middle of an exchange, and reports back through `TThread.Queue` events. Live values are copied into a lock‑protected snapshot that a 100 ms UI timer reads; the grid repaints only cells whose text changed, and messages are added to the Messages tab in batches.

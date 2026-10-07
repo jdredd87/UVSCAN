@@ -344,7 +344,13 @@ begin
       Reply($10, Msg.Mode + PositiveOffset, []);
 
     ModeDeviceControl:
-      Reply($10, ModeDeviceControl + PositiveOffset, [Msg.Data[0]]);
+      // As the bench PCM (OS 9389759): CPIDs $01-$04, exactly 6 control bytes.
+      if Length(Msg.Data) <> 7 then
+        Reply($10, ModeNegativeResponse, ConcatBytes(ConcatBytes(BytesOf([ModeDeviceControl]), Copy(Msg.Data, 0, 5)), BytesOf([$12])))
+      else if not (Msg.Data[0] in [$01..$04]) then
+        Reply($10, ModeNegativeResponse, ConcatBytes(ConcatBytes(BytesOf([ModeDeviceControl]), Copy(Msg.Data, 0, 5)), BytesOf([$31])))
+      else
+        Reply($10, ModeDeviceControl + PositiveOffset, [Msg.Data[0], $E1]);
   else
     Reply($10, ModeNegativeResponse, [Msg.Mode, $11]);
   end;

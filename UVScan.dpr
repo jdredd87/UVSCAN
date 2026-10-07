@@ -23,6 +23,12 @@ uses
   UVScan.Gauge in 'src\UVScan.Gauge.pas',
   UVScan.DisplayEditor in 'src\UVScan.DisplayEditor.pas' {DisplayEditorForm},
   UVScan.GaugeEditor in 'src\UVScan.GaugeEditor.pas' {GaugeEditorForm},
+  UVScan.Controls in 'src\UVScan.Controls.pas',
+  UVScan.ControlEditor in 'src\UVScan.ControlEditor.pas' {ControlEditorForm},
+  UVScan.LogData in 'src\UVScan.LogData.pas',
+  UVScan.LogViews in 'src\UVScan.LogViews.pas',
+  UVScan.LogChart in 'src\UVScan.LogChart.pas',
+  UVScan.LogViewer in 'src\UVScan.LogViewer.pas' {LogViewerForm},
   UVScan.PidEditor in 'src\UVScan.PidEditor.pas' {PidEditorForm},
   UVScan.PidDiscovery in 'src\UVScan.PidDiscovery.pas' {PidDiscoveryForm},
   UVScan.MainForm in 'src\UVScan.MainForm.pas' {MainForm};
