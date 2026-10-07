@@ -149,6 +149,9 @@ type
     FLists: TPidLists;
     FDiscovery: TPidDiscoveryForm;
     FPendingLog: TStringList;   // message lines waiting for the next timer tick
+    FShownRows: TArray<string>; // what each live row last showed (value|min|max)
+    FShownCycles: Int64;
+    procedure RefreshLiveRows;
     procedure FlushMessages;
     procedure ReloadCatalog;
     procedure FillLists(const Select: string);
@@ -218,6 +221,7 @@ begin
   grdLive.ColWidths[ColUnits] := 80;
   grdLive.ColWidths[ColMin] := 100;
   grdLive.ColWidths[ColMax] := 100;
+  grdLive.DoubleBuffered := True; // paint off-screen, then copy: no flicker
   FormResize(nil);
   FState := esDisconnected;
   UpdateControls;
@@ -907,6 +911,8 @@ begin
         SetLength(FMax, Length(FLiveIds));
         btnResetMinMax.Click;
         grdLive.RowCount := Max(2, Length(FLiveIds) + 1);
+        FShownRows := nil;
+        FShownCycles := -1;
         lblLiveHint.Visible := False;
         pcMain.ActivePage := tsLive;
         grdLive.Invalidate;
@@ -1040,7 +1046,41 @@ begin
   SetStatus(PanelRate, Format('%.1f updates/s', [FLive.CyclesPerSecond]));
   if FLive.Logging then
     SetStatus(PanelLog, Format('Logging: %d rows%s', [FLive.LogRows, IfThen(FLive.LogPaused, ' (paused)', '')]));
-  grdLive.Invalidate;
+  if FLive.Cycles <> FShownCycles then
+  begin
+    FShownCycles := FLive.Cycles;
+    RefreshLiveRows;
+  end;
+end;
+
+{ Repaints only the value/min/max cells whose text changed, without erasing
+  the background first (DrawCell paints every pixel of the cell itself).
+  Invalidating the whole grid ten times a second is what made it flicker. }
+procedure TMainForm.RefreshLiveRows;
+var
+  I: Integer;
+  P: TPidDef;
+  Shown: string;
+  R, R2: TRect;
+begin
+  if Length(FShownRows) <> Length(FLiveIds) then
+    SetLength(FShownRows, Length(FLiveIds));
+  for I := 0 to High(FLiveIds) do
+  begin
+    P := FCatalog.FindById(FLiveIds[I]);
+    if (P = nil) or (I > High(FLive.Text)) then
+      Continue;
+    Shown := FLive.Text[I] + #1 + P.FormatValue(FMin[I]) + #1 + P.FormatValue(FMax[I]);
+    if Shown = FShownRows[I] then
+      Continue;
+    FShownRows[I] := Shown;
+    R := grdLive.CellRect(ColValue, I + 1);
+    R2 := grdLive.CellRect(ColMax, I + 1);
+    if IsRectEmpty(R) then
+      Continue; // row scrolled out of view
+    UnionRect(R, R, R2);
+    InvalidateRect(grdLive.Handle, @R, False);
+  end;
 end;
 
 procedure TMainForm.grdLiveDrawCell(Sender: TObject; ACol, ARow: Integer; Rect: TRect; State: TGridDrawState);
@@ -1129,6 +1169,7 @@ begin
     FMin[I] := NaN;
     FMax[I] := NaN;
   end;
+  FShownRows := nil;
   grdLive.Invalidate;
 end;
 
@@ -1313,7 +1354,8 @@ end;
 
 procedure TMainForm.SetStatus(Panel: Integer; const Text: string);
 begin
-  sbMain.Panels[Panel].Text := Text;
+  if sbMain.Panels[Panel].Text <> Text then // avoid repainting the status bar for nothing
+    sbMain.Panels[Panel].Text := Text;
 end;
 
 end.
