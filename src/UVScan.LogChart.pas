@@ -19,7 +19,7 @@ uses
 type
   TLogChart = class(TCustomControl)
   private type
-    TDrag = (dgNone, dgCursor, dgPan);
+    TDrag = (dgNone, dgCursor, dgPan, dgSelect);
   private
     FData: TLogData;
     FStyles: TArray<TChannelStyle>;
@@ -33,6 +33,8 @@ type
     FDragT0, FDragT1: Double;
     FPlot: TRect;
     FShowBands: Boolean;
+    FSel0, FSel1: Double;      // selected time range, NaN = none
+    FOnSelectionChange: TNotifyEvent;
     FOnCursorChange: TNotifyEvent;
     FOnWindowChange: TNotifyEvent;
     procedure WMEraseBkgnd(var Msg: TWMEraseBkgnd); message WM_ERASEBKGND;
@@ -63,6 +65,14 @@ type
     procedure KeepVisible(const T: Double);
     function WindowStart: Double;
     function WindowEnd: Double;
+    function HasSelection: Boolean;
+    procedure ClearSelection;
+    procedure ZoomToSelection;
+    { The chart as it is on screen, for saving as a picture. }
+    procedure SaveImage(const FileName: string);
+    property SelStart: Double read FSel0;
+    property SelEnd: Double read FSel1;
+    property OnSelectionChange: TNotifyEvent read FOnSelectionChange write FOnSelectionChange;
     property CursorTime: Double read FCursor;
     property Mode: TChartMode read FMode write SetMode;
     property ShowBands: Boolean read FShowBands write SetShowBands;
@@ -77,7 +87,7 @@ procedure AutoRange(const Ch: TLogChannel; out Lo, Hi: Double);
 implementation
 
 uses
-  System.StrUtils, Winapi.GDIPAPI, Winapi.GDIPOBJ, UVScan.Gauge;
+  System.StrUtils, Vcl.Imaging.pngimage, Winapi.GDIPAPI, Winapi.GDIPOBJ, UVScan.Gauge;
 
 const
   Back = TColor($001E1A16);       // RGB(22, 26, 30)
@@ -232,6 +242,8 @@ begin
   FBuffer := TBitmap.Create;
   FBuffer.PixelFormat := pf32bit;
   FMode := cmLanes;
+  FSel0 := NaN;
+  FSel1 := NaN;
   FShowBands := True;
   TabStop := True;
   Color := Back;
@@ -259,6 +271,8 @@ begin
   FStyles := nil;
   FLevels := nil;
   FCursor := 0;
+  FSel0 := NaN;
+  FSel1 := NaN;
   FitAll;
 end;
 
@@ -399,7 +413,7 @@ var
   K: Single;
   Vis: TArray<Integer>;
   W, H, I, N, Lane: Integer;
-  Lo, Hi, SLo, SHi, Step, Tick, T, Px: Double;
+  Lo, Hi, SLo, SHi, Step, Tick, Px: Double;
   LaneTop, LaneH, AxisW, X, Y: Single;
   Ch: Integer;
   S: string;
@@ -424,7 +438,7 @@ var
     Style: TChannelStyle;
     Levels: TArray<TDisplayLevel>;
     UseLevels: Boolean;
-    I0, I1, J, Bucket, LastBucket, Lvl, RunLvl: Integer;
+    I0, I1, J, Bucket, LastBucket, RunLvl: Integer;
     V, BMin, BMax: Double;
     Pts: TArray<TGPPointF>;
     Pen: TGPPen;
@@ -715,6 +729,20 @@ begin
           end;
       end;
 
+    // selected range
+    if HasSelection then
+    begin
+      X := Max(FPlot.Left, X_(Min(FSel0, FSel1)));
+      Y := Min(FPlot.Right, X_(Max(FSel0, FSel1)));
+      if Y > X then
+      begin
+        Fill(G, X, FPlot.Top, Y - X, FPlot.Height, TColor($00FFAA46), 38);
+        Line(G, X, FPlot.Top, X, FPlot.Bottom, 1, TColor($00FFAA46), 160);
+        Line(G, Y, FPlot.Top, Y, FPlot.Bottom, 1, TColor($00FFAA46), 160);
+        Txt(G, FormatLogTime(Abs(FSel1 - FSel0)), X, FPlot.Top + 2 * K, Y - X, 14 * K, 10.5 * K,
+          TColor($00FFAA46), StringAlignmentCenter, True);
+      end;
+    end;
     // cursor line
     X := X_(FCursor);
     if (X >= FPlot.Left) and (X <= FPlot.Right) then
@@ -774,7 +802,14 @@ begin
   FDragX := X;
   FDragT0 := FT0;
   FDragT1 := FT1;
-  if Button = mbLeft then
+  if (Button = mbLeft) and (ssShift in Shift) then
+  begin
+    FDrag := dgSelect;
+    FSel0 := EnsureRange(TimeAtX(X), FData.Times[0], FData.Times[FData.Count - 1]);
+    FSel1 := FSel0;
+    Invalidate;
+  end
+  else if Button = mbLeft then
   begin
     FDrag := dgCursor;
     SetCursorTime(TimeAtX(X), True);
@@ -794,6 +829,11 @@ begin
   case FDrag of
     dgCursor:
       SetCursorTime(TimeAtX(X), True);
+    dgSelect:
+      begin
+        FSel1 := EnsureRange(TimeAtX(X), FData.Times[0], FData.Times[FData.Count - 1]);
+        Invalidate;
+      end;
     dgPan:
       if FPlot.Width > 0 then
       begin
@@ -806,6 +846,13 @@ end;
 procedure TLogChart.MouseUp(Button: TMouseButton; Shift: TShiftState; X, Y: Integer);
 begin
   inherited;
+  if FDrag = dgSelect then
+  begin
+    if Abs(FSel1 - FSel0) < 1E-6 then
+      ClearSelection
+    else if Assigned(FOnSelectionChange) then
+      FOnSelectionChange(Self);
+  end;
   FDrag := dgNone;
   Cursor := crDefault;
 end;
@@ -827,6 +874,40 @@ begin
   inherited;
   FDrag := dgNone;
   FitAll;
+end;
+
+function TLogChart.HasSelection: Boolean;
+begin
+  Result := not IsNan(FSel0) and not IsNan(FSel1) and (Abs(FSel1 - FSel0) > 1E-6);
+end;
+
+procedure TLogChart.ClearSelection;
+begin
+  FSel0 := NaN;
+  FSel1 := NaN;
+  Invalidate;
+  if Assigned(FOnSelectionChange) then
+    FOnSelectionChange(Self);
+end;
+
+procedure TLogChart.ZoomToSelection;
+begin
+  if HasSelection then
+    SetWindow(Min(FSel0, FSel1), Max(FSel0, FSel1));
+end;
+
+procedure TLogChart.SaveImage(const FileName: string);
+var
+  Png: TPngImage;
+begin
+  Repaint; // make sure the buffer is current
+  Png := TPngImage.Create;
+  try
+    Png.Assign(FBuffer);
+    Png.SaveToFile(FileName);
+  finally
+    Png.Free;
+  end;
 end;
 
 end.

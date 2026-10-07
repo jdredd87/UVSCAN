@@ -371,7 +371,7 @@ end;
 procedure TGaugeView.Paint;
 var
   G: TGPGraphics;
-  W, H, Pad, Radius, Frac, Ang, CX, CY, D, R, Thick, ZoneW, ZoneR, T, Step, LabelR, A, X: Single;
+  W, H, Pad, Radius, Ang, CX, CY, D, R, Thick, ZoneW, ZoneR, T, Step, LabelR, A, X: Single;
   Pal: TPalette;
   Z: TGaugeZone;
   F1, F2, BarX, BarY, BarW, BarH, TitleH: Single;

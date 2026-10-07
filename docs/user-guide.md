@@ -126,7 +126,7 @@ While scanning, **Start log (F8)** writes every update to a CSV file named `UVSc
 
 ![Log viewer, overlay](images/log-viewer-overlay.png)
 
-**Channels** (left): tick the ones to chart. *Value* is the value at the cursor, coloured by its alert level; *Min* / *Max* are for the whole log. Select a channel to change it:
+**Channels** (left): tick the ones to chart. *Value* is the value at the cursor, coloured by its alert level; *Min* / *Avg* / *Max* are for the whole log (or the selected stretch, see below). Select a channel to change it:
 
 | Setting | What it does |
 |---|---|
@@ -144,6 +144,12 @@ While scanning, **Start log (F8)** writes every update to a CSV file named `UVSc
 ![Log viewer, lanes](images/log-viewer-lanes.png)
 
 **Moving around:** click or drag in the chart to move the cursor (the grid jumps to that row); the mouse wheel zooms around the mouse; drag with the right mouse button to pan; double‑click to see the whole log. With the chart focused, ←/→ step one sample (Shift: 10), Home / End jump to the ends. Clicking a grid row moves the cursor there too. **Level bands** shades each channel's alert levels behind its line.
+
+**Selecting a stretch:** hold Shift and drag in the chart. The stretch is shaded with its length, and the *Min\* / Avg\* / Max\** columns on the left show the values over just that stretch (for ON / OFF channels the average is how much of the time it was on) — e.g. select a wide‑open pull to see peak knock retard and average MAP. Enter zooms to the selection, Esc clears it.
+
+![Selecting a stretch](images/log-viewer-selection.png)
+
+**Image…** saves the chart as a PNG (for forum posts or a tuner). You can also drop a log file onto the viewer to open it, and after you stop logging, **F7** opens the log you just recorded.
 
 **Playback:** **Play** (or Space) runs the cursor through the log in real time — or at 0.25× to 20× — with the chart following (**Follow cursor**), the grid scrolling along and the values on the left updating, like watching the drive again. **|<** and **>|** jump to the start and end; the slider scrubs.
 

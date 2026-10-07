@@ -394,10 +394,7 @@ begin
   Seed := 20011234;
   Speed := 0;
   Ecu := 55;
-  Iat := 70;
   Kr := 0;
-  O2 := 450;
-  Prev := 0;
   for I := 0 to N - 1 do
   begin
     T := I / Rate;

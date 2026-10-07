@@ -7,7 +7,7 @@ unit UVScan.LogViewer;
 interface
 
 uses
-  Winapi.Windows, Winapi.Messages, System.SysUtils, System.Classes, System.UITypes, System.Math,
+  Winapi.Windows, Winapi.Messages, Winapi.ShellAPI, System.SysUtils, System.Classes, System.UITypes, System.Math,
   System.Diagnostics, System.IOUtils, System.Types, System.Generics.Collections, System.Generics.Defaults,
   Vcl.Graphics, Vcl.Controls, Vcl.Forms, Vcl.Dialogs, Vcl.StdCtrls, Vcl.ExtCtrls, Vcl.ComCtrls, Vcl.Grids,
   UVScan.Pids, UVScan.Display, UVScan.LogData, UVScan.LogViews, UVScan.LogChart;
@@ -22,6 +22,7 @@ type
     cbView: TComboBox;
     btnSaveView: TButton;
     btnDeleteView: TButton;
+    btnImage: TButton;
     lblMode: TLabel;
     cbMode: TComboBox;
     pnlPlay: TPanel;
@@ -83,6 +84,7 @@ type
     procedure grdLogDrawCell(Sender: TObject; ACol, ARow: Integer; Rect: TRect; State: TGridDrawState);
     procedure grdLogSelectCell(Sender: TObject; ACol, ARow: Integer; var CanSelect: Boolean);
     procedure FormResize(Sender: TObject);
+    procedure btnImageClick(Sender: TObject);
   private
     FData: TLogData;
     FChart: TLogChart;
@@ -118,6 +120,12 @@ type
     procedure UpdateStatus;
     procedure SaveViews;
     procedure ColorBoxGetColors(Sender: TCustomColorBox; Items: TStrings);
+    procedure ChartSelectionChange(Sender: TObject);
+    procedure RangeStats(Ch: Integer; out Lo, Avg, Hi: Double);
+    procedure OpenFile(const FileName: string);
+    procedure WMDropFiles(var Msg: TWMDropFiles); message WM_DROPFILES;
+  protected
+    procedure CreateWnd; override;
   public
     { Opens the viewer (one window, reused). FileName '' = just show it. }
     class procedure ShowViewer(Catalog: TPidCatalog; Display: TDisplaySettings; const LogFolder, ViewsFile,
@@ -184,6 +192,7 @@ begin
   FChart.Align := alTop;
   FChart.Height := Round(pnlMain.ClientHeight * 0.62);
   FChart.OnCursorChange := ChartCursorChange;
+  FChart.OnSelectionChange := ChartSelectionChange;
   splChart.Top := FChart.Height + 1; // keep the splitter under the chart
   for M := Low(TChartMode) to High(TChartMode) do
     cbMode.Items.Add(ChartModeCaptions[M]);
@@ -284,13 +293,11 @@ begin
   end;
 end;
 
-procedure TLogViewerForm.cbRecentChange(Sender: TObject);
+procedure TLogViewerForm.OpenFile(const FileName: string);
 begin
-  if cbRecent.ItemIndex < 0 then
-    Exit;
   SetPlaying(False);
   try
-    FData.LoadFromFile(TPath.Combine(FLogFolder, cbRecent.Text));
+    FData.LoadFromFile(FileName);
   except
     on E: Exception do
     begin
@@ -299,6 +306,52 @@ begin
     end;
   end;
   ShowLog;
+end;
+
+procedure TLogViewerForm.cbRecentChange(Sender: TObject);
+begin
+  if cbRecent.ItemIndex >= 0 then
+    OpenFile(TPath.Combine(FLogFolder, cbRecent.Text));
+end;
+
+procedure TLogViewerForm.CreateWnd;
+begin
+  inherited;
+  DragAcceptFiles(Handle, True);
+end;
+
+{ A log file dropped on the window opens it. }
+procedure TLogViewerForm.WMDropFiles(var Msg: TWMDropFiles);
+var
+  Buf: array[0..MAX_PATH] of Char;
+begin
+  try
+    if DragQueryFile(Msg.Drop, 0, Buf, Length(Buf)) > 0 then
+      OpenFile(Buf);
+  finally
+    DragFinish(Msg.Drop);
+  end;
+  Msg.Result := 0;
+end;
+
+procedure TLogViewerForm.btnImageClick(Sender: TObject);
+var
+  Dlg: TSaveDialog;
+begin
+  if FData.Count = 0 then
+    Exit;
+  Dlg := TSaveDialog.Create(Self);
+  try
+    Dlg.Filter := 'PNG picture (*.png)|*.png';
+    Dlg.DefaultExt := 'png';
+    Dlg.InitialDir := FLogFolder;
+    Dlg.FileName := ChangeFileExt(IfThen(FData.FileName <> '', ExtractFileName(FData.FileName), 'demo'), '') + '.png';
+    Dlg.Options := Dlg.Options + [ofOverwritePrompt];
+    if Dlg.Execute then
+      FChart.SaveImage(Dlg.FileName);
+  finally
+    Dlg.Free;
+  end;
 end;
 
 procedure TLogViewerForm.btnDemoClick(Sender: TObject);
@@ -509,7 +562,7 @@ begin
   if FData.Skipped > 0 then
     sbLog.Panels[2].Text := Format('%d unreadable rows skipped', [FData.Skipped])
   else
-    sbLog.Panels[2].Text := '';
+    sbLog.Panels[2].Text := 'Shift+drag in the chart to select a range';
 end;
 
 { Levels: a channel's own levels, else (if wanted) the ones Display & alerts
@@ -595,8 +648,9 @@ begin
       Item := lvChannels.Items.Add;
       Item.Caption := C.Caption;
       Item.SubItems.Add('');
-      Item.SubItems.Add(ChannelValueText(I, -1));
-      Item.SubItems.Add(ChannelValueText(I, -2));
+      Item.SubItems.Add('');
+      Item.SubItems.Add('');
+      Item.SubItems.Add('');
       Item.Checked := (I <= High(FStyles)) and FStyles[I].Visible;
     end;
   finally
@@ -606,6 +660,7 @@ begin
   if lvChannels.Items.Count > 0 then
     lvChannels.ItemIndex := Min(Keep, lvChannels.Items.Count - 1);
   RefreshValues;
+  ChartSelectionChange(nil);
   ShowChannel;
 end;
 
@@ -628,6 +683,108 @@ begin
     Result := IfThen(V >= 0.5, 'ON', 'OFF')
   else
     Result := FormatFloat('0.###', V);
+end;
+
+function NumText(const V: Double): string;
+begin
+  if IsNan(V) then
+    Result := '--'
+  else if Abs(V) >= 1000 then
+    Result := FormatFloat('0', V)
+  else if Abs(V) >= 100 then
+    Result := FormatFloat('0.#', V)
+  else
+    Result := FormatFloat('0.##', V);
+end;
+
+{ Lowest, average and highest value in the selected range (the whole log
+  when nothing is selected). }
+procedure TLogViewerForm.RangeStats(Ch: Integer; out Lo, Avg, Hi: Double);
+var
+  I0, I1, I, N: Integer;
+  V, Sum: Double;
+begin
+  Lo := NaN;
+  Hi := NaN;
+  Avg := NaN;
+  if FData.Count = 0 then
+    Exit;
+  if FChart.HasSelection then
+  begin
+    I0 := FData.IndexAt(Min(FChart.SelStart, FChart.SelEnd));
+    I1 := FData.IndexAt(Max(FChart.SelStart, FChart.SelEnd));
+  end
+  else
+  begin
+    I0 := 0;
+    I1 := FData.Count - 1;
+  end;
+  Sum := 0;
+  N := 0;
+  for I := I0 to I1 do
+  begin
+    V := FData.Channels[Ch].Values[I];
+    if IsNan(V) then
+      Continue;
+    if IsNan(Lo) or (V < Lo) then
+      Lo := V;
+    if IsNan(Hi) or (V > Hi) then
+      Hi := V;
+    Sum := Sum + V;
+    Inc(N);
+  end;
+  if N > 0 then
+    Avg := Sum / N;
+end;
+
+{ Min / avg / max of the selection (or the whole log) in the channel list. }
+procedure TLogViewerForm.ChartSelectionChange(Sender: TObject);
+var
+  I: Integer;
+  Lo, Avg, Hi: Double;
+  Suffix: string;
+begin
+  if FChart.HasSelection then
+  begin
+    Suffix := '*';
+    sbLog.Panels[2].Text := Format('Selection %s - %s (%s): min / avg / max marked *. Enter = zoom, Esc = clear',
+      [FormatLogTime(Min(FChart.SelStart, FChart.SelEnd) - FData.Times[0]),
+       FormatLogTime(Max(FChart.SelStart, FChart.SelEnd) - FData.Times[0]),
+       FormatLogTime(Abs(FChart.SelEnd - FChart.SelStart))]);
+  end
+  else
+  begin
+    Suffix := '';
+    UpdateStatus;
+  end;
+  lvChannels.Columns[2].Caption := 'Min' + Suffix;
+  lvChannels.Columns[3].Caption := 'Avg' + Suffix;
+  lvChannels.Columns[4].Caption := 'Max' + Suffix;
+  lvChannels.Items.BeginUpdate;
+  try
+    for I := 0 to Min(lvChannels.Items.Count, FData.ChannelCount) - 1 do
+    begin
+      RangeStats(I, Lo, Avg, Hi);
+      if FData.Channels[I].IsSwitch then
+      begin
+        // ON / OFF: show how much of the time it was on
+        lvChannels.Items[I].SubItems[1] := NumText(Lo);
+        if IsNan(Avg) then
+          lvChannels.Items[I].SubItems[2] := '--'
+        else
+          lvChannels.Items[I].SubItems[2] := FormatFloat('0', Avg * 100) + '% on';
+        lvChannels.Items[I].SubItems[3] := NumText(Hi);
+      end
+      else
+      begin
+        lvChannels.Items[I].SubItems[1] := NumText(Lo);
+        lvChannels.Items[I].SubItems[2] := NumText(Avg);
+        lvChannels.Items[I].SubItems[3] := NumText(Hi);
+      end;
+    end;
+  finally
+    lvChannels.Items.EndUpdate;
+  end;
 end;
 
 procedure TLogViewerForm.RefreshValues;
@@ -703,7 +860,11 @@ begin
     end;
   end
   else if SubItem > 1 then
+  begin
     Sender.Canvas.Font.Color := clGrayText;
+    if FChart.HasSelection then
+      Sender.Canvas.Font.Color := TColor($00B06000); // selection statistics stand out
+  end;
 end;
 
 { Selected channel settings }
@@ -1036,6 +1197,16 @@ begin
   if Key = VK_SPACE then
   begin
     SetPlaying(not FPlaying);
+    Key := 0;
+  end
+  else if (ActiveControl = FChart) and (Key = VK_RETURN) then
+  begin
+    FChart.ZoomToSelection;
+    Key := 0;
+  end
+  else if (ActiveControl = FChart) and (Key = VK_ESCAPE) and FChart.HasSelection then
+  begin
+    FChart.ClearSelection;
     Key := 0;
   end
   else if (ActiveControl = FChart) and (Key in [VK_LEFT, VK_RIGHT, VK_HOME, VK_END]) and (FData.Count > 0) then

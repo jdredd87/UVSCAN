@@ -242,7 +242,8 @@ type
     FControlResult: TDictionary<string, string>;  // control name -> last result
     FControlActive: TDictionary<string, Boolean>; // control name -> held by the engine
     FHolding: Boolean;               // "hold to run" button is down
-    FLogViewerOpened: Boolean;
+    FLastLogFile: string;            // the log recorded most recently
+    FViewerLog: string;              // the log last handed to the viewer
     FZoom: Integer;                  // live grid zoom, percent
     FBaseRowHeight: Integer;         // the grid's row height at 100%
     procedure SetZoom(Percent: Integer);
@@ -1138,6 +1139,7 @@ begin
       end;
     eeLogStarted:
       begin
+        FLastLogFile := Ev.Text;
         FLogging := True;
         FLogPaused := False;
         SetStatus(PanelLog, 'Logging to ' + ExtractFileName(Ev.Text));
@@ -1153,6 +1155,8 @@ begin
       end;
     eeLogStopped:
       begin
+        if FLastLogFile <> '' then
+          AddMessage('Log saved: ' + FLastLogFile + '  (F7 opens it in the log viewer)');
         FLogging := False;
         FLogPaused := False;
         SetStatus(PanelLog, '');
@@ -2389,24 +2393,26 @@ begin
     DisplayChanged;
 end;
 
+{ Opens the log viewer with the log just recorded, or the newest log in the
+  folder; if that is already what the viewer shows, just brings it up. }
 procedure TMainForm.btnLogViewerClick(Sender: TObject);
 var
   Last: string;
   Files: TArray<string>;
   F: string;
 begin
-  // Open the newest log the first time; afterwards just bring the viewer up.
-  Last := '';
-  if TDirectory.Exists(LogFolder) then
+  Last := FLastLogFile;
+  if (Last = '') and TDirectory.Exists(LogFolder) then
   begin
     Files := TDirectory.GetFiles(LogFolder, '*.csv');
     for F in Files do
       if (Last = '') or (TFile.GetLastWriteTime(F) > TFile.GetLastWriteTime(Last)) then
         Last := F;
   end;
-  if FLogViewerOpened then
-    Last := '';
-  FLogViewerOpened := True;
+  if SameText(Last, FViewerLog) or FLogging then
+    Last := '' // keep what the viewer shows (a log still being written is incomplete)
+  else
+    FViewerLog := Last;
   TLogViewerForm.ShowViewer(FCatalog, FDisplay, LogFolder, LogViewsFile, Last);
 end;
 

@@ -105,11 +105,23 @@ object LogViewerForm: TLogViewerForm
     object cbMode: TComboBox
       Left = 966
       Top = 8
-      Width = 180
+      Width = 170
       Height = 23
       Style = csDropDownList
       TabOrder = 6
       OnChange = cbModeChange
+    end
+    object btnImage: TButton
+      Left = 1142
+      Top = 7
+      Width = 72
+      Height = 26
+      Hint = 'Save the chart as a PNG picture'
+      Caption = 'Image...'
+      ParentShowHint = False
+      ShowHint = True
+      TabOrder = 7
+      OnClick = btnImageClick
     end
   end
   object pnlPlay: TPanel
@@ -238,7 +250,7 @@ object LogViewerForm: TLogViewerForm
     end
   end
   object splLeft: TSplitter
-    Left = 300
+    Left = 340
     Top = 80
     Width = 5
     Height = 657
@@ -247,7 +259,7 @@ object LogViewerForm: TLogViewerForm
   object pnlLeft: TPanel
     Left = 0
     Top = 80
-    Width = 300
+    Width = 340
     Height = 657
     Align = alLeft
     BevelOuter = bvNone
@@ -264,12 +276,12 @@ object LogViewerForm: TLogViewerForm
       Columns = <
         item
           Caption = 'Channel'
-          Width = 118
+          Width = 112
         end
         item
           Alignment = taRightJustify
           Caption = 'Value'
-          Width = 60
+          Width = 56
         end
         item
           Alignment = taRightJustify
@@ -278,8 +290,13 @@ object LogViewerForm: TLogViewerForm
         end
         item
           Alignment = taRightJustify
+          Caption = 'Avg'
+          Width = 54
+        end
+        item
+          Alignment = taRightJustify
           Caption = 'Max'
-          Width = 56
+          Width = 54
         end>
       HideSelection = False
       ReadOnly = True
@@ -412,7 +429,7 @@ object LogViewerForm: TLogViewerForm
     end
   end
   object pnlMain: TPanel
-    Left = 305
+    Left = 345
     Top = 80
     Width = 915
     Height = 657

@@ -108,7 +108,7 @@ implementation
 {$R *.dfm}
 
 uses
-  System.StrUtils, UVScan.Alerts;
+  System.StrUtils, System.Types, UVScan.Alerts;
 
 { Colour boxes: "Default" (clNone), the preset colours by name, the standard
   colours and "Custom..." for anything else. }
