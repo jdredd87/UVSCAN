@@ -2677,6 +2677,10 @@ end;
 procedure TMainForm.AddMessage(const Text: string);
 begin
   FPendingLog.Add(FormatDateTime('hh:nn:ss.zzz', Now) + '  ' + Text);
+  {$IFDEF ANDROID}
+  // Also to the system log (adb logcat), where the messages can be read off the phone.
+  Log.d('UVScan: ' + Text.Replace('%', '%%'));
+  {$ENDIF}
   if FPendingLog.Count > MaxMessageLines then
     FPendingLog.Delete(0);
 end;
