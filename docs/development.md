@@ -2,7 +2,7 @@
 
 ## Building
 
-Delphi 13 (RAD Studio 37.0), VCL, Win32 and Win64. No third‑party components: the serial port, AVT protocol, formula evaluator, JSON handling and gauges are all in `src\`.
+Delphi 13 (RAD Studio 37.0), FireMonkey (FMX): Win32, Win64 and Android64. No third‑party components: the serial port, AVT protocol, formula evaluator, JSON handling, grid, gauges and chart are all in `src\`. The last VCL version is git tag `vcl-final`.
 
 Open `UVScan.dproj` in the IDE, or from a command prompt:
 
@@ -11,6 +11,27 @@ build.cmd [Debug|Release] [Win32|Win64]
 ```
 
 That builds the app (`Win32\Debug\UVScan.exe`), builds and runs the DUnitX tests (`tests\UVScanTests.dproj`), and builds the bench tool (`tools\Win32\UVScanProbe.exe`). It stops at the first failure.
+
+### Android
+
+```
+build.cmd android [install]
+```
+
+builds `Android64\Debug\UVScan\bin\UVScan.apk` and, with `install`, puts it on the phone attached over adb. The Android SDK profile is passed explicitly (`UV_ANDROID_SDK`, default `AndroidAPI36.1_64bit.sdk`) because the IDE default can still name an SDK folder from an older Delphi update. The Android project files:
+
+- `AndroidManifest.template.xml`: Delphi 13's template plus the USB host feature and the "USB device attached" filter.
+- `deploy\android\device_filter.xml`: the USB adapters UVScan can drive (deployed to `res\xml`).
+- `UVScan.deployproj`: what goes into the APK.
+
+On Android the data folder is the app's private documents folder, and logs go to `Android/data/com.jdredd87.uvscan/files/Logs` (reachable over USB). The serial port is USB host (`UVScan.Serial.Android`): FTDI (the AVT‑841's own USB port, if it is FTDI), CP210x, CH340/CH341 and CDC‑ACM adapters. Android asks for permission the first time; connect again after allowing it. A Keyspan USA‑19 (the bench's COM9 adapter) needs its firmware loaded by a driver and does not work on Android.
+
+### Writing UI code
+
+- Forms are `.fmx`. The custom controls (`TDataGrid`, `TGaugeView`, `TLogChart`) are not registered components: each form creates them in `FormCreate` inside a `TLayout` placeholder, so the forms open in the designer without a package.
+- Nothing may block on Android: use `UVScan.UI.Common` (`ShowInfo`, `Confirm`, `AskText`, `ShowDialog`) and pass a callback. On Windows these are still modal and the callback runs before the call returns.
+- Colours are `TAlphaColor`; `NoColor` (0) means "the default".
+- `IsMobile` switches the few things that differ on a phone: the PID list as a tab, full-screen dialogs, no file dialogs, padding for the status and navigation bars.
 
 The factory data in `data\` is compiled into the exe through `UVScan.Defaults.rc` (`UVScan.Defaults.res` is generated and not in git).
 
