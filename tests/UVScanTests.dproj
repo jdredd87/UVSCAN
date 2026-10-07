@@ -86,7 +86,7 @@
         <DCCReference Include="..\src\UVScan.LegacyImport.pas"/>
         <DCCReference Include="UVScan.Tests.Data.pas"/>
         <RcCompile Include="..\UVScan.Defaults.rc">
-            <Form>..\UVScan.Defaults.res</Form>
+            <Form>UVScan.Defaults.res</Form>
         </RcCompile>
         <BuildConfiguration Include="Release">
             <Key>Cfg_1</Key>

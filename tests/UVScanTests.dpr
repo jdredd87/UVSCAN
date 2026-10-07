@@ -28,7 +28,7 @@ uses
   UVScan.LegacyImport in '..\src\UVScan.LegacyImport.pas',
   UVScan.Tests.Data in 'UVScan.Tests.Data.pas';
 
-{$R '..\UVScan.Defaults.res' '..\UVScan.Defaults.rc'}
+{$R 'UVScan.Defaults.res' '..\UVScan.Defaults.rc'}
 
 var
   Runner: ITestRunner;
