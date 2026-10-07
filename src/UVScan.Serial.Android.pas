@@ -10,6 +10,9 @@ unit UVScan.Serial.Android;
     - Silicon Labs CP210x (VID 10C4)
     - WCH CH340 / CH341 (VID 1A86) - no hardware flow control
     - any CDC-ACM device (USB class 2 + data class 10)
+    - Keyspan USA-19HS (VID 06CD, PID 0121), following the Linux keyspan
+      driver's "usa90" message format: its firmware is in ROM, so no
+      firmware download is needed
   Port names look like 'USB FTDI 0403:6001'.
 
   The first Open of a device asks Android for permission; the user answers
@@ -135,6 +138,7 @@ const
   // android.hardware.usb.UsbConstants
   USB_DIR_IN = $80;
   USB_ENDPOINT_XFER_BULK = 2;
+  USB_ENDPOINT_XFER_INT = 3;
   USB_CLASS_COMM = 2;
   USB_CLASS_CDC_DATA = $0A;
 
@@ -144,10 +148,10 @@ const
   JavaBufferSize = 16384;
 
 type
-  TUsbDriver = (udNone, udFtdi, udCp210x, udCh34x, udCdcAcm);
+  TUsbDriver = (udNone, udFtdi, udCp210x, udCh34x, udCdcAcm, udKeyspan);
 
 const
-  DriverNames: array[TUsbDriver] of string = ('', 'FTDI', 'CP210x', 'CH34x', 'CDC');
+  DriverNames: array[TUsbDriver] of string = ('', 'FTDI', 'CP210x', 'CH34x', 'CDC', 'Keyspan');
 
 type
   TAndroidUsbSerialPort = class(TInterfacedObject, ISerialPort)
@@ -160,6 +164,7 @@ type
     FConn: JUsbDeviceConnection;
     FControlIntf, FDataIntf: JUsbInterface;
     FEpIn, FEpOut: JUsbEndpoint;
+    FEpControl: JUsbEndpoint;   // Keyspan: port control messages
     FInPacket: Integer;         // max packet size of the IN endpoint
     FPortIndex: Integer;        // FTDI: interface number + 1
     FMultiPort: Boolean;        // FTDI chip with more than one port
@@ -174,6 +179,8 @@ type
     procedure SetupCp210x;
     procedure SetupCh34x;
     procedure SetupCdcAcm;
+    procedure SetupKeyspan;
+    procedure KeyspanControl(Opening, Closing, FlushRx: Boolean);
     function BulkRead(TimeoutMs: Integer): Integer;
     procedure ReleaseAll;
   public
@@ -246,6 +253,11 @@ begin
     $1A86:
       if (Pid = $7523) or (Pid = $5523) or (Pid = $7522) then
         Result := udCh34x
+      else
+        Result := udNone;
+    $06CD:
+      if Pid = $0121 then
+        Result := udKeyspan // USA-19HS; the other Keyspan models need firmware loaded first
       else
         Result := udNone;
   else
@@ -481,6 +493,7 @@ begin
         udCp210x: SetupCp210x;
         udCh34x: SetupCh34x;
         udCdcAcm: SetupCdcAcm;
+        udKeyspan: SetupKeyspan;
       end;
       if (FEpIn = nil) or (FEpOut = nil) then
         raise ESerialError.CreateFmt('%s: no bulk data endpoints found', [FPortName]);
@@ -714,11 +727,107 @@ begin
   Control(ReqOut, SET_CONTROL_LINE_STATE, $0003 {DTR + RTS}, CommId);
 end;
 
+{ Keyspan USA-19HS: one interface; data out on endpoint 1, port control
+  messages out on endpoint 2, data in on endpoint $81 (interrupt). }
+procedure TAndroidUsbSerialPort.SetupKeyspan;
+var
+  I: Integer;
+  Ep: JUsbEndpoint;
+begin
+  FControlIntf := FDevice.getInterface(0);
+  if not FConn.claimInterface(FControlIntf, True) then
+    raise ESerialError.CreateFmt('%s: could not claim the USB interface', [FPortName]);
+  FDataIntf := FControlIntf;
+  for I := 0 to FControlIntf.getEndpointCount - 1 do
+  begin
+    Ep := FControlIntf.getEndpoint(I);
+    case Ep.getAddress of
+      $01: FEpOut := Ep;
+      $02: FEpControl := Ep;
+      $81: FEpIn := Ep;
+    end;
+  end;
+  if FEpControl = nil then
+    raise ESerialError.CreateFmt('%s: no Keyspan control endpoint', [FPortName]);
+  KeyspanControl(True, False, True);
+end;
+
+{ Sends a keyspan_usa90_portControlMessage (34 bytes). Opening sets the baud
+  rate, 8N1 and the modes; FlushRx drops what the adapter has received. }
+procedure TAndroidUsbSerialPort.KeyspanControl(Opening, Closing, FlushRx: Boolean);
+const
+  BaudClock = 14769231;       // KEYSPAN_USA19HS_BAUDCLK
+  DATABITS_8 = $03;
+  RXMODE_DMA = $02;           // above 57600: plain data, no status bytes
+  TXMODE_DMA = $02;
+  TXFLOW_CTS = $04;
+  // field offsets
+  setClocking = 0; baudLo = 1; baudHi = 2; setLcr = 3; lcr = 4; setRxMode = 5; rxMode = 6;
+  setTxMode = 7; txMode = 8; setTxFlowControl = 9; txFlowControl = 10; setRxFlowControl = 11;
+  xonChar = 15; xoffChar = 16; setRts = 19; rts = 20; setDtr = 21; dtr = 22;
+  rxForwardingLength = 23; rxForwardingTimeout = 24; portEnabled = 26; rxFlush = 30;
+  MessageSize = 34;
+var
+  Msg: TBytes;
+  Divisor: Cardinal;
+  Env: PJNIEnv;
+  Arr: TJavaArray<Byte>;
+begin
+  SetLength(Msg, MessageSize);
+  FillChar(Msg[0], MessageSize, 0);
+  if Opening then
+  begin
+    Divisor := BaudClock div (FBaudRate * 16);
+    if (Divisor = 0) or (Divisor > $FFFF) then
+      raise ESerialError.CreateFmt('%s: baud rate %d not supported', [FPortName, FBaudRate]);
+    Msg[setClocking] := 1;
+    Msg[baudLo] := Byte(Divisor);
+    Msg[baudHi] := Byte(Divisor shr 8);
+    Msg[setLcr] := 1;
+    Msg[setRxMode] := 1;
+    Msg[setTxMode] := 1;
+    Msg[setTxFlowControl] := 1;
+    Msg[setRxFlowControl] := 1;
+    Msg[setRts] := 1;
+    Msg[setDtr] := 1;
+  end;
+  // These must be right in every message.
+  Msg[lcr] := DATABITS_8;     // 1 stop bit, no parity
+  if FBaudRate > 57600 then
+  begin
+    Msg[rxMode] := RXMODE_DMA;
+    Msg[txMode] := TXMODE_DMA;
+  end;
+  if FFlowControl = fcRtsCts then
+    Msg[txFlowControl] := TXFLOW_CTS;
+  Msg[xonChar] := 17;
+  Msg[xoffChar] := 19;
+  Msg[rts] := 1;
+  Msg[dtr] := 1;
+  Msg[rxForwardingLength] := 16;
+  Msg[rxForwardingTimeout] := 16;  // ms
+  if not Closing then
+    Msg[portEnabled] := 1;
+  if FlushRx then
+    Msg[rxFlush] := 1;
+  Arr := TJavaArray<Byte>.Create(MessageSize);
+  try
+    Env := TJNIResolver.GetJNIEnv;
+    Env^.SetByteArrayRegion(Env, Arr.ToPointer, 0, MessageSize, PJNIByte(@Msg[0]));
+    if FConn.bulkTransfer(FEpControl, Arr, 0, MessageSize, ControlTimeoutMs) <> MessageSize then
+      raise ESerialError.CreateFmt('%s: Keyspan setup message failed', [FPortName]);
+  finally
+    Arr.Free;
+  end;
+end;
+
 procedure TAndroidUsbSerialPort.ReleaseAll;
 begin
   if FConn <> nil then
   begin
     try
+      if (FDriver = udKeyspan) and (FEpControl <> nil) then
+        KeyspanControl(False, True, False);
       if FDataIntf <> nil then
         FConn.releaseInterface(FDataIntf);
       if (FControlIntf <> nil) and (FControlIntf <> FDataIntf) then
@@ -733,6 +842,7 @@ begin
   FDataIntf := nil;
   FEpIn := nil;
   FEpOut := nil;
+  FEpControl := nil;
 end;
 
 procedure TAndroidUsbSerialPort.Close;
@@ -748,13 +858,15 @@ end;
   (FTDI modem status bytes removed); 0 on timeout or status-only packets. }
 function TAndroidUsbSerialPort.BulkRead(TimeoutMs: Integer): Integer;
 var
-  N, Pos, Chunk: Integer;
+  N, Pos, Chunk, Len: Integer;
   Raw: TBytes;
   Env: PJNIEnv;
   Data: TBytes;
 begin
   Result := 0;
-  N := FConn.bulkTransfer(FEpIn, FJavaIn, 0, JavaBufferSize, Max(1, TimeoutMs)); // 0 would wait forever
+  // Keyspan: one packet at a time (at 57600 and below each packet starts with a status byte).
+  Len := IfThen(FDriver = udKeyspan, FInPacket, JavaBufferSize);
+  N := FConn.bulkTransfer(FEpIn, FJavaIn, 0, Len, Max(1, TimeoutMs)); // 0 would wait forever
   if N <= 0 then
     Exit; // -1 = timeout (or an unplugged device; the next write reports that)
   SetLength(Raw, N);
@@ -777,6 +889,20 @@ begin
       Inc(Pos, Chunk);
     end;
     SetLength(Data, Result);
+  end
+  else if (FDriver = udKeyspan) and (FBaudRate <= 57600) then
+  begin
+    // Bit 7 of the first byte clear: one status byte, then data.
+    // Set: status / data pairs.
+    if Raw[0] and $80 = 0 then
+      Data := Copy(Raw, 1, MaxInt)
+    else
+    begin
+      SetLength(Data, N div 2);
+      for Pos := 0 to N div 2 - 1 do
+        Data[Pos] := Raw[Pos * 2 + 1];
+    end;
+    Result := Length(Data);
   end
   else
   begin
@@ -837,7 +963,7 @@ begin
   Env := TJNIResolver.GetJNIEnv;
   while Pos < Length(Data) do
   begin
-    Chunk := Min(JavaBufferSize, Length(Data) - Pos);
+    Chunk := Min(IfThen(FDriver = udKeyspan, 64, JavaBufferSize), Length(Data) - Pos);
     Env^.SetByteArrayRegion(Env, FJavaOut.ToPointer, 0, Chunk, PJNIByte(@Data[Pos]));
     N := FConn.bulkTransfer(FEpOut, FJavaOut, 0, Chunk, WriteTimeoutMs);
     if N <= 0 then
@@ -862,6 +988,8 @@ begin
       end;
     udCp210x:
       Control($41, $12, $000F, FControlIntf.getId); // flush read + write
+    udKeyspan:
+      KeyspanControl(False, False, True);
   end;
   // Drop anything already on its way to us.
   for I := 1 to 8 do

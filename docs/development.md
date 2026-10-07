@@ -24,7 +24,9 @@ builds `Android64\Debug\UVScan\bin\UVScan.apk` and, with `install`, puts it on t
 - `deploy\android\device_filter.xml`: the USB adapters UVScan can drive (deployed to `res\xml`).
 - `UVScan.deployproj`: what goes into the APK.
 
-On Android the data folder is the app's private documents folder, and logs go to `Android/data/com.jdredd87.uvscan/files/Logs` (reachable over USB). The serial port is USB host (`UVScan.Serial.Android`): FTDI (the AVT‑841's own USB port, if it is FTDI), CP210x, CH340/CH341 and CDC‑ACM adapters. Android asks for permission the first time; connect again after allowing it. A Keyspan USA‑19 (the bench's COM9 adapter) needs its firmware loaded by a driver and does not work on Android.
+On Android the data folder is the app's private documents folder, and logs go to `Android/data/com.jdredd87.uvscan/files/Logs` (reachable over USB). The serial port is USB host (`UVScan.Serial.Android`): FTDI (the AVT‑841's own USB port, if it is FTDI), CP210x, CH340/CH341, CDC‑ACM and the Keyspan USA‑19HS (the bench's COM9 adapter; its firmware is in ROM, and the other Keyspan models, which need firmware loaded, are not supported). Android asks for permission the first time; connect again after allowing it.
+
+For development, connect the IDE to the phone over Wi‑Fi (Developer options > Wireless debugging, `adb pair` once, then `adb connect <ip:port>`) so the phone's USB port is free for the adapter.
 
 ### Writing UI code
 
