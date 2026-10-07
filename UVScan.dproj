@@ -99,6 +99,17 @@
         <DCCReference Include="src\UVScan.Defaults.pas"/>
         <DCCReference Include="src\UVScan.PidLists.pas"/>
         <DCCReference Include="src\UVScan.LegacyImport.pas"/>
+        <DCCReference Include="src\UVScan.Display.pas"/>
+        <DCCReference Include="src\UVScan.Alerts.pas"/>
+        <DCCReference Include="src\UVScan.Gauge.pas"/>
+        <DCCReference Include="src\UVScan.DisplayEditor.pas">
+            <Form>DisplayEditorForm</Form>
+            <FormType>dfm</FormType>
+        </DCCReference>
+        <DCCReference Include="src\UVScan.GaugeEditor.pas">
+            <Form>GaugeEditorForm</Form>
+            <FormType>dfm</FormType>
+        </DCCReference>
         <RcCompile Include="UVScan.Defaults.rc">
             <Form>UVScan.Defaults.res</Form>
         </RcCompile>

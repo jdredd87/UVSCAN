@@ -1,0 +1,35 @@
+{
+  "version": 1,
+  "pids": [
+    {
+      "pidCode": "0005",
+      "levels": [
+        { "name": "Overheating", "when": ">=", "value": 110, "rowColor": "#FF5050", "textColor": "#FFFFFF", "flash": true, "sound": "alarm", "repeat": true },
+        { "name": "Hot", "when": ">=", "value": 104, "rowColor": "#FFE680" }
+      ]
+    },
+    {
+      "pidCode": "1141",
+      "levels": [
+        { "name": "Overcharging", "when": ">=", "value": 15.5, "rowColor": "#FF5050", "textColor": "#FFFFFF", "flash": true, "sound": "beep" },
+        { "name": "Low", "when": "<=", "value": 11.5, "rowColor": "#FF5050", "textColor": "#FFFFFF", "flash": true, "sound": "beep" },
+        { "name": "Not charging", "when": "<=", "value": 12.6, "rowColor": "#FFE680" }
+      ]
+    },
+    {
+      "pidCode": "11A6",
+      "rowColor": "#C8F0C8",
+      "levels": [
+        { "name": "Alarm", "when": ">=", "value": 4, "rowColor": "#FF5050", "textColor": "#FFFFFF", "flash": true, "sound": "alarm" },
+        { "name": "Warning", "when": ">=", "value": 1, "rowColor": "#FFE680" }
+      ]
+    }
+  ],
+  "gauges": [
+    { "pidCode": "000C", "style": "dial", "size": "medium", "min": 0, "max": 7000 },
+    { "pidCode": "11A6", "style": "dial", "size": "medium", "min": 0, "max": 20 },
+    { "pidCode": "0005", "style": "dial", "size": "medium", "min": -40, "max": 140 },
+    { "pidCode": "1141", "style": "bar", "size": "medium", "min": 8, "max": 18 },
+    { "pidCode": "000D", "units": "MPH", "style": "number", "size": "medium", "min": 0, "max": 140 }
+  ]
+}

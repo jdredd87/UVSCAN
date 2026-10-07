@@ -26,7 +26,10 @@ uses
   UVScan.Defaults in '..\src\UVScan.Defaults.pas',
   UVScan.PidLists in '..\src\UVScan.PidLists.pas',
   UVScan.LegacyImport in '..\src\UVScan.LegacyImport.pas',
-  UVScan.Tests.Data in 'UVScan.Tests.Data.pas';
+  UVScan.Tests.Data in 'UVScan.Tests.Data.pas',
+  UVScan.Display in '..\src\UVScan.Display.pas',
+  UVScan.Alerts in '..\src\UVScan.Alerts.pas',
+  UVScan.Tests.Display in 'UVScan.Tests.Display.pas';
 
 {$R 'UVScan.Defaults.res' '..\UVScan.Defaults.rc'}
 

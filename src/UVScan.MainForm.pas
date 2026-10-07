@@ -6,10 +6,10 @@ uses
   Winapi.Windows, Winapi.Messages, System.SysUtils, System.Variants, System.Classes,
   System.Math, System.StrUtils, System.IOUtils, System.Generics.Collections, System.UITypes,
   Vcl.Graphics, Vcl.Controls, Vcl.Forms, Vcl.Dialogs, Vcl.StdCtrls, Vcl.ExtCtrls,
-  Vcl.ComCtrls, Vcl.Grids,
+  Vcl.ComCtrls, Vcl.Grids, Vcl.Menus,
   UVScan.Serial, UVScan.Simulator, UVScan.Pids, UVScan.Dpid, UVScan.Dtc, UVScan.Engine,
   UVScan.Class2, UVScan.Paths, UVScan.Settings, UVScan.PidEditor, UVScan.PidLists, UVScan.Defaults,
-  UVScan.PidDiscovery;
+  UVScan.PidDiscovery, UVScan.Display, UVScan.Alerts, UVScan.Gauge;
 
 type
   TMainForm = class(TForm)
@@ -26,6 +26,7 @@ type
     bvlSep2: TBevel;
     btnLog: TButton;
     btnPause: TButton;
+    chkSound: TCheckBox;
     pnlPids: TPanel;
     pnlListBar: TPanel;
     lblList: TLabel;
@@ -48,7 +49,15 @@ type
     grdLive: TDrawGrid;
     pnlLiveFooter: TPanel;
     btnResetMinMax: TButton;
+    btnLiveTest: TButton;
     lblLiveHint: TLabel;
+    tsDashboard: TTabSheet;
+    pnlDashBar: TPanel;
+    lblDashHint: TLabel;
+    btnAddGauge: TButton;
+    btnTickDashPids: TButton;
+    btnDashTest: TButton;
+    sbDash: TScrollBox;
     tsVehicle: TTabSheet;
     gbVehicle: TGroupBox;
     lblVinCaption: TLabel;
@@ -90,6 +99,17 @@ type
     pnlLogFooter: TPanel;
     btnClearMessages: TButton;
     sbMain: TStatusBar;
+    pmPid: TPopupMenu;
+    miPidDisplay: TMenuItem;
+    miPidGauge: TMenuItem;
+    pmGauge: TPopupMenu;
+    miGaugeEdit: TMenuItem;
+    miGaugeDisplay: TMenuItem;
+    miGaugeSep1: TMenuItem;
+    miGaugeEarlier: TMenuItem;
+    miGaugeLater: TMenuItem;
+    miGaugeSep2: TMenuItem;
+    miGaugeRemove: TMenuItem;
     tmrRefresh: TTimer;
     procedure FormCreate(Sender: TObject);
     procedure FormDestroy(Sender: TObject);
@@ -128,6 +148,20 @@ type
     procedure tmrRefreshTimer(Sender: TObject);
     procedure lblNoticeClick(Sender: TObject);
     procedure FormResize(Sender: TObject);
+    procedure chkSoundClick(Sender: TObject);
+    procedure btnAddGaugeClick(Sender: TObject);
+    procedure btnTickDashPidsClick(Sender: TObject);
+    procedure btnTestDisplayClick(Sender: TObject);
+    procedure sbDashResize(Sender: TObject);
+    procedure pmPidPopup(Sender: TObject);
+    procedure miPidDisplayClick(Sender: TObject);
+    procedure miPidGaugeClick(Sender: TObject);
+    procedure pmGaugePopup(Sender: TObject);
+    procedure miGaugeEditClick(Sender: TObject);
+    procedure miGaugeDisplayClick(Sender: TObject);
+    procedure miGaugeEarlierClick(Sender: TObject);
+    procedure miGaugeLaterClick(Sender: TObject);
+    procedure miGaugeRemoveClick(Sender: TObject);
   private
     FCatalog: TPidCatalog;
     FDtcs: TDtcCatalog;
@@ -151,7 +185,38 @@ type
     FPendingLog: TStringList;   // message lines waiting for the next timer tick
     FShownRows: TArray<string>; // what each live row last showed (value|min|max)
     FShownCycles: Int64;
+    FDisplay: TDisplaySettings;      // display.json: PID looks, alert levels, gauges
+    FAlerts: TAlertTracker;
+    FRowStyles: TArray<TResolvedStyle>; // per live row, as last evaluated
+    FFlashOn: Boolean;
+    FGaugeViews: TList<TGaugeView>;
+    FMenuPidId: Integer;             // PID the PID/grid right-click menu is about
+    FMenuGauge: Integer;             // gauge index the gauge menu is about
+    FTestMode: Boolean;              // "Test display": made-up values instead of the PCM
+    FTestStart: UInt64;
+    FTestLo, FTestHi: TArray<Double>;
+    procedure SetupLiveRows(const Ids: TArray<Integer>);
+    procedure StartTest;
+    procedure StopTest;
+    function TestSnapshot: TLiveSnapshot;
+    function LiveActive: Boolean;
     procedure RefreshLiveRows;
+    procedure InvalidateLiveRow(Idx: Integer);
+    procedure UpdateAlerts;
+    procedure ApplyRowHeights;
+    procedure LoadDisplay;
+    procedure SaveDisplay;
+    procedure DisplayChanged;
+    procedure EditDisplay(PidId: Integer);
+    procedure AddGauge(PidId: Integer);
+    procedure EditGauge(Index: Integer);
+    procedure MoveGauge(Delta: Integer);
+    procedure BuildDashboard;
+    procedure LayoutDashboard;
+    procedure RefreshDashboard;
+    procedure GaugeDblClick(Sender: TObject);
+    function FlashPhase: Boolean;
+    function LiveIndexOf(PidId: Integer): Integer;
     procedure FlushMessages;
     procedure ReloadCatalog;
     procedure FillLists(const Select: string);
@@ -182,6 +247,9 @@ implementation
 
 {$R *.dfm}
 
+uses
+  System.JSON, UVScan.JsonFile, UVScan.DisplayEditor, UVScan.GaugeEditor;
+
 const
   SimulatorPort = 'Simulator';
   ColName = 0;
@@ -208,6 +276,11 @@ begin
   FSettings := TAppSettings.Create;
   FPendingLog := TStringList.Create;
   FLists := TPidLists.Create;
+  FDisplay := TDisplaySettings.Create;
+  FAlerts := TAlertTracker.Create;
+  FGaugeViews := TList<TGaugeView>.Create;
+  FMenuPidId := -1;
+  FMenuGauge := -1;
   Caption := 'UVScan';
   pnlNotice.Visible := False;
   LoadData;
@@ -222,6 +295,8 @@ begin
   grdLive.ColWidths[ColMin] := 100;
   grdLive.ColWidths[ColMax] := 100;
   grdLive.DoubleBuffered := True; // paint off-screen, then copy: no flicker
+  sbDash.DoubleBuffered := True;
+  BuildDashboard;
   FormResize(nil);
   FState := esDisconnected;
   UpdateControls;
@@ -258,6 +333,9 @@ begin
   FSettings.Free;
   FPendingLog.Free;
   FLists.Free;
+  FDisplay.Free;
+  FAlerts.Free;
+  FGaugeViews.Free; // the views themselves are owned by the form
   FDtcs.Free;
   FSelected.Free;
   FSupport.Free;
@@ -332,6 +410,7 @@ begin
     AddMessage('PID definitions: ' + F);
   if FCatalog.Warnings.Count > 0 then
     ShowNotice(Format('%d problem(s) in the PID definitions - see Messages', [FCatalog.Warnings.Count]), False);
+  LoadDisplay;
   F := DtcsFile;
   if not FileExists(F) then
     AddMessage('Trouble code descriptions not found: ' + F)
@@ -365,6 +444,7 @@ begin
   edtLogFolder.Text := FSettings.LogFolder;
   cbRate.ItemIndex := Ord(FSettings.StreamSpeed);
   chkTrace.Checked := FSettings.Trace;
+  chkSound.Checked := FSettings.AlertSounds;
   for N in FSettings.SelectedPids do
     if (FCatalog.FindById(N) <> nil) and FCatalog.FindById(N).Enabled and not FSelected.Contains(N) then
       FSelected.Add(N);
@@ -390,6 +470,7 @@ begin
   FSettings.LogFolder := edtLogFolder.Text;
   FSettings.StreamSpeed := TStreamSpeed(Max(0, cbRate.ItemIndex));
   FSettings.Trace := chkTrace.Checked;
+  FSettings.AlertSounds := chkSound.Checked;
   FSettings.SelectedPids := FSelected.ToArray;
   if cbLists.ItemIndex > 0 then
     FSettings.ActiveList := cbLists.Text
@@ -564,6 +645,7 @@ begin
   FSupport.Clear;
   FRejected.Clear;
   FillPidList;
+  BuildDashboard;
 end;
 
 procedure TMainForm.btnDiscoverPidsClick(Sender: TObject);
@@ -804,6 +886,8 @@ procedure TMainForm.btnStartScanClick(Sender: TObject);
 var
   Cmd: TEngineCommand;
 begin
+  if FTestMode then
+    StopTest;
   if FSelected.Count = 0 then
   begin
     ShowNotice('Tick the PIDs to scan in the list on the left', True);
@@ -879,6 +963,11 @@ begin
       begin
         FState := Ev.State;
         SetStatus(PanelState, StateNames[FState]);
+        if FState <> esScanning then
+        begin
+          grdLive.Invalidate;
+          RefreshDashboard;
+        end;
         if (FState = esConnected) and FAutoScan then
         begin
           FAutoScan := False;
@@ -906,16 +995,9 @@ begin
       end;
     eeScanStarted:
       begin
-        FLiveIds := Ev.PidIds;
-        SetLength(FMin, Length(FLiveIds));
-        SetLength(FMax, Length(FLiveIds));
-        btnResetMinMax.Click;
-        grdLive.RowCount := Max(2, Length(FLiveIds) + 1);
-        FShownRows := nil;
-        FShownCycles := -1;
-        lblLiveHint.Visible := False;
-        pcMain.ActivePage := tsLive;
-        grdLive.Invalidate;
+        if FTestMode then
+          StopTest;
+        SetupLiveRows(Ev.PidIds);
         if FAutoLog then
         begin
           FAutoLog := False;
@@ -1009,6 +1091,10 @@ begin
   btnWriteVin.Enabled := Idle;
   btnSendRaw.Enabled := Idle;
   btnDiscoverPids.Enabled := Idle;
+  btnLiveTest.Enabled := FTestMode or not (FState in [esScanning, esBusy]);
+  btnLiveTest.Caption := IfThen(FTestMode, 'Stop test', 'Test display');
+  btnDashTest.Enabled := btnLiveTest.Enabled;
+  btnDashTest.Caption := btnLiveTest.Caption;
   if FState = esScanning then
     pnlTop.Color := $00D8F0D8
   else
@@ -1021,11 +1107,23 @@ procedure TMainForm.tmrRefreshTimer(Sender: TObject);
 var
   I: Integer;
   V: Double;
+  Phase: Boolean;
 begin
   FlushMessages;
-  if FState <> esScanning then
+  if not LiveActive then
     Exit;
-  FLive := FEngine.GetSnapshot;
+  Phase := FlashPhase;
+  if Phase <> FFlashOn then
+  begin
+    FFlashOn := Phase;
+    for I := 0 to High(FRowStyles) do
+      if FRowStyles[I].Flash then
+        InvalidateLiveRow(I);
+  end;
+  if FTestMode then
+    FLive := TestSnapshot
+  else
+    FLive := FEngine.GetSnapshot;
   if Length(FLive.Values) <> Length(FLiveIds) then
     Exit;
   for I := 0 to High(FLive.Values) do
@@ -1043,14 +1141,261 @@ begin
     FLogPaused := FLive.LogPaused;
     UpdateControls;
   end;
-  SetStatus(PanelRate, Format('%.1f updates/s', [FLive.CyclesPerSecond]));
+  if FTestMode then
+    SetStatus(PanelRate, 'Test data')
+  else
+    SetStatus(PanelRate, Format('%.1f updates/s', [FLive.CyclesPerSecond]));
   if FLive.Logging then
     SetStatus(PanelLog, Format('Logging: %d rows%s', [FLive.LogRows, IfThen(FLive.LogPaused, ' (paused)', '')]));
   if FLive.Cycles <> FShownCycles then
   begin
     FShownCycles := FLive.Cycles;
+    UpdateAlerts;
     RefreshLiveRows;
   end;
+  RefreshDashboard;
+end;
+
+{ Live rows for a scan (or a display test): one row per PID, fresh min/max and alert state. }
+procedure TMainForm.SetupLiveRows(const Ids: TArray<Integer>);
+begin
+  FLiveIds := Ids;
+  FLive := Default(TLiveSnapshot);
+  SetLength(FMin, Length(FLiveIds));
+  SetLength(FMax, Length(FLiveIds));
+  btnResetMinMax.Click;
+  grdLive.RowCount := Max(2, Length(FLiveIds) + 1);
+  FShownRows := nil;
+  FShownCycles := -1;
+  FRowStyles := nil;
+  FAlerts.Reset;
+  ApplyRowHeights;
+  RefreshDashboard;
+  lblLiveHint.Visible := False;
+  if pcMain.ActivePage <> tsDashboard then
+    pcMain.ActivePage := tsLive;
+  grdLive.Invalidate;
+end;
+
+function TMainForm.LiveActive: Boolean;
+begin
+  Result := (FState = esScanning) or FTestMode;
+end;
+
+{ Test display }
+
+procedure TMainForm.btnTestDisplayClick(Sender: TObject);
+begin
+  if FTestMode then
+    StopTest
+  else
+    StartTest;
+end;
+
+{ Shows the ticked PIDs and the dashboard PIDs with made-up values that sweep
+  slowly through each PID's range, so every alert level, colour, flash and
+  sound can be tried without a car. Nothing is sent to the PCM or logged. }
+procedure TMainForm.StartTest;
+var
+  Ids: TList<Integer>;
+  I, J: Integer;
+  P: TPidDef;
+  G: TGauge;
+  D: TPidDisplay;
+  Lo, Hi, Margin: Double;
+  Found: Boolean;
+begin
+  if FState in [esScanning, esBusy] then
+    Exit;
+  Ids := TList<Integer>.Create;
+  try
+    for I := 0 to FCatalog.Count - 1 do
+    begin
+      P := FCatalog[I];
+      Found := FSelected.Contains(P.Id);
+      for G in FDisplay.Gauges do
+        Found := Found or (G.PidId = P.Id);
+      if Found and P.Enabled then
+        Ids.Add(P.Id);
+    end;
+    if Ids.Count = 0 then
+    begin
+      ShowNotice('Tick some PIDs or add gauges to the dashboard first', True);
+      Exit;
+    end;
+    SetLength(FTestLo, Ids.Count);
+    SetLength(FTestHi, Ids.Count);
+    for I := 0 to Ids.Count - 1 do
+    begin
+      P := FCatalog.FindById(Ids[I]);
+      Found := False;
+      for G in FDisplay.Gauges do
+        if not Found and (G.PidId = P.Id) then
+        begin
+          Lo := G.MinValue;
+          Hi := G.MaxValue;
+          Found := True;
+        end;
+      if not Found then
+        SuggestScale(P, FDisplay, Lo, Hi);
+      // Thresholds off the scale: reach a little past them so each level gets its turn.
+      D := FDisplay.Find(P.Id);
+      if D <> nil then
+        for J := 0 to High(D.Levels) do
+        begin
+          Margin := 0.1 * (Hi - Lo);
+          if D.Levels[J].Value <= Lo then
+            Lo := D.Levels[J].Value - Margin;
+          if D.Levels[J].Value >= Hi then
+            Hi := D.Levels[J].Value + Margin;
+        end;
+      FTestLo[I] := Lo;
+      FTestHi[I] := Hi;
+    end;
+    FTestMode := True;
+    FTestStart := GetTickCount64;
+    FRejected.Clear;
+    SetupLiveRows(Ids.ToArray);
+  finally
+    Ids.Free;
+  end;
+  ShowNotice('Test display: made-up values, not from the vehicle. Nothing is sent to the PCM or logged.', False);
+  AddMessage(Format('Test display started for %d PIDs', [Length(FLiveIds)]));
+  UpdateControls;
+end;
+
+procedure TMainForm.StopTest;
+begin
+  if not FTestMode then
+    Exit;
+  FTestMode := False;
+  StopAlertSound;
+  pnlNotice.Visible := False;
+  SetStatus(PanelRate, '');
+  AddMessage('Test display stopped');
+  grdLive.Invalidate;
+  RefreshDashboard;
+  UpdateControls;
+end;
+
+function TMainForm.TestSnapshot: TLiveSnapshot;
+var
+  I: Integer;
+  T, F, Step: Double;
+  P: TPidDef;
+begin
+  Result := Default(TLiveSnapshot);
+  Result.PidIds := FLiveIds;
+  SetLength(Result.Values, Length(FLiveIds));
+  SetLength(Result.Text, Length(FLiveIds));
+  T := (GetTickCount64 - FTestStart) / 1000;
+  for I := 0 to High(FLiveIds) do
+  begin
+    P := FCatalog.FindById(FLiveIds[I]);
+    if (P = nil) or (I > High(FTestLo)) then
+    begin
+      Result.Values[I] := NaN;
+      Continue;
+    end;
+    // Each PID rises and falls over 16-28 s, starting low, out of step with the others.
+    F := 0.5 - 0.5 * Cos(2 * Pi * T / (16 + 3 * (I mod 5)) + 0.7 * I);
+    Step := NiceStep(FTestHi[I] - FTestLo[I], 200); // tidy values, like real sensor steps
+    Result.Values[I] := Round((FTestLo[I] + (FTestHi[I] - FTestLo[I]) * F) / Step) * Step;
+    Result.Text[I] := P.FormatValue(Result.Values[I]);
+  end;
+  Result.Cycles := FLive.Cycles + 1;
+  Result.CyclesPerSecond := 10;
+end;
+
+function TMainForm.FlashPhase: Boolean;
+begin
+  Result := (GetTickCount64 div 400) mod 2 = 0;
+end;
+
+procedure TMainForm.InvalidateLiveRow(Idx: Integer);
+var
+  R, R2: TRect;
+begin
+  R := grdLive.CellRect(ColName, Idx + 1);
+  R2 := grdLive.CellRect(ColMax, Idx + 1);
+  if IsRectEmpty(R) and IsRectEmpty(R2) then
+    Exit; // scrolled out of view
+  UnionRect(R, R, R2);
+  InvalidateRect(grdLive.Handle, @R, False);
+end;
+
+{ Works out each live row's display level, repaints rows whose look changed,
+  and plays / announces alerts. }
+procedure TMainForm.UpdateAlerts;
+var
+  I, Id: Integer;
+  V: Double;
+  S, Old: TResolvedStyle;
+  D: TPidDisplay;
+  L: TDisplayLevel;
+  Change: TAlertChange;
+  Sounded: Boolean;
+begin
+  if Length(FRowStyles) <> Length(FLiveIds) then
+  begin
+    SetLength(FRowStyles, Length(FLiveIds));
+    for I := 0 to High(FRowStyles) do
+      FRowStyles[I].Level := -2; // forces the first comparison to differ
+  end;
+  Sounded := False;
+  for I := 0 to High(FLiveIds) do
+  begin
+    Id := FLiveIds[I];
+    V := NaN;
+    if (I <= High(FLive.Values)) and not FRejected.Contains(Id) then
+      V := FLive.Values[I];
+    S := FDisplay.Resolve(Id, V);
+    Old := FRowStyles[I];
+    FRowStyles[I] := S;
+    if (S.Level <> Old.Level) or (S.RowColor <> Old.RowColor) or (S.TextColor <> Old.TextColor) then
+      InvalidateLiveRow(I);
+    D := FDisplay.Find(Id);
+    if (D = nil) or (S.Level < 0) then
+    begin
+      FAlerts.Update(Id, -1, False, False, GetTickCount64);
+      Continue;
+    end;
+    L := D.Levels[S.Level];
+    Change := FAlerts.Update(Id, S.Level, chkSound.Checked and (L.Sound <> asNone), L.RepeatSound, GetTickCount64);
+    if Change.PlaySound and not Sounded then
+    begin
+      Sounded := True; // one sound at a time; the first (top) row wins this tick
+      if not PlayAlertSound(L.Sound, L.SoundFile) then
+        AddMessage('Alert sound could not be played: ' + L.SoundFile);
+    end;
+    if Change.Announce and L.IsAttentionGrabbing then
+      AddMessage(Format('Alert: %s %s %s (%s)', [PidName(Id), IfThen(L.Name <> '', L.Name, 'level'),
+        FCatalog.FindById(Id).FormatValue(V), L.Describe]));
+  end;
+end;
+
+procedure TMainForm.ApplyRowHeights;
+var
+  I, H: Integer;
+  D: TPidDisplay;
+begin
+  for I := 0 to High(FLiveIds) do
+  begin
+    H := grdLive.DefaultRowHeight;
+    D := FDisplay.Find(FLiveIds[I]);
+    if (D <> nil) and (D.FontSize > 0) then
+      H := Max(H, MulDiv(D.FontSize, CurrentPPI, 72) + MulDiv(12, CurrentPPI, 96));
+    if I + 1 < grdLive.RowCount then
+      grdLive.RowHeights[I + 1] := H;
+  end;
+end;
+
+function TMainForm.LiveIndexOf(PidId: Integer): Integer;
+begin
+  for Result := 0 to High(FLiveIds) do
+    if FLiveIds[Result] = PidId then
+      Exit;
+  Result := -1;
 end;
 
 { Repaints only the value/min/max cells whose text changed, without erasing
@@ -1093,6 +1438,9 @@ var
   Idx: Integer;
   Flags: Cardinal;
   R: TRect;
+  V: Double;
+  Style: TResolvedStyle;
+  RowColor, TextColor: TColor;
 begin
   C := grdLive.Canvas;
   R := Rect;
@@ -1112,20 +1460,37 @@ begin
   end;
 
   Idx := ARow - 1;
-  if Odd(ARow) then
+  RowColor := clNone;
+  TextColor := clNone;
+  Style := Default(TResolvedStyle);
+  P := nil;
+  if Idx <= High(FLiveIds) then
+    P := FCatalog.FindById(FLiveIds[Idx]);
+  if P <> nil then
+  begin
+    V := NaN;
+    if (Idx <= High(FLive.Values)) and not FRejected.Contains(P.Id) then
+      V := FLive.Values[Idx];
+    Style := FDisplay.Resolve(P.Id, V);
+    // Rows only flash while scanning; otherwise they keep the level's colours.
+    Style.Colors(FFlashOn or not LiveActive, RowColor, TextColor);
+  end;
+  if RowColor <> clNone then
+    C.Brush.Color := RowColor
+  else if Odd(ARow) then
     C.Brush.Color := clWindow
   else
     C.Brush.Color := $00F7F3F0;
   C.FillRect(R);
-  if Idx > High(FLiveIds) then
-    Exit;
-  P := FCatalog.FindById(FLiveIds[Idx]);
   if P = nil then
     Exit;
 
   C.Font.Style := [];
   C.Font.Size := 10;
-  C.Font.Color := clWindowText;
+  if TextColor <> clNone then
+    C.Font.Color := TextColor
+  else
+    C.Font.Color := clWindowText;
   Flags := DT_SINGLELINE or DT_VCENTER or DT_END_ELLIPSIS;
   Text := '';
   case ACol of
@@ -1141,7 +1506,7 @@ begin
         begin
           Text := FLive.Text[Idx];
           C.Font.Style := [fsBold];
-          C.Font.Size := 14;
+          C.Font.Size := IfThen(Style.FontSize > 0, Style.FontSize, 14);
         end;
         Flags := Flags or DT_RIGHT;
       end;
@@ -1152,7 +1517,8 @@ begin
           Text := P.FormatValue(FMin[Idx])
         else
           Text := P.FormatValue(FMax[Idx]);
-        C.Font.Color := clGrayText;
+        if TextColor = clNone then
+          C.Font.Color := clGrayText;
         Flags := Flags or DT_RIGHT;
       end;
   end;
@@ -1339,6 +1705,400 @@ end;
 procedure TMainForm.lblNoticeClick(Sender: TObject);
 begin
   pnlNotice.Visible := False;
+end;
+
+{ Display settings and alerts }
+
+procedure TMainForm.LoadDisplay;
+var
+  W: string;
+  Root: TJSONObject;
+  Count: Integer;
+begin
+  if not FileExists(DisplayFile) then
+  begin
+    // First run: start from the built-in examples, matched to this catalog's PIDs.
+    try
+      Root := ParseJsonObject(DefaultDisplayJson, 'default display.json');
+      try
+        Count := ResolveSeedJson(Root,
+          function(const PidCode, Units: string): Integer
+          var
+            I: Integer;
+            P: TPidDef;
+          begin
+            Result := -1;
+            for I := 0 to FCatalog.Count - 1 do
+            begin
+              P := FCatalog[I];
+              if not P.Enabled or (P.Kind <> pkVehicle) or not SameText(P.PidCode, PidCode) then
+                Continue;
+              if (Units = '') or SameText(P.Units, Units) then
+                Exit(P.Id);
+              if Result < 0 then
+                Result := P.Id;
+            end;
+          end);
+        WriteJsonFile(DisplayFile, Root);
+        FDisplay.LoadFromJson(Root);
+      finally
+        Root.Free;
+      end;
+      AddMessage(Format('Created %s with alert examples for %d PIDs', [DisplayFile, Count]));
+    except
+      on E: Exception do
+        AddMessage('Could not create display settings: ' + E.Message);
+    end;
+    Exit;
+  end;
+  try
+    FDisplay.LoadFromFile(DisplayFile);
+    for W in FDisplay.Warnings do
+      AddMessage('Display settings: ' + W);
+  except
+    on E: Exception do
+    begin
+      AddMessage('Could not load display settings: ' + E.Message);
+      ShowNotice('Display settings could not be read - see Messages', False);
+    end;
+  end;
+end;
+
+procedure TMainForm.SaveDisplay;
+begin
+  try
+    FDisplay.SaveToFile(DisplayFile);
+  except
+    on E: Exception do
+      MessageDlg('Could not save the display settings: ' + E.Message, mtWarning, [mbOK], 0);
+  end;
+end;
+
+{ After display.json changed: save, repaint the grid, rebuild the gauges. }
+procedure TMainForm.DisplayChanged;
+begin
+  SaveDisplay;
+  FShownRows := nil;
+  FRowStyles := nil;
+  ApplyRowHeights;
+  grdLive.Invalidate;
+  BuildDashboard;
+end;
+
+procedure TMainForm.EditDisplay(PidId: Integer);
+var
+  P: TPidDef;
+begin
+  P := FCatalog.FindById(PidId);
+  if P = nil then
+    Exit;
+  if TDisplayEditorForm.Execute(P, FDisplay) then
+    DisplayChanged;
+end;
+
+procedure TMainForm.chkSoundClick(Sender: TObject);
+begin
+  if not chkSound.Checked then
+    StopAlertSound;
+end;
+
+procedure TMainForm.pmPidPopup(Sender: TObject);
+var
+  Pt: TPoint;
+  Col, Row: Integer;
+  Item: TListItem;
+  Name: string;
+begin
+  FMenuPidId := -1;
+  if pmPid.PopupComponent = grdLive then
+  begin
+    Pt := grdLive.ScreenToClient(pmPid.PopupPoint);
+    grdLive.MouseToCell(Pt.X, Pt.Y, Col, Row);
+    if (Row >= 1) and (Row - 1 <= High(FLiveIds)) then
+      FMenuPidId := FLiveIds[Row - 1];
+  end
+  else if pmPid.PopupComponent = lvPids then
+  begin
+    Pt := lvPids.ScreenToClient(pmPid.PopupPoint);
+    Item := lvPids.GetItemAt(Pt.X, Pt.Y);
+    if Item = nil then
+      Item := lvPids.Selected;
+    if Item <> nil then
+    begin
+      Item.Selected := True;
+      FMenuPidId := Integer(Item.Data);
+    end;
+  end;
+  miPidDisplay.Enabled := FMenuPidId >= 0;
+  miPidGauge.Enabled := FMenuPidId >= 0;
+  if FMenuPidId >= 0 then
+    Name := ' for ' + StringReplace(PidName(FMenuPidId), '&', '&&', [rfReplaceAll])
+  else
+    Name := '';
+  miPidDisplay.Caption := 'Display && alerts' + Name + '...';
+end;
+
+procedure TMainForm.miPidDisplayClick(Sender: TObject);
+begin
+  EditDisplay(FMenuPidId);
+end;
+
+procedure TMainForm.miPidGaugeClick(Sender: TObject);
+begin
+  AddGauge(FMenuPidId);
+end;
+
+{ Dashboard }
+
+procedure TMainForm.BuildDashboard;
+var
+  I: Integer;
+  G: TGauge;
+  P: TPidDef;
+  View: TGaugeView;
+  Title, Units: string;
+begin
+  sbDash.DisableAlign;
+  try
+    for View in FGaugeViews do
+      View.Free;
+    FGaugeViews.Clear;
+    for I := 0 to FDisplay.Gauges.Count - 1 do
+    begin
+      G := FDisplay.Gauges[I];
+      P := FCatalog.FindById(G.PidId);
+      if P <> nil then
+      begin
+        Title := P.LongName;
+        Units := P.Units;
+      end
+      else
+      begin
+        Title := Format('PID #%d (missing)', [G.PidId]);
+        Units := '';
+      end;
+      View := TGaugeView.Create(Self);
+      View.Parent := sbDash;
+      View.Tag := I;
+      View.PopupMenu := pmGauge;
+      View.OnDblClick := GaugeDblClick;
+      View.Setup(G.Style, G.Size, Title, Units, G.MinValue, G.MaxValue,
+        FDisplay.Zones(G.PidId, G.MinValue, G.MaxValue));
+      FGaugeViews.Add(View);
+    end;
+  finally
+    sbDash.EnableAlign;
+  end;
+  if FGaugeViews.Count = 0 then
+    lblDashHint.Caption := 'No gauges yet: press Add gauge, or right-click a PID and choose Add to dashboard.'
+  else
+    lblDashHint.Caption := 'Right-click a gauge to change, move or remove it. Double-click to edit.';
+  LayoutDashboard;
+  RefreshDashboard;
+end;
+
+{ Left to right, wrapping to the width of the dashboard. }
+procedure TMainForm.LayoutDashboard;
+var
+  View: TGaugeView;
+  I, X, Y, RowH, Gap, Avail: Integer;
+  Sz: TSize;
+begin
+  if FGaugeViews.Count = 0 then
+    Exit;
+  Gap := MulDiv(12, CurrentPPI, 96);
+  Avail := sbDash.ClientWidth;
+  X := Gap;
+  Y := Gap;
+  RowH := 0;
+  sbDash.DisableAlign;
+  try
+    for I := 0 to FGaugeViews.Count - 1 do
+    begin
+      View := FGaugeViews[I];
+      Sz := TGaugeView.PreferredSize(FDisplay.Gauges[I].Style, FDisplay.Gauges[I].Size, CurrentPPI);
+      if (X > Gap) and (X + Sz.cx + Gap > Avail) then
+      begin
+        X := Gap;
+        Inc(Y, RowH + Gap);
+        RowH := 0;
+      end;
+      View.SetBounds(X - sbDash.HorzScrollBar.Position, Y - sbDash.VertScrollBar.Position, Sz.cx, Sz.cy);
+      Inc(X, Sz.cx + Gap);
+      RowH := Max(RowH, Sz.cy);
+    end;
+  finally
+    sbDash.EnableAlign;
+  end;
+end;
+
+procedure TMainForm.sbDashResize(Sender: TObject);
+begin
+  LayoutDashboard;
+end;
+
+procedure TMainForm.RefreshDashboard;
+var
+  I, Idx: Integer;
+  G: TGauge;
+  P: TPidDef;
+  V: Double;
+  Text, Note: string;
+  Scanning: Boolean;
+begin
+  Scanning := LiveActive;
+  for I := 0 to FGaugeViews.Count - 1 do
+  begin
+    if I >= FDisplay.Gauges.Count then
+      Break;
+    G := FDisplay.Gauges[I];
+    P := FCatalog.FindById(G.PidId);
+    V := NaN;
+    Text := '-';
+    Note := '';
+    Idx := LiveIndexOf(G.PidId);
+    if P = nil then
+      Note := ''
+    else if Idx < 0 then
+    begin
+      if Scanning then
+        Note := 'not in this scan';
+    end
+    else if FRejected.Contains(G.PidId) then
+      Note := 'rejected'
+    else if Idx <= High(FLive.Values) then
+    begin
+      V := FLive.Values[Idx];
+      Text := FLive.Text[Idx];
+      if Text = '' then
+        Text := '-';
+    end;
+    ShowGaugeReading(FGaugeViews[I], FDisplay.Resolve(G.PidId, V), FFlashOn or not Scanning, V, Text, Note);
+  end;
+end;
+
+procedure TMainForm.AddGauge(PidId: Integer);
+var
+  G: TGauge;
+  I: Integer;
+begin
+  if (PidId < 0) and (FSelected.Count > 0) then
+    PidId := FSelected[0];
+  if PidId < 0 then
+    for I := 0 to FCatalog.Count - 1 do
+      if FCatalog[I].Enabled then
+      begin
+        PidId := FCatalog[I].Id;
+        Break;
+      end;
+  G := Default(TGauge);
+  G.PidId := PidId;
+  G.Style := gsDial;
+  G.Size := gzMedium;
+  SuggestScale(FCatalog.FindById(PidId), FDisplay, G.MinValue, G.MaxValue);
+  if not TGaugeEditorForm.Execute(G, FCatalog, FDisplay, 'Add gauge') then
+    Exit;
+  FDisplay.Gauges.Add(G);
+  SaveDisplay;
+  BuildDashboard;
+  pcMain.ActivePage := tsDashboard;
+end;
+
+procedure TMainForm.EditGauge(Index: Integer);
+var
+  G: TGauge;
+begin
+  if (Index < 0) or (Index >= FDisplay.Gauges.Count) then
+    Exit;
+  G := FDisplay.Gauges[Index];
+  if not TGaugeEditorForm.Execute(G, FCatalog, FDisplay, 'Edit gauge') then
+    Exit;
+  FDisplay.Gauges[Index] := G;
+  SaveDisplay;
+  BuildDashboard;
+end;
+
+procedure TMainForm.MoveGauge(Delta: Integer);
+begin
+  if (FMenuGauge < 0) or (FMenuGauge + Delta < 0) or (FMenuGauge + Delta >= FDisplay.Gauges.Count) then
+    Exit;
+  FDisplay.Gauges.Exchange(FMenuGauge, FMenuGauge + Delta);
+  SaveDisplay;
+  BuildDashboard;
+end;
+
+procedure TMainForm.btnAddGaugeClick(Sender: TObject);
+begin
+  AddGauge(-1);
+end;
+
+procedure TMainForm.btnTickDashPidsClick(Sender: TObject);
+var
+  G: TGauge;
+  P: TPidDef;
+  Added: Integer;
+begin
+  Added := 0;
+  for G in FDisplay.Gauges do
+  begin
+    P := FCatalog.FindById(G.PidId);
+    if (P <> nil) and P.Enabled and not FSelected.Contains(G.PidId) then
+    begin
+      SetSelected(G.PidId, True);
+      Inc(Added);
+    end;
+  end;
+  FillPidList;
+  if Added = 0 then
+    ShowNotice('The dashboard PIDs are already ticked', False)
+  else if FState = esScanning then
+    ShowNotice(Format('%d PID(s) ticked - press Restart scan to include them', [Added]), False);
+end;
+
+procedure TMainForm.GaugeDblClick(Sender: TObject);
+begin
+  EditGauge(TGaugeView(Sender).Tag);
+end;
+
+procedure TMainForm.pmGaugePopup(Sender: TObject);
+begin
+  FMenuGauge := -1;
+  if pmGauge.PopupComponent is TGaugeView then
+    FMenuGauge := TGaugeView(pmGauge.PopupComponent).Tag;
+  miGaugeEarlier.Enabled := FMenuGauge > 0;
+  miGaugeLater.Enabled := (FMenuGauge >= 0) and (FMenuGauge < FDisplay.Gauges.Count - 1);
+  miGaugeDisplay.Enabled := (FMenuGauge >= 0) and (FCatalog.FindById(FDisplay.Gauges[FMenuGauge].PidId) <> nil);
+end;
+
+procedure TMainForm.miGaugeEditClick(Sender: TObject);
+begin
+  EditGauge(FMenuGauge);
+end;
+
+procedure TMainForm.miGaugeDisplayClick(Sender: TObject);
+begin
+  if (FMenuGauge >= 0) and (FMenuGauge < FDisplay.Gauges.Count) then
+    EditDisplay(FDisplay.Gauges[FMenuGauge].PidId);
+end;
+
+procedure TMainForm.miGaugeEarlierClick(Sender: TObject);
+begin
+  MoveGauge(-1);
+end;
+
+procedure TMainForm.miGaugeLaterClick(Sender: TObject);
+begin
+  MoveGauge(1);
+end;
+
+procedure TMainForm.miGaugeRemoveClick(Sender: TObject);
+begin
+  if (FMenuGauge < 0) or (FMenuGauge >= FDisplay.Gauges.Count) then
+    Exit;
+  FDisplay.Gauges.Delete(FMenuGauge);
+  SaveDisplay;
+  // Rebuilding frees the gauge whose menu is running; let the menu finish first.
+  TThread.ForceQueue(nil, BuildDashboard);
 end;
 
 function TMainForm.PidName(Id: Integer): string;

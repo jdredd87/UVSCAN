@@ -36,6 +36,7 @@ type
     StreamSpeed: TStreamSpeed;
     LogFolder: string;
     Trace: Boolean;
+    AlertSounds: Boolean;   // play the sounds of the PID alert levels
     Window: TWindowSettings;
     constructor Create;
     procedure ResetToDefaults;
@@ -87,6 +88,7 @@ begin
   StreamSpeed := ssFast;
   LogFolder := TPath.Combine(TPath.GetDocumentsPath, 'UVScan Logs');
   Trace := False;
+  AlertSounds := True;
   Window := Default(TWindowSettings);
 end;
 
@@ -119,6 +121,7 @@ begin
 
   Sec := TJSONObject.Create;
   Sec.AddPair('trace', TJSONBool.Create(Trace));
+  Sec.AddPair('alertSounds', TJSONBool.Create(AlertSounds));
   Result.AddPair('advanced', Sec);
 
   if Window.Saved then
@@ -170,7 +173,10 @@ begin
 
   Sec := JObj(Root, 'advanced');
   if Sec <> nil then
+  begin
     Trace := JBool(Sec, 'trace', Trace);
+    AlertSounds := JBool(Sec, 'alertSounds', AlertSounds);
+  end;
 
   Sec := JObj(Root, 'window');
   if Sec <> nil then

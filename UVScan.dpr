@@ -18,6 +18,11 @@ uses
   UVScan.Defaults in 'src\UVScan.Defaults.pas',
   UVScan.PidLists in 'src\UVScan.PidLists.pas',
   UVScan.LegacyImport in 'src\UVScan.LegacyImport.pas',
+  UVScan.Display in 'src\UVScan.Display.pas',
+  UVScan.Alerts in 'src\UVScan.Alerts.pas',
+  UVScan.Gauge in 'src\UVScan.Gauge.pas',
+  UVScan.DisplayEditor in 'src\UVScan.DisplayEditor.pas' {DisplayEditorForm},
+  UVScan.GaugeEditor in 'src\UVScan.GaugeEditor.pas' {GaugeEditorForm},
   UVScan.PidEditor in 'src\UVScan.PidEditor.pas' {PidEditorForm},
   UVScan.PidDiscovery in 'src\UVScan.PidDiscovery.pas' {PidDiscoveryForm},
   UVScan.MainForm in 'src\UVScan.MainForm.pas' {MainForm};

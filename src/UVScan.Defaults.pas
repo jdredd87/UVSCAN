@@ -1,7 +1,7 @@
 unit UVScan.Defaults;
 
 { Factory default data compiled into the exe (UVScan.Defaults.rc embeds the
-  repo's data\pids.json, dtcs.json and lists.json). Used to restore the PID
+  repo's data\pids.json, dtcs.json, lists.json and display.json). Used to restore the PID
   definitions and to create any data file that is missing at startup, so a
   fresh install needs nothing but the exe. }
 
@@ -13,6 +13,9 @@ uses
 function DefaultPidsJson: string;
 function DefaultDtcsJson: string;
 function DefaultListsJson: string;
+{ Examples for display.json. PIDs are named by "pidCode" because ids differ
+  between catalogs; ResolveSeedJson (UVScan.Display) turns them into ids. }
+function DefaultDisplayJson: string;
 
 { Writes the default for each data file that does not exist yet. Returns the
   files that were created. }
@@ -54,6 +57,11 @@ end;
 function DefaultListsJson: string;
 begin
   Result := ResourceText('DEFAULT_LISTS');
+end;
+
+function DefaultDisplayJson: string;
+begin
+  Result := ResourceText('DEFAULT_DISPLAY');
 end;
 
 function CreateMissingDataFiles: TArray<string>;

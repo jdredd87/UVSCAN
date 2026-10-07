@@ -132,6 +132,20 @@ object MainForm: TMainForm
       TabOrder = 8
       OnClick = btnPauseClick
     end
+    object chkSound: TCheckBox
+      Left = 966
+      Top = 17
+      Width = 100
+      Height = 17
+      Hint = 'Play the sounds of the PID alert levels'
+      Caption = 'Alert sounds'
+      Checked = True
+      ParentShowHint = False
+      ShowHint = True
+      State = cbChecked
+      TabOrder = 9
+      OnClick = chkSoundClick
+    end
   end
   object pnlPids: TPanel
     Left = 0
@@ -236,6 +250,7 @@ object MainForm: TMainForm
       GroupView = True
       ReadOnly = True
       RowSelect = True
+      PopupMenu = pmPid
       TabOrder = 1
       ViewStyle = vsReport
       OnItemChecked = lvPidsItemChecked
@@ -363,6 +378,7 @@ object MainForm: TMainForm
           FixedCols = 0
           RowCount = 2
           Options = [goFixedVertLine, goFixedHorzLine, goVertLine, goHorzLine, goColSizing, goThumbTracking]
+          PopupMenu = pmPid
           TabOrder = 0
           OnDrawCell = grdLiveDrawCell
         end
@@ -375,7 +391,7 @@ object MainForm: TMainForm
           BevelOuter = bvNone
           TabOrder = 1
           object lblLiveHint: TLabel
-            Left = 150
+            Left = 262
             Top = 12
             Width = 300
             Height = 15
@@ -396,6 +412,92 @@ object MainForm: TMainForm
             TabOrder = 0
             OnClick = btnResetMinMaxClick
           end
+          object btnLiveTest: TButton
+            Left = 142
+            Top = 7
+            Width = 110
+            Height = 26
+            Hint = 'Made-up values that sweep each PID through its range, to try out colours, alerts and gauges'
+            Caption = 'Test display'
+            ParentShowHint = False
+            ShowHint = True
+            TabOrder = 1
+            OnClick = btnTestDisplayClick
+          end
+        end
+      end
+      object tsDashboard: TTabSheet
+        Caption = 'Dashboard'
+        ImageIndex = 4
+        object pnlDashBar: TPanel
+          Left = 0
+          Top = 0
+          Width = 759
+          Height = 40
+          Align = alTop
+          BevelOuter = bvNone
+          TabOrder = 0
+          object lblDashHint: TLabel
+            Left = 372
+            Top = 12
+            Width = 420
+            Height = 15
+            Caption = 'Right-click a gauge to change, move or remove it.'
+            Font.Charset = DEFAULT_CHARSET
+            Font.Color = clGrayText
+            Font.Height = -12
+            Font.Name = 'Segoe UI'
+            Font.Style = []
+            ParentFont = False
+            ShowAccelChar = False
+          end
+          object btnAddGauge: TButton
+            Left = 6
+            Top = 7
+            Width = 110
+            Height = 26
+            Caption = 'Add gauge...'
+            TabOrder = 0
+            OnClick = btnAddGaugeClick
+          end
+          object btnTickDashPids: TButton
+            Left = 122
+            Top = 7
+            Width = 128
+            Height = 26
+            Hint = 'Tick the PIDs these gauges show in the list on the left'
+            Caption = 'Tick these PIDs'
+            ParentShowHint = False
+            ShowHint = True
+            TabOrder = 1
+            OnClick = btnTickDashPidsClick
+          end
+          object btnDashTest: TButton
+            Left = 256
+            Top = 7
+            Width = 110
+            Height = 26
+            Hint = 'Made-up values that sweep each PID through its range, to try out colours, alerts and gauges'
+            Caption = 'Test display'
+            ParentShowHint = False
+            ShowHint = True
+            TabOrder = 2
+            OnClick = btnTestDisplayClick
+          end
+        end
+        object sbDash: TScrollBox
+          Left = 0
+          Top = 40
+          Width = 759
+          Height = 531
+          HorzScrollBar.Visible = False
+          VertScrollBar.Tracking = True
+          Align = alClient
+          BorderStyle = bsNone
+          Color = 2104854
+          ParentColor = False
+          TabOrder = 1
+          OnResize = sbDashResize
         end
       end
       object tsVehicle: TTabSheet
@@ -809,6 +911,51 @@ object MainForm: TMainForm
       item
         Width = 50
       end>
+  end
+  object pmPid: TPopupMenu
+    OnPopup = pmPidPopup
+    Left = 1020
+    Top = 8
+    object miPidDisplay: TMenuItem
+      Caption = 'Display && alerts...'
+      OnClick = miPidDisplayClick
+    end
+    object miPidGauge: TMenuItem
+      Caption = 'Add to dashboard...'
+      OnClick = miPidGaugeClick
+    end
+  end
+  object pmGauge: TPopupMenu
+    OnPopup = pmGaugePopup
+    Left = 1060
+    Top = 8
+    object miGaugeEdit: TMenuItem
+      Caption = 'Edit gauge...'
+      Default = True
+      OnClick = miGaugeEditClick
+    end
+    object miGaugeDisplay: TMenuItem
+      Caption = 'Display && alerts...'
+      OnClick = miGaugeDisplayClick
+    end
+    object miGaugeSep1: TMenuItem
+      Caption = '-'
+    end
+    object miGaugeEarlier: TMenuItem
+      Caption = 'Move earlier'
+      OnClick = miGaugeEarlierClick
+    end
+    object miGaugeLater: TMenuItem
+      Caption = 'Move later'
+      OnClick = miGaugeLaterClick
+    end
+    object miGaugeSep2: TMenuItem
+      Caption = '-'
+    end
+    object miGaugeRemove: TMenuItem
+      Caption = 'Remove from dashboard'
+      OnClick = miGaugeRemoveClick
+    end
   end
   object tmrRefresh: TTimer
     Interval = 100

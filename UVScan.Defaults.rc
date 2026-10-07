@@ -2,3 +2,4 @@
 DEFAULT_PIDS  RCDATA "data\\pids.json"
 DEFAULT_DTCS  RCDATA "data\\dtcs.json"
 DEFAULT_LISTS RCDATA "data\\lists.json"
+DEFAULT_DISPLAY RCDATA "data\\display.json"

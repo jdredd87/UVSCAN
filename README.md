@@ -8,6 +8,8 @@ Rewrite of the 2008 UVSCAN (Delphi 2007, kept in [`legacy/`](legacy) for referen
 - Connects to the AVT, reads AVT firmware, VIN and PCM OS ID
 - Streams PIDs from the PCM using dynamic PIDs (DPIDs), shows live values with min/max
 - Calculated PIDs (`%MCI%` formulas, `RUNTIME`, `LOGTIME`) and AVT analog inputs
+- Per‑PID look and **alert levels** (colours, flashing, sounds) in the live grid, and a **Dashboard** of dial / bar / big‑number gauges that use the same levels
+- **Test display**: made‑up values sweep every PID through its range to try out colours, alerts and gauges without a car
 - CSV logging (F8 start/stop, F9 pause)
 - PID support test, trouble code read/clear, fuel trim reset, check engine light on/off, VIN write, raw frame send
 - Built‑in **simulator** (choose port `Simulator`) that mimics the PCM behaviour measured on the bench
@@ -29,6 +31,7 @@ Everything the app reads or writes (apart from CSV logs) lives in **`C:\ProgramD
 |---|---|
 | `pids.json` | PID definitions (`TPidCatalog` / `TPidDef`) |
 | `lists.json` | Named scan lists (`TPidLists`): `{ "name": "Misfires", "pids": [1, 20, 21] }` |
+| `display.json` | How PIDs look, their alert levels and the dashboard gauges (`TDisplaySettings`) |
 | `settings.json` | Port/baud, selected PIDs, stream speed, log folder, window layout (`TAppSettings`, written on exit) |
 | `dtcs.json` | Trouble code descriptions (`TDtcCatalog`): `{ "code": "P0300", "description": "…" }` |
 
@@ -61,6 +64,27 @@ Both only change the editor's working copy; nothing is written until **Save**.
 
 The factory list includes PIDs from the old UVSCAN `Extra_Pids.csv` that a 2001 3.8L (3800 Series II) PCM answers, checked against the raw values it returned on the bench.
 
+### Display, alerts and the dashboard
+
+Right‑click a PID (in the list or the live grid) → **Display & alerts…** to set its normal look (value font size, text and row colour) and its **alert levels**. Levels are checked from the top and the first that matches wins, e.g. for knock retard: *Alarm* `>= 4` red, flashing, alarm tone; *Warning* `>= 1` amber; normal row pale green. Each level can change the row and text colour, flash, and play a sound (beep, Windows alert, alarm tone or your own `.wav`, optionally repeating every few seconds while the level lasts). A sound plays when a PID enters a level, at most once every 3 s per PID, and the alert is noted in Messages. **Presets…** sets up green / yellow / red for "high is bad" or "low is bad" from two thresholds. **Alert sounds** in the top bar mutes everything.
+
+The **Dashboard** tab shows gauges: dial, bar or big number, small / medium / large, each with its own scale. They use the same levels: the scale carries the levels as coloured bands, and the card takes the level's colours (and flashes) while the value is in it. Add gauges with **Add gauge…** or right‑click a PID → **Add to dashboard…**; right‑click a gauge to edit, move or remove it (double‑click edits). **Tick these PIDs** ticks the dashboard's PIDs for scanning.
+
+**Test display** (Live data and Dashboard tabs, whenever not scanning) feeds the ticked and dashboard PIDs with made‑up values that rise and fall slowly through each PID's range (its gauge scale, widened to reach every threshold), so you can watch each level, flash and sound. Nothing is sent to the PCM and nothing is logged; a banner says the values are made up.
+
+`display.json` (colours are `#RRGGBB`, `pid` is the id from `pids.json`):
+
+```json
+{ "version": 1,
+  "pids": [ { "pid": 232, "rowColor": "#C8F0C8", "levels": [
+      { "name": "Alarm", "when": ">=", "value": 4, "rowColor": "#FF5050", "textColor": "#FFFFFF",
+        "flash": true, "sound": "alarm" },
+      { "name": "Warning", "when": ">=", "value": 1, "rowColor": "#FFE680" } ] } ],
+  "gauges": [ { "pid": 232, "style": "dial", "size": "medium", "min": 0, "max": 20 } ] }
+```
+
+On first run it is created from `data\display.json`, which names PIDs by PID code (`"pidCode": "11A6"`) so the examples (knock retard, coolant temperature, ignition voltage, and a few gauges) attach to whatever ids your `pids.json` uses.
+
 ### Scan lists
 
 The **Scan list** row above the PID list holds named selections, e.g. *Misfires* or *Transmission*. Pick one to tick its PIDs, **Save as…** to store the current ticks under a name (or update the selected list), **Delete** to remove a list (the PIDs themselves are untouched). Lists only store PID ids, so a formula fixed in the editor is fixed in every list. Defaults: *Basic engine*, *Misfires*, *Transmission*.
@@ -86,10 +110,15 @@ Command line (same idea as legacy UVSCAN): `UVScan.exe -port COM9 -connect -scan
 | `src/UVScan.Simulator.pas` | Simulated AVT + PCM |
 | `src/UVScan.MainForm.*` | Main window |
 | `src/UVScan.PidEditor.*` | PID editor dialog |
+| `src/UVScan.Display.pas` | `TDisplaySettings`: display.json, alert levels, gauge zones |
+| `src/UVScan.Alerts.pas` | Alert sounds (built‑in tones) and when to play them |
+| `src/UVScan.Gauge.pas` | `TGaugeView`: dial / bar / number gauge drawn with GDI+ |
+| `src/UVScan.DisplayEditor.*` | Display & alerts dialog |
+| `src/UVScan.GaugeEditor.*` | Add / edit gauge dialog |
 | `src/UVScan.Paths.pas` | Data folder (`C:\ProgramData\UVScan`) |
 | `src/UVScan.Settings.pas` | `TAppSettings` (settings.json) |
 | `src/UVScan.JsonFile.pas` | JSON read/write helpers (atomic save) |
-| `data/` | Factory defaults (`pids.json`, `dtcs.json`, `lists.json`), compiled into the exe |
+| `data/` | Factory defaults (`pids.json`, `dtcs.json`, `lists.json`, `display.json`), compiled into the exe |
 | `tests/` | DUnitX tests, incl. end‑to‑end engine tests against the simulator |
 | `tools/UVScanProbe.dpr` | Console bench tool for real hardware |
 | `legacy/` | Original 2008 source for reference only (dead code stripped); not used by the new app |

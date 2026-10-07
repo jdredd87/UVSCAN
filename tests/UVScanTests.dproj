@@ -85,6 +85,9 @@
         <DCCReference Include="..\src\UVScan.PidLists.pas"/>
         <DCCReference Include="..\src\UVScan.LegacyImport.pas"/>
         <DCCReference Include="UVScan.Tests.Data.pas"/>
+        <DCCReference Include="..\src\UVScan.Display.pas"/>
+        <DCCReference Include="..\src\UVScan.Alerts.pas"/>
+        <DCCReference Include="UVScan.Tests.Display.pas"/>
         <RcCompile Include="..\UVScan.Defaults.rc">
             <Form>UVScan.Defaults.res</Form>
         </RcCompile>
