@@ -10,10 +10,15 @@ uses
   System.SysUtils, System.Classes, System.UITypes, System.Math, System.Diagnostics, System.IOUtils,
   System.Types, System.Generics.Collections, System.Generics.Defaults,
   FMX.Types, FMX.Controls, FMX.Forms, FMX.Graphics, FMX.StdCtrls, FMX.Edit, FMX.ListBox, FMX.Layouts,
-  FMX.Controls.Presentation,
+  FMX.Controls.Presentation, FMX.Objects,
   UVScan.Pids, UVScan.Display, UVScan.LogData, UVScan.LogViews, UVScan.LogChart, UVScan.UI.DataGrid;
 
 type
+  TViewerBounds = record
+    Ctl: TControl;
+    R: TRectF;
+  end;
+
   TLogViewerForm = class(TForm)
     pnlBar: TPanel;
     sbBar: THorzScrollBox;
@@ -105,6 +110,44 @@ type
     FPlaying: Boolean;
     FPlayClock: TStopwatch;
     FPlayFrom: Double;
+    // Narrow window (phone): a top bar with a menu, the chart above either the
+    // channel list or the data, and the channel settings as a page of their own.
+    FNarrow: Boolean;
+    FLaidOut: Boolean;
+    FTopBar: TRectangle;
+    FTitle: TLabel;
+    FMenuButton: TSpeedButton;
+    FTabs: TLayout;
+    FTabChips: TArray<TRectangle>;
+    FDataTab: Boolean;
+    FChannelButton: TButton;
+    FChannelPage: TRectangle;
+    FChannelTitle: TLabel;
+    FChannelBox: TVertScrollBox;
+    FOrig: TArray<TViewerBounds>;
+    procedure BuildPhoneParts;
+    function AddBar(Parent: TFmxObject; const Title: string; OnBack: TNotifyEvent): TLabel;
+    procedure SaveBounds(const Ctls: array of TControl);
+    procedure RestoreBounds;
+    procedure LayoutNarrow;
+    procedure LayoutWide;
+    procedure FlowWideBars;
+    procedure LayoutChannelWide;
+    procedure LayoutChannelBox;
+    procedure LayoutStatus;
+    procedure PaintTabs;
+    procedure UpdateChannelButton;
+    procedure TabClick(Sender: TObject);
+    procedure TabsResize(Sender: TObject);
+    procedure BackClick(Sender: TObject);
+    procedure MenuClick(Sender: TObject);
+    procedure MenuToggle(Sender: TObject);
+    procedure MenuViews(Sender: TObject);
+    procedure MenuModes(Sender: TObject);
+    procedure MenuPick(Sender: TObject);
+    procedure ChannelPageOpen(Sender: TObject);
+    procedure ChannelPageClose(Sender: TObject);
+    procedure FormKeyUp(Sender: TObject; var Key: Word; var KeyChar: WideChar; Shift: TShiftState);
     procedure FillRecent;
     procedure FillViews(const Select: string);
     procedure FillColors;
@@ -156,7 +199,7 @@ implementation
 {$R *.fmx}
 
 uses
-  System.StrUtils, FMX.Dialogs, UVScan.UI.Common, UVScan.DisplayEditor;
+  System.StrUtils, FMX.Dialogs, UVScan.UI.Common, UVScan.UI.Theme, UVScan.DisplayEditor;
 
 var
   Viewer: TLogViewerForm;
@@ -169,6 +212,7 @@ const
   ColMin = 2;
   ColAvg = 3;
   ColMax = 4;
+  NarrowWidth = 700;
   StatsColor = TAlphaColor($FF0060B0);  // selection statistics stand out
   CursorRowColor = TAlphaColor($FFC8E6F5);
 
@@ -267,11 +311,652 @@ begin
     cbWidth.Items.Add(IntToStr(I) + ' px');
   FillColors;
   lblTime.TextSettings.Font.Style := [TFontStyle.fsBold];
+  chkUseDisplay.Text := 'Alert levels from Display && alerts'; // && = one &
   // Phones: no file dialogs (logs are picked from the log folder), and a
   // button to select a range with a finger.
   btnOpen.Visible := not IsMobile;
   btnSelect.Visible := IsMobile;
+  OnKeyUp := FormKeyUp;
+  // The wide layout (absolute positions), kept for when the window is wide again.
+  SaveBounds([btnDemo, cbRecent, btnStart, btnPlay, btnEnd, cbSpeed, tbPos, lblTime, btnSelect, lblColor, cbxColor,
+    lblWidth, cbWidth, chkAuto, lblMin, edtMin, lblMax, edtMax, chkLevelColors, btnLevels, lblLevelSource]);
+  BuildPhoneParts;
   ShowLog;
+  FormResize(nil);
+end;
+
+{ Phone parts }
+
+function TLogViewerForm.AddBar(Parent: TFmxObject; const Title: string; OnBack: TNotifyEvent): TLabel;
+var
+  Bar: TRectangle;
+  Back: TSpeedButton;
+begin
+  Bar := TRectangle.Create(Self);
+  Bar.Parent := Parent;
+  Bar.Stored := False;
+  Bar.Align := TAlignLayout.Top;
+  Bar.Position.Y := -100; // above every other top-aligned control
+  Bar.Height := 52;
+  Bar.Sides := [TSide.Bottom];
+  Bar.Fill.Color := Palette.Bar;
+  Bar.Stroke.Color := Palette.BarLine;
+  Back := TSpeedButton.Create(Self);
+  Back.Parent := Bar;
+  Back.Stored := False;
+  Back.Align := TAlignLayout.Left;
+  Back.Width := 48;
+  Back.Text := '';
+  Back.Hint := 'Back';
+  Back.OnClick := OnBack;
+  AddLineIcon(Back, IconBack);
+  Result := TLabel.Create(Self);
+  Result.Parent := Bar;
+  Result.Stored := False;
+  Result.Align := TAlignLayout.Client;
+  Result.Margins.Left := 6;
+  Result.StyledSettings := Result.StyledSettings - [TStyledSetting.Size];
+  Result.TextSettings.Font.Size := 19;
+  Result.TextSettings.WordWrap := False;
+  Result.TextSettings.Trimming := TTextTrimming.Character;
+  Result.Text := Title;
+end;
+
+procedure TLogViewerForm.BuildPhoneParts;
+const
+  TabCaptions: array[0..1] of string = ('Channels', 'Data');
+var
+  I: Integer;
+  R: TRectangle;
+  L: TLabel;
+begin
+  FTitle := AddBar(Self, 'Log viewer', BackClick);
+  FTopBar := TRectangle(FTitle.Parent);
+  FMenuButton := TSpeedButton.Create(Self);
+  FMenuButton.Parent := FTopBar;
+  FMenuButton.Stored := False;
+  FMenuButton.Align := TAlignLayout.Right;
+  FMenuButton.Width := 48;
+  FMenuButton.Text := #$22EE;
+  FMenuButton.StyledSettings := FMenuButton.StyledSettings - [TStyledSetting.Size, TStyledSetting.Style];
+  FMenuButton.TextSettings.Font.Size := 22;
+  FMenuButton.TextSettings.Font.Style := [TFontStyle.fsBold];
+  FMenuButton.Hint := 'More';
+  FMenuButton.OnClick := MenuClick;
+
+  // Channels | Data, under the chart
+  FTabs := TLayout.Create(Self);
+  FTabs.Parent := pnlMain;
+  FTabs.Stored := False;
+  FTabs.Align := TAlignLayout.Top;
+  FTabs.Height := 40;
+  FTabs.Margins.Rect := TRectF.Create(12, 8, 12, 6);
+  FTabs.Visible := False;
+  FTabs.OnResize := TabsResize;
+  for I := 0 to High(TabCaptions) do
+  begin
+    R := TRectangle.Create(Self);
+    R.Parent := FTabs;
+    R.Stored := False;
+    R.XRadius := 8;
+    R.YRadius := 8;
+    R.HitTest := True;
+    R.Cursor := crHandPoint;
+    R.Tag := I;
+    R.OnClick := TabClick;
+    L := TLabel.Create(Self);
+    L.Parent := R;
+    L.Stored := False;
+    L.Align := TAlignLayout.Client;
+    L.HitTest := False;
+    L.StyledSettings := L.StyledSettings - [TStyledSetting.FontColor, TStyledSetting.Style];
+    L.TextSettings.HorzAlign := TTextAlign.Center;
+    L.TextSettings.WordWrap := False;
+    L.Text := TabCaptions[I];
+    FTabChips := FTabChips + [R];
+  end;
+
+  // Under the channel list: the selected channel's settings are a page.
+  FChannelButton := TButton.Create(Self);
+  FChannelButton.Parent := pnlLeft;
+  FChannelButton.Stored := False;
+  FChannelButton.Align := TAlignLayout.Bottom;
+  FChannelButton.Height := 44;
+  FChannelButton.Margins.Rect := TRectF.Create(6, 6, 12, 4);
+  FChannelButton.TextSettings.Trimming := TTextTrimming.Character;
+  FChannelButton.OnClick := ChannelPageOpen;
+  FChannelButton.Visible := False;
+
+  FChannelPage := TRectangle.Create(Self);
+  FChannelPage.Parent := Self;
+  FChannelPage.Stored := False;
+  FChannelPage.Align := TAlignLayout.Contents;
+  FChannelPage.HitTest := True;
+  FChannelPage.Stroke.Kind := TBrushKind.None;
+  FChannelPage.Visible := False;
+  FChannelTitle := AddBar(FChannelPage, 'Channel', ChannelPageClose);
+  FChannelBox := TVertScrollBox.Create(Self);
+  FChannelBox.Parent := FChannelPage;
+  FChannelBox.Stored := False;
+  FChannelBox.Align := TAlignLayout.Client;
+end;
+
+procedure TLogViewerForm.SaveBounds(const Ctls: array of TControl);
+var
+  C: TControl;
+  S: TViewerBounds;
+begin
+  for C in Ctls do
+  begin
+    S.Ctl := C;
+    S.R := TRectF.Create(C.Position.X, C.Position.Y, C.Position.X + C.Width, C.Position.Y + C.Height);
+    FOrig := FOrig + [S];
+  end;
+end;
+
+procedure TLogViewerForm.RestoreBounds;
+var
+  S: TViewerBounds;
+begin
+  for S in FOrig do
+    S.Ctl.SetBounds(S.R.Left, S.R.Top, S.R.Width, S.R.Height);
+end;
+
+procedure TLogViewerForm.PaintTabs;
+var
+  I: Integer;
+  P: TPalette;
+  L: TLabel;
+  W: Single;
+begin
+  P := Palette;
+  W := (FTabs.Width - 8) / Length(FTabChips);
+  for I := 0 to High(FTabChips) do
+  begin
+    FTabChips[I].SetBounds(I * (W + 8), 0, W, FTabs.Height);
+    L := TLabel(FTabChips[I].Controls[0]);
+    if (I = 1) = FDataTab then
+    begin
+      FTabChips[I].Fill.Color := P.Accent;
+      FTabChips[I].Stroke.Color := P.Accent;
+      L.TextSettings.FontColor := ContrastColor(P.Accent);
+      L.TextSettings.Font.Style := [TFontStyle.fsBold];
+    end
+    else
+    begin
+      FTabChips[I].Fill.Color := P.Bar;
+      FTabChips[I].Stroke.Color := P.BarLine;
+      L.TextSettings.FontColor := P.Text;
+      L.TextSettings.Font.Style := [];
+    end;
+  end;
+end;
+
+procedure TLogViewerForm.TabsResize(Sender: TObject);
+begin
+  PaintTabs;
+end;
+
+procedure TLogViewerForm.TabClick(Sender: TObject);
+begin
+  FDataTab := TComponent(Sender).Tag = 1;
+  FormResize(nil);
+end;
+
+procedure TLogViewerForm.UpdateChannelButton;
+var
+  Ch: Integer;
+begin
+  if FChannelButton = nil then
+    Exit;
+  Ch := SelectedChannel;
+  FChannelButton.Enabled := Ch >= 0;
+  if Ch >= 0 then
+    FChannelButton.Text := 'Colour, scale, alerts: ' + FData.Channels[Ch].Caption
+  else
+    FChannelButton.Text := 'Tap a channel for its colour and scale';
+  FChannelTitle.Text := gbChannel.Text;
+end;
+
+procedure TLogViewerForm.ChannelPageOpen(Sender: TObject);
+begin
+  if SelectedChannel < 0 then
+    Exit;
+  ShowChannel;
+  FChannelPage.Fill.Color := Palette.Back;
+  FChannelPage.Visible := True;
+  FChannelPage.BringToFront;
+  LayoutChannelBox;
+  FChannelBox.ViewportPosition := TPointF.Zero;
+end;
+
+procedure TLogViewerForm.ChannelPageClose(Sender: TObject);
+begin
+  FChannelPage.Visible := False;
+  FChannels.Refresh;
+end;
+
+procedure TLogViewerForm.BackClick(Sender: TObject);
+begin
+  SetPlaying(False);
+  Close;
+end;
+
+procedure TLogViewerForm.FormKeyUp(Sender: TObject; var Key: Word; var KeyChar: WideChar; Shift: TShiftState);
+begin
+  if Key <> vkHardwareBack then
+    Exit;
+  Key := 0;
+  if FChannelPage.Visible then
+    ChannelPageClose(nil)
+  else
+    BackClick(nil);
+end;
+
+{ The page menu on a narrow window: what does not fit in its bars. }
+procedure TLogViewerForm.MenuClick(Sender: TObject);
+
+  function Item(const Text: string; OnClick: TNotifyEvent; Sender: TObject; Enabled: Boolean = True;
+    Checked: Boolean = False): TActionItem;
+  begin
+    Result.Text := Text;
+    Result.OnClick := OnClick;
+    Result.Sender := Sender;
+    Result.Enabled := Enabled;
+    Result.Checked := Checked;
+  end;
+
+var
+  Items: TArray<TActionItem>;
+begin
+  Items := nil;
+  if not IsMobile then
+    Items := Items + [Item('Open log...', btnOpenClick, btnOpen)];
+  Items := Items + [
+    Item('View: ' + ComboText(cbView), MenuViews, nil),
+    Item('Save view...', btnSaveViewClick, btnSaveView),
+    Item('Delete view', btnDeleteViewClick, btnDeleteView, btnDeleteView.Enabled),
+    Item('Chart: ' + ComboText(cbMode), MenuModes, nil),
+    Item('Save chart picture', btnImageClick, btnImage, FData.Count > 0),
+    Item('-', nil, nil),
+    Item('Follow the cursor', MenuToggle, chkFollow, True, chkFollow.IsChecked),
+    Item('Level bands', MenuToggle, chkBands, True, chkBands.IsChecked),
+    Item('Levels from Display && alerts', MenuToggle, chkUseDisplay, True, chkUseDisplay.IsChecked)];
+  ShowActionMenu(Self, Items, PointF(ClientWidth, FTopBar.Height));
+end;
+
+procedure TLogViewerForm.MenuToggle(Sender: TObject);
+begin
+  TCheckBox(Sender).IsChecked := not TCheckBox(Sender).IsChecked;
+end;
+
+procedure TLogViewerForm.MenuViews(Sender: TObject);
+var
+  Items: TArray<TActionItem>;
+  It: TActionItem;
+  I: Integer;
+begin
+  Items := nil;
+  for I := 0 to cbView.Count - 1 do
+  begin
+    It.Text := cbView.Items[I];
+    It.Enabled := True;
+    It.Checked := I = cbView.ItemIndex;
+    It.OnClick := MenuPick;
+    It.Sender := cbView.ListItems[I];
+    Items := Items + [It];
+  end;
+  ShowActionMenu(Self, Items, PointF(ClientWidth, FTopBar.Height));
+end;
+
+procedure TLogViewerForm.MenuModes(Sender: TObject);
+var
+  Items: TArray<TActionItem>;
+  It: TActionItem;
+  I: Integer;
+begin
+  Items := nil;
+  for I := 0 to cbMode.Count - 1 do
+  begin
+    It.Text := cbMode.Items[I];
+    It.Enabled := True;
+    It.Checked := I = cbMode.ItemIndex;
+    It.OnClick := MenuPick;
+    It.Sender := cbMode.ListItems[I];
+    Items := Items + [It];
+  end;
+  ShowActionMenu(Self, Items, PointF(ClientWidth, FTopBar.Height));
+end;
+
+{ A view or chart mode picked in a menu: Sender is the combo box item. }
+procedure TLogViewerForm.MenuPick(Sender: TObject);
+var
+  I: Integer;
+begin
+  for I := 0 to cbView.Count - 1 do
+    if cbView.ListItems[I] = Sender then
+      cbView.ItemIndex := I;
+  for I := 0 to cbMode.Count - 1 do
+    if cbMode.ListItems[I] = Sender then
+      cbMode.ItemIndex := I;
+end;
+
+{ Narrow: the channel settings stacked, captions above the fields. }
+procedure TLogViewerForm.LayoutChannelBox;
+var
+  W, Y, Half: Single;
+
+  procedure Put(C: TControl; H: Single; X: Single = 12; CW: Single = -1);
+  begin
+    if CW < 0 then
+      CW := W;
+    C.SetBounds(X, Y, CW, H);
+  end;
+
+begin
+  W := FChannelBox.Width - 2 * 12 - 2 * 12;
+  if W < 100 then
+    W := ClientWidth - 48;
+  gbChannel.Width := W + 24;
+  gbChannel.Text := '';
+  Half := (W - 12) / 2;
+  Y := 12;
+  lblColor.WordWrap := False;
+  Put(lblColor, 24);
+  Y := Y + 26;
+  Put(cbxColor, 40);
+  Y := Y + 50;
+  lblWidth.WordWrap := False;
+  Put(lblWidth, 24);
+  Y := Y + 26;
+  Put(cbWidth, 40, 12, Half);
+  Y := Y + 50;
+  chkAuto.TextSettings.WordWrap := True;
+  Put(chkAuto, Max(40, WrappedTextHeight(chkAuto, W - 40) + 10));
+  Y := Y + chkAuto.Height + 6;
+  lblMin.WordWrap := False;
+  lblMax.WordWrap := False;
+  Put(lblMin, 24, 12, Half);
+  Put(lblMax, 24, 24 + Half, Half);
+  Y := Y + 26;
+  Put(edtMin, 40, 12, Half);
+  Put(edtMax, 40, 24 + Half, Half);
+  Y := Y + 52;
+  chkLevelColors.TextSettings.WordWrap := True;
+  Put(chkLevelColors, Max(40, WrappedTextHeight(chkLevelColors, W - 40) + 10));
+  Y := Y + chkLevelColors.Height + 6;
+  lblLevelSource.WordWrap := True;
+  Put(lblLevelSource, Max(24, WrappedTextHeight(lblLevelSource, W) + 4));
+  Y := Y + lblLevelSource.Height + 8;
+  FitTextWidth(btnLevels, 160);
+  Put(btnLevels, 44, 12, Min(btnLevels.Width, W));
+  Y := Y + 44 + 16;
+  gbChannel.Height := Y;
+end;
+
+{ Narrow: the status lines one under the other, wrapped. }
+procedure TLogViewerForm.LayoutStatus;
+var
+  L: TLabel;
+  H, W: Single;
+begin
+  if not FNarrow then
+    Exit;
+  W := ClientWidth - 16;
+  H := 0;
+  for L in [lblStatus0, lblStatus1, lblStatus2] do
+  begin
+    // with a log open its name is in the top bar and the log box already
+    L.Visible := (L.Text <> '') and ((L <> lblStatus0) or (FData.Count = 0));
+    if not L.Visible then
+      Continue;
+    L.Align := TAlignLayout.Top;
+    L.WordWrap := True;
+    L.Margins.Rect := TRectF.Create(8, 2, 8, 0);
+    L.Height := WrappedTextHeight(L, W) + 2;
+    L.Position.Y := H + 1;
+    H := H + L.Height + 2;
+  end;
+  sbLog.Height := H + 8;
+end;
+
+procedure ShowControls(const Ctls: array of TControl; Visible: Boolean);
+var
+  C: TControl;
+begin
+  for C in Ctls do
+    C.Visible := Visible;
+end;
+
+procedure TLogViewerForm.LayoutNarrow;
+var
+  W, X: Single;
+  S: string;
+begin
+  W := ClientWidth;
+  FTopBar.Visible := True;
+  FTopBar.Position.Y := -100; // above the log row
+  FMenuButton.Visible := True;
+  // The log row: the recent logs and the demo.
+  ShowControls([btnOpen, lblView, cbView, btnSaveView, btnDeleteView, lblMode, cbMode, btnImage], False);
+  pnlBar.Height := 52;
+  btnDemo.Text := 'Demo';
+  FitTextWidth(btnDemo, 80);
+  btnDemo.SetBounds(W - 12 - btnDemo.Width, 8, btnDemo.Width, 36);
+  cbRecent.SetBounds(12, 8, Max(80, W - 36 - btnDemo.Width), 36);
+  // Playback: the buttons, then the position and time.
+  ShowControls([chkFollow, chkBands, chkUseDisplay], False);
+  pnlPlay.Height := 96;
+  btnStart.SetBounds(12, 6, 48, 38);
+  btnPlay.SetBounds(68, 6, 84, 38);
+  btnEnd.SetBounds(160, 6, 48, 38);
+  cbSpeed.SetBounds(216, 6, 84, 38);
+  if btnSelect.Visible then
+  begin
+    FitTextWidth(btnSelect, 90);
+    X := Max(308, W - 12 - btnSelect.Width);
+    btnSelect.SetBounds(X, 6, Min(btnSelect.Width, W - 12 - X), 38);
+  end;
+  lblTime.WordWrap := False;
+  lblTime.TextSettings.HorzAlign := TTextAlign.Trailing;
+  S := lblTime.Text; // as wide as the longest time it will show
+  lblTime.Text := '00:00.0 / 00:00.0';
+  FitTextWidth(lblTime, 100);
+  lblTime.Text := S;
+  lblTime.SetBounds(W - 12 - lblTime.Width, 52, lblTime.Width, 38);
+  tbPos.SetBounds(12, 52, Max(60, W - 32 - lblTime.Width), 38);
+  // The chart, then Channels | Data.
+  splLeft.Visible := False;
+  splChart.Visible := False;
+  gbChannel.Parent := FChannelBox;
+  gbChannel.Align := TAlignLayout.Top;
+  gbChannel.Margins.Rect := TRectF.Create(12, 12, 12, 12);
+  pnlLeft.Parent := pnlMain;
+  pnlLeft.Align := TAlignLayout.Client;
+  pnlLeft.Padding.Rect := TRectF.Create(6, 0, 0, 4);
+  layChart.Align := TAlignLayout.Top;
+  layChart.Position.Y := 0;
+  layChart.Height := Max(150, Round((pnlMain.Height - 60) * 0.45));
+  FTabs.Visible := True;
+  FTabs.Position.Y := layChart.Height + 1;
+  PaintTabs;
+  pnlLeft.Visible := not FDataTab;
+  layGrid.Visible := FDataTab;
+  FChannelButton.Visible := True;
+  UpdateChannelButton;
+  if FChannelPage.Visible then
+    LayoutChannelBox;
+  LayoutStatus;
+end;
+
+procedure TLogViewerForm.LayoutWide;
+begin
+  FTopBar.Visible := IsMobile; // a phone or tablet window has no caption to close it by
+  FMenuButton.Visible := False;
+  FChannelPage.Visible := False;
+  FTabs.Visible := False;
+  FChannelButton.Visible := False;
+  RestoreBounds;
+  btnOpen.Visible := not IsMobile;
+  ShowControls([lblView, cbView, btnSaveView, btnDeleteView, lblMode, cbMode, btnImage, chkFollow, chkBands,
+    chkUseDisplay], True);
+  btnDemo.Text := 'Demo drive (made up)';
+  lblTime.TextSettings.HorzAlign := TTextAlign.Leading;
+  chkAuto.TextSettings.WordWrap := False;
+  chkLevelColors.TextSettings.WordWrap := False;
+  lblLevelSource.WordWrap := False;
+  gbChannel.Parent := pnlLeft;
+  gbChannel.Align := TAlignLayout.Bottom;
+  gbChannel.Margins.Rect := TRectF.Create(0, 6, 0, 0);
+  ShowChannel;
+  pnlLeft.Visible := True;
+  pnlLeft.Parent := Self;
+  pnlLeft.Align := TAlignLayout.Left;
+  pnlLeft.Padding.Rect := TRectF.Create(6, 0, 0, 4);
+  pnlLeft.Width := 340;
+  pnlLeft.Position.X := 0;
+  splLeft.Visible := True;
+  splLeft.Position.X := pnlLeft.Width + 1;
+  layChart.Align := TAlignLayout.Top;
+  layGrid.Visible := True;
+  splChart.Visible := True;
+  splChart.Position.Y := layChart.Height + 1;
+  for var L in [lblStatus0, lblStatus1, lblStatus2] do
+  begin
+    L.Visible := True;
+    L.WordWrap := False;
+    L.Margins.Rect := TRectF.Create(8, 0, 0, 0);
+  end;
+  lblStatus0.Align := TAlignLayout.Left;
+  lblStatus0.Width := 520;
+  lblStatus1.Align := TAlignLayout.Left;
+  lblStatus1.Width := 380;
+  lblStatus1.Position.X := 530;
+  lblStatus2.Align := TAlignLayout.Client;
+  sbLog.Height := 23;
+  LayoutChannelWide; // now that the list has its width again
+end;
+
+{ Wide: the bar and playback rows left to right, each control as wide as its
+  text in the active style, wrapping to another line when the window is too
+  narrow. A label stays on the line of the field after it. }
+procedure TLogViewerForm.FlowWideBars;
+
+  function Ctls(const A: array of TControl): TArray<TControl>;
+  var
+    I: Integer;
+  begin
+    SetLength(Result, Length(A));
+    for I := 0 to High(A) do
+      Result[I] := A[I];
+  end;
+
+  function Flow(const Groups: array of TArray<TControl>; W: Single): Single;
+  const
+    Gap = 6;
+    GroupGap = 14;
+    RowH = 30;
+  var
+    G: TArray<TControl>;
+    C: TControl;
+    X, Y, GW: Single;
+  begin
+    X := 8;
+    Y := 5;
+    for G in Groups do
+    begin
+      GW := 0;
+      for C in G do
+        if C.Visible then
+        begin
+          if (C is TLabel) or (C is TCheckBox) or (C is TCustomButton) then
+          begin
+            if C is TLabel then
+              TLabel(C).WordWrap := False;
+            FitTextWidth(C, IfThen(C is TCustomButton, 36, 0));
+          end;
+          GW := GW + C.Width + Gap;
+        end;
+      if GW = 0 then
+        Continue;
+      if (X > 8) and (X + GW > W - 8) then
+      begin
+        X := 8;
+        Y := Y + RowH + 6;
+      end;
+      for C in G do
+        if C.Visible then
+        begin
+          if C is TTrackBar then
+            C.SetBounds(X, Y + (RowH - 20) / 2, C.Width, 20)
+          else
+            C.SetBounds(X, Y, C.Width, RowH);
+          X := X + C.Width + Gap;
+        end;
+      X := X + GroupGap - Gap;
+    end;
+    Result := Y + RowH + 5;
+  end;
+
+var
+  S: string;
+begin
+  S := lblTime.Text; // as wide as the longest time it will show
+  lblTime.Text := '00:00.0 / 00:00.0';
+  FitTextWidth(lblTime);
+  lblTime.Text := S;
+  tbPos.Width := 300;
+  cbMode.Width := 210;
+  pnlBar.Height := Flow([Ctls([btnOpen, cbRecent, btnDemo]), Ctls([lblView, cbView, btnSaveView, btnDeleteView]),
+    Ctls([lblMode, cbMode, btnImage])], ClientWidth);
+  pnlPlay.Height := Flow([Ctls([btnStart, btnPlay, btnEnd, cbSpeed]), Ctls([tbPos, lblTime]), Ctls([chkFollow, chkBands]),
+    Ctls([chkUseDisplay]), Ctls([btnSelect])], ClientWidth);
+end;
+
+{ Wide: the channel box under the list, captions as wide as their text. }
+procedure TLogViewerForm.LayoutChannelWide;
+const
+  RowH = 30;
+var
+  W, Y, X, FW: Single;
+begin
+  W := pnlLeft.Width - pnlLeft.Padding.Left - pnlLeft.Padding.Right - 24;
+  for var L in [lblColor, lblWidth, lblMin, lblMax] do
+  begin
+    L.WordWrap := False;
+    FitTextWidth(L);
+  end;
+  Y := 30;
+  // Colour [.....] Width [..]
+  cbWidth.Width := 76;
+  lblColor.SetBounds(12, Y, lblColor.Width, RowH);
+  X := 12 + lblColor.Width + 4;
+  FW := Max(90, W - lblColor.Width - 4 - 12 - lblWidth.Width - 4 - cbWidth.Width);
+  cbxColor.SetBounds(X, Y, FW, RowH);
+  X := X + FW + 12;
+  lblWidth.SetBounds(X, Y, lblWidth.Width, RowH);
+  cbWidth.SetBounds(X + lblWidth.Width + 4, Y, cbWidth.Width, RowH);
+  Y := Y + RowH + 6;
+  FitTextWidth(chkAuto);
+  chkAuto.SetBounds(12, Y, Min(chkAuto.Width, W), 24);
+  Y := Y + 30;
+  // Min [....] Max [....]
+  FW := Max(60, (W - lblMin.Width - lblMax.Width - 4 * 2 - 12) / 2);
+  lblMin.SetBounds(12, Y, lblMin.Width, RowH);
+  edtMin.SetBounds(12 + lblMin.Width + 4, Y, FW, RowH);
+  X := 12 + lblMin.Width + 4 + FW + 12;
+  lblMax.SetBounds(X, Y, lblMax.Width, RowH);
+  edtMax.SetBounds(X + lblMax.Width + 4, Y, FW, RowH);
+  Y := Y + RowH + 6;
+  FitTextWidth(chkLevelColors);
+  chkLevelColors.SetBounds(12, Y, Min(chkLevelColors.Width, W), 24);
+  Y := Y + 30;
+  FitTextWidth(btnLevels, 120);
+  btnLevels.SetBounds(12, Y, btnLevels.Width, RowH);
+  Y := Y + RowH + 4;
+  lblLevelSource.SetBounds(12, Y, W, 22);
+  Y := Y + 22 + 10;
+  gbChannel.Height := Y;
 end;
 
 procedure TLogViewerForm.FormDestroy(Sender: TObject);
@@ -283,9 +968,29 @@ begin
 end;
 
 procedure TLogViewerForm.FormResize(Sender: TObject);
+var
+  Narrow: Boolean;
 begin
-  if (layChart <> nil) and (layChart.Height > pnlMain.Height - 80) then
-    layChart.Height := Max(120, pnlMain.Height - 120);
+  if FTopBar = nil then
+    Exit;
+  Narrow := ClientWidth < NarrowWidth;
+  if Narrow then
+  begin
+    FNarrow := True;
+    LayoutNarrow;
+  end
+  else
+  begin
+    if FNarrow or not FLaidOut then
+    begin
+      FNarrow := False;
+      LayoutWide;
+    end;
+    FlowWideBars;
+    if layChart.Height > pnlMain.Height - 80 then
+      layChart.Height := Max(120, pnlMain.Height - 120);
+  end;
+  FLaidOut := True;
 end;
 
 { The colour box: the chart palette first, then the usual named colours. }
@@ -404,7 +1109,7 @@ end;
 procedure TLogViewerForm.cbRecentChange(Sender: TObject);
 begin
   if not FLoading and (cbRecent.ItemIndex >= 0) then
-    OpenFile(TPath.Combine(FLogFolder, ComboText(cbRecent)));
+    OpenFile(System.IOUtils.TPath.Combine(FLogFolder, ComboText(cbRecent)));
 end;
 
 { A log file dropped on the chart or the grid opens it. }
@@ -436,7 +1141,7 @@ begin
     // No save dialog on a phone: the picture goes next to the logs.
     try
       ForceDirectories(FLogFolder);
-      F := TPath.Combine(FLogFolder, Name);
+      F := System.IOUtils.TPath.Combine(FLogFolder, Name);
       FChart.SaveImage(F);
       ShowInfo('Chart saved as ' + F);
     except
@@ -677,6 +1382,8 @@ begin
     Caption := 'Log viewer - ' + FData.Title
   else
     Caption := 'Log viewer';
+  if FTitle <> nil then
+    FTitle.Text := IfThen(FData.Title <> '', FData.Title, 'Log viewer');
   FLoading := True;
   cbRecent.ItemIndex := cbRecent.Items.IndexOf(ExtractFileName(FData.FileName));
   FLoading := False;
@@ -696,9 +1403,13 @@ begin
       lblStatus0.Text := 'No log open - press Open log, pick a recent one, or try the demo';
     lblStatus1.Text := '';
     lblStatus2.Text := '';
+    LayoutStatus;
     Exit;
   end;
-  lblStatus0.Text := IfThen(FData.FileName <> '', FData.FileName, FData.Title);
+  if IsMobile then
+    lblStatus0.Text := IfThen(FData.FileName <> '', ExtractFileName(FData.FileName), FData.Title)
+  else
+    lblStatus0.Text := IfThen(FData.FileName <> '', FData.FileName, FData.Title);
   Rate := 0;
   if FData.Duration > 0 then
     Rate := (FData.Count - 1) / FData.Duration;
@@ -710,6 +1421,7 @@ begin
     lblStatus2.Text := 'Long-press (or Select range) and drag in the chart to select a range'
   else
     lblStatus2.Text := 'Shift+drag in the chart to select a range';
+  LayoutStatus;
 end;
 
 { Levels: a channel's own levels, else (if wanted) the ones Display & alerts
@@ -1023,6 +1735,7 @@ begin
   if Ch < 0 then
   begin
     gbChannel.Text := 'Channel';
+    UpdateChannelButton;
     Exit;
   end;
   S := FStyles[Ch];
@@ -1053,6 +1766,9 @@ begin
   finally
     FLoading := False;
   end;
+  UpdateChannelButton;
+  if FNarrow then
+    gbChannel.Text := ''; // the page's title says which channel
 end;
 
 procedure TLogViewerForm.ChannelSettingChange(Sender: TObject);

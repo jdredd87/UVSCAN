@@ -61,6 +61,10 @@ type
     FGridLines: Boolean;
     FCellPadding: Single;
     FScrollBar: TScrollBar;
+    FHScrollBar: TScrollBar;      // when the columns are wider than the grid
+    FScrollX: Single;             // how far the columns are scrolled left
+    FDragHorz: Boolean;
+    FDragX: Single;
     FLayout: TTextLayout;
     FUpdatingScroll: Boolean;
     // colours
@@ -101,6 +105,10 @@ type
     function GetColumn(Index: Integer): TGridColumn;
     function GetColumnCount: Integer;
     procedure ScrollChange(Sender: TObject);
+    procedure HScrollChange(Sender: TObject);
+    procedure SetScrollX(Value: Single);
+    function DataWidth: Single;
+    function TotalWidth: Single;
     procedure LoadPalette;
     procedure ThemeChanged(const Sender: TObject; const M: TMessage);
     procedure UpdateScrollBar;
@@ -249,6 +257,15 @@ begin
   FScrollBar.SmallChange := 1;
   FScrollBar.Visible := False;
   FScrollBar.OnChange := ScrollChange;
+  FHScrollBar := TScrollBar.Create(Self);
+  FHScrollBar.Parent := Self;
+  FHScrollBar.Stored := False;
+  FHScrollBar.Orientation := TOrientation.Horizontal;
+  FHScrollBar.Align := TAlignLayout.Bottom;
+  FHScrollBar.Height := 14;
+  FHScrollBar.SmallChange := 20;
+  FHScrollBar.Visible := False;
+  FHScrollBar.OnChange := HScrollChange;
   Width := 300;
   Height := 200;
 end;
@@ -299,12 +316,14 @@ begin
   C.Visible := True;
   FColumns := FColumns + [C];
   Result := High(FColumns);
+  UpdateScrollBar;
   Repaint;
 end;
 
 procedure TDataGrid.ClearColumns;
 begin
   FColumns := nil;
+  UpdateScrollBar;
   Repaint;
 end;
 
@@ -320,6 +339,7 @@ end;
 procedure TDataGrid.SetColumnWidth(Index: Integer; Width: Single);
 begin
   FColumns[Index].Width := Width;
+  UpdateScrollBar;
   Repaint;
 end;
 
@@ -328,6 +348,7 @@ begin
   if FColumns[Index].Visible <> Visible then
   begin
     FColumns[Index].Visible := Visible;
+    UpdateScrollBar;
     Repaint;
   end;
 end;
@@ -457,6 +478,47 @@ end;
 function TDataGrid.DataBottom: Single;
 begin
   Result := Height;
+  if (FHScrollBar <> nil) and FHScrollBar.Visible then
+    Result := Result - FHScrollBar.Height;
+end;
+
+{ Width of the cell area (without the vertical scroll bar). }
+function TDataGrid.DataWidth: Single;
+begin
+  Result := Width;
+  if (FScrollBar <> nil) and FScrollBar.Visible then
+    Result := Result - FScrollBar.Width;
+end;
+
+function TDataGrid.TotalWidth: Single;
+var
+  W: Single;
+begin
+  Result := 0;
+  for W in ColumnWidths do
+    Result := Result + W;
+end;
+
+procedure TDataGrid.SetScrollX(Value: Single);
+begin
+  Value := EnsureRange(Value, 0, Max(0, TotalWidth - DataWidth));
+  if Abs(Value - FScrollX) < 0.5 then
+    Exit;
+  FScrollX := Value;
+  FUpdatingScroll := True;
+  try
+    if FHScrollBar.Visible then
+      FHScrollBar.Value := FScrollX;
+  finally
+    FUpdatingScroll := False;
+  end;
+  Repaint;
+end;
+
+procedure TDataGrid.HScrollChange(Sender: TObject);
+begin
+  if not FUpdatingScroll then
+    SetScrollX(FHScrollBar.Value);
 end;
 
 function TDataGrid.VisibleRows: Integer;
@@ -493,11 +555,41 @@ begin
 end;
 
 procedure TDataGrid.UpdateScrollBar;
+
+  procedure UpdateHorz;
+  var
+    Total, Avail: Single;
+  begin
+    Total := TotalWidth;
+    Avail := DataWidth;
+    FHScrollBar.Visible := Total > Avail + 0.5;
+    if FHScrollBar.Visible then
+    begin
+      FScrollX := EnsureRange(FScrollX, 0, Total - Avail);
+      if FScrollBar.Visible then
+        FHScrollBar.Margins.Right := FScrollBar.Width
+      else
+        FHScrollBar.Margins.Right := 0;
+      FHScrollBar.Min := 0;
+      FHScrollBar.Max := Total;
+      FHScrollBar.ViewportSize := Avail;
+      FHScrollBar.Value := FScrollX;
+    end
+    else
+      FScrollX := 0;
+  end;
+
 var
   Last: Integer;
 begin
-  if FScrollBar = nil then
+  if (FScrollBar = nil) or (FHScrollBar = nil) then
     Exit;
+  FUpdatingScroll := True;
+  try
+    UpdateHorz; // first: it takes room from the rows
+  finally
+    FUpdatingScroll := False;
+  end;
   Last := LastTopRow(Self);
   if FTopRow > Last then
     FTopRow := Last;
@@ -512,6 +604,7 @@ begin
       FScrollBar.ViewportSize := VisibleRows;
       FScrollBar.Value := FTopRow;
     end;
+    UpdateHorz; // again: the vertical bar may have taken width
   finally
     FUpdatingScroll := False;
   end;
@@ -703,7 +796,7 @@ var
   Left: Single;
 begin
   W := ColumnWidths;
-  Left := 0;
+  Left := -FScrollX;
   for Result := 0 to High(W) do
   begin
     if (W[Result] > 0) and (X >= Left) and (X < Left + W[Result]) then
@@ -750,7 +843,7 @@ begin
   if not FShowHeader or (Y > FHeaderHeight) then
     Exit;
   W := ColumnWidths;
-  Edge := 0;
+  Edge := -FScrollX;
   for I := 0 to High(W) do
   begin
     Edge := Edge + W[I];
@@ -838,16 +931,16 @@ var
   State: TCanvasSaveState;
 begin
   W := ColumnWidths;
-  Avail := Width;
-  if FScrollBar.Visible then
-    Avail := Avail - FScrollBar.Width;
+  Avail := DataWidth;
+  Canvas.Fill.Kind := TBrushKind.Solid;
+  Canvas.Stroke.Kind := TBrushKind.Solid;
+  Canvas.Fill.Color := FBackColor;
+  Canvas.FillRect(LocalRect, 0, 0, [], 1);
   State := Canvas.SaveState;
   try
-    Canvas.IntersectClipRect(LocalRect);
-    Canvas.Fill.Kind := TBrushKind.Solid;
-    Canvas.Stroke.Kind := TBrushKind.Solid;
-    Canvas.Fill.Color := FBackColor;
-    Canvas.FillRect(LocalRect, 0, 0, [], 1);
+    // Cells stay off the scroll bars. One clip only: a second one is not
+    // undone by RestoreState and would hide every control painted after this.
+    Canvas.IntersectClipRect(TRectF.Create(0, 0, Avail, DataBottom));
 
     // rows
     Y := DataTop;
@@ -876,7 +969,7 @@ begin
           RowBack := FBackColor;
         Canvas.Fill.Color := RowBack;
         Canvas.FillRect(R, 0, 0, [], 1);
-        X := 0;
+        X := -FScrollX;
         for Col := 0 to High(FColumns) do
         begin
           if W[Col] <= 0 then
@@ -941,7 +1034,7 @@ begin
       R := TRectF.Create(0, 0, Width, FHeaderHeight);
       Canvas.Fill.Color := FHeaderColor;
       Canvas.FillRect(R, 0, 0, [], 1);
-      X := 0;
+      X := -FScrollX;
       for Col := 0 to High(FColumns) do
       begin
         if W[Col] <= 0 then
@@ -959,14 +1052,14 @@ begin
       Canvas.DrawLine(TPointF.Create(0, FHeaderHeight - 0.5), TPointF.Create(Width, FHeaderHeight - 0.5), 1);
     end;
 
-    if IsFocused then
-    begin
-      Canvas.Stroke.Color := $664D90FE;
-      Canvas.Stroke.Thickness := 1;
-      Canvas.DrawRect(TRectF.Create(0.5, 0.5, Width - 0.5, Height - 0.5), 0, 0, [], 1);
-    end;
   finally
     Canvas.RestoreState(State);
+  end;
+  if IsFocused then
+  begin
+    Canvas.Stroke.Color := $664D90FE;
+    Canvas.Stroke.Thickness := 1;
+    Canvas.DrawRect(TRectF.Create(0.5, 0.5, Width - 0.5, Height - 0.5), 0, 0, [], 1);
   end;
 end;
 
@@ -1013,7 +1106,7 @@ begin
     if (Row >= 0) and not IsGroupRow(Row) then
     begin
       R := RowRect(Row);
-      R := CheckRect(TRectF.Create(0, R.Top, ColumnWidths[0], R.Bottom));
+      R := CheckRect(TRectF.Create(-FScrollX, R.Top, ColumnWidths[0] - FScrollX, R.Bottom));
       R.Inflate(4, 4);
       if R.Contains(TPointF.Create(X, Y)) then
       begin
@@ -1037,7 +1130,19 @@ begin
   if FDown and (FResizeCol >= 0) then
   begin
     FColumns[FResizeCol].Width := Max(MinColumnWidth, FResizeStartW + X - FResizeStartX);
+    UpdateScrollBar;
     Repaint;
+    Exit;
+  end;
+  if FDown and not FDragScroll and not FDragHorz and FHScrollBar.Visible and
+    (Abs(X - FDownPos.X) > DragThreshold) and (Abs(X - FDownPos.X) > Abs(Y - FDownPos.Y)) then
+  begin
+    FDragHorz := True;
+    FDragX := FScrollX;
+  end;
+  if FDragHorz then
+  begin
+    SetScrollX(FDragX + FDownPos.X - X);
     Exit;
   end;
   if FDown and not FDragScroll and (Abs(Y - FDownPos.Y) > DragThreshold) and (FRowCount > VisibleRows) then
@@ -1060,7 +1165,7 @@ var
   Row: Integer;
 begin
   inherited;
-  if FDown and (FResizeCol < 0) and not FDragScroll and (Button = TMouseButton.mbLeft) then
+  if FDown and (FResizeCol < 0) and not FDragScroll and not FDragHorz and (Button = TMouseButton.mbLeft) then
   begin
     Row := RowAt(Y);
     if (Row >= 0) and not IsGroupRow(Row) then
@@ -1068,6 +1173,7 @@ begin
   end;
   FDown := False;
   FDragScroll := False;
+  FDragHorz := False;
   FResizeCol := -1;
 end;
 
@@ -1086,7 +1192,10 @@ begin
   inherited;
   if Handled then
     Exit;
-  SetTopRow(Min(FTopRow - Sign(WheelDelta) * 3, LastTopRow(Self)));
+  if (ssShift in Shift) and FHScrollBar.Visible then
+    SetScrollX(FScrollX - Sign(WheelDelta) * 60)
+  else
+    SetTopRow(Min(FTopRow - Sign(WheelDelta) * 3, LastTopRow(Self)));
   Handled := True;
 end;
 
