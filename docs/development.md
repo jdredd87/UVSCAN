@@ -26,7 +26,7 @@ builds `Android64\Debug\UVScan\bin\UVScan.apk` and, with `install`, puts it on t
 
 On Android the data folder is the app's private documents folder, and logs go to `Android/data/com.jdredd87.uvscan/files/Logs` (reachable over USB). The serial port is USB host (`UVScan.Serial.Android`): FTDI (the AVT‑841's own USB port, if it is FTDI), CP210x, CH340/CH341, CDC‑ACM and the Keyspan USA‑19HS (the bench's COM9 adapter; its firmware is in ROM, and the other Keyspan models, which need firmware loaded, are not supported). Android asks for permission the first time; connect again after allowing it.
 
-For development, connect the IDE to the phone over Wi‑Fi (Developer options > Wireless debugging, `adb pair` once, then `adb connect <ip:port>`) so the phone's USB port is free for the adapter.
+For development, connect the IDE to the phone over Wi‑Fi (Developer options > Wireless debugging, `adb pair` once, then `adb connect <ip:port>`) so the phone's USB port is free for the adapter. `tools\phone-mirror.cmd` shows the phone's screen in a window on the PC that the mouse and keyboard work (scrcpy, `winget install --id Genymobile.scrcpy`); it makes scrcpy use Delphi's adb so the two do not restart each other's adb server.
 
 ### Writing UI code
 
