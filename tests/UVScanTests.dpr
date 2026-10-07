@@ -22,7 +22,13 @@ uses
   UVScan.Engine in '..\src\UVScan.Engine.pas',
   UVScan.Tests.Core in 'UVScan.Tests.Core.pas',
   UVScan.Tests.Engine in 'UVScan.Tests.Engine.pas',
-  UVScan.Tests.Json in 'UVScan.Tests.Json.pas';
+  UVScan.Tests.Json in 'UVScan.Tests.Json.pas',
+  UVScan.Defaults in '..\src\UVScan.Defaults.pas',
+  UVScan.PidLists in '..\src\UVScan.PidLists.pas',
+  UVScan.LegacyImport in '..\src\UVScan.LegacyImport.pas',
+  UVScan.Tests.Data in 'UVScan.Tests.Data.pas';
+
+{$R '..\UVScan.Defaults.res' '..\UVScan.Defaults.rc'}
 
 var
   Runner: ITestRunner;

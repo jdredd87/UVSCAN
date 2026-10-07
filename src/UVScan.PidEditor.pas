@@ -20,6 +20,8 @@ type
     btnAdd: TButton;
     btnDuplicate: TButton;
     btnDelete: TButton;
+    btnImport: TButton;
+    btnDefaults: TButton;
     splMain: TSplitter;
     pnlDetail: TPanel;
     lblId: TLabel;
@@ -73,6 +75,8 @@ type
     procedure edtTestInputChange(Sender: TObject);
     procedure lblProblemsClick(Sender: TObject);
     procedure btnSaveClick(Sender: TObject);
+    procedure btnImportClick(Sender: TObject);
+    procedure btnDefaultsClick(Sender: TObject);
   private
     FWork: TPidCatalog;
     FFileName: string;
@@ -81,6 +85,8 @@ type
     FModified: Boolean;
     FSaved: Boolean;
     FProblems: TArray<string>;
+    procedure AfterBulkChange;
+    procedure AddChoice(Task: TTaskDialog; const Caption, Hint: string; Result: Integer);
     procedure FillList;
     function ItemFor(P: TPidDef): TListItem;
     procedure UpdateItem(Item: TListItem; P: TPidDef);
@@ -102,7 +108,7 @@ implementation
 {$R *.dfm}
 
 uses
-  UVScan.Formula;
+  UVScan.Formula, UVScan.LegacyImport, UVScan.Defaults;
 
 const
   KindCaptions: array[TPidKind] of string = ('Vehicle PID', 'Calculated', 'Analog input');
@@ -614,6 +620,135 @@ begin
   else
     ShowCurrent;
   UpdateProblems;
+end;
+
+{ Import / defaults }
+
+procedure TPidEditorForm.AfterBulkChange;
+begin
+  FModified := True;
+  FCurrent := nil;
+  edtFilter.Text := '';
+  FillList;
+  if FWork.Count > 0 then
+    Select(FWork[0])
+  else
+    ShowCurrent;
+  UpdateProblems;
+end;
+
+procedure TPidEditorForm.AddChoice(Task: TTaskDialog; const Caption, Hint: string; Result: Integer);
+var
+  B: TTaskDialogButtonItem;
+begin
+  B := Task.Buttons.Add as TTaskDialogButtonItem;
+  B.Caption := Caption;
+  B.CommandLinkHint := Hint;
+  B.ModalResult := Result;
+end;
+
+procedure TPidEditorForm.btnImportClick(Sender: TObject);
+var
+  Dlg: TOpenDialog;
+  Imported: TPidCatalog;
+  Task: TTaskDialog;
+  NewCount, I: Integer;
+  Mode: TMergeMode;
+  R: TMergeResult;
+  Msg: string;
+begin
+  Dlg := TOpenDialog.Create(Self);
+  Imported := TPidCatalog.Create;
+  Task := TTaskDialog.Create(Self);
+  try
+    Dlg.Title := 'Import old UVSCAN PID file';
+    Dlg.Filter := 'UVSCAN PID file (*.csv)|*.csv|All files (*.*)|*.*';
+    Dlg.Options := Dlg.Options + [ofFileMustExist];
+    if not Dlg.Execute then
+      Exit;
+    try
+      ImportLegacyPidsCsv(Dlg.FileName, Imported);
+    except
+      on E: Exception do
+      begin
+        MessageDlg('Could not read ' + Dlg.FileName + ':' + sLineBreak + E.Message, mtError, [mbOK], 0);
+        Exit;
+      end;
+    end;
+    if Imported.Count = 0 then
+    begin
+      MessageDlg('No PIDs found in ' + Dlg.FileName + '.' + sLineBreak + sLineBreak +
+        string.Join(sLineBreak, Imported.Warnings.ToStringArray), mtWarning, [mbOK], 0);
+      Exit;
+    end;
+
+    NewCount := 0;
+    for I := 0 to Imported.Count - 1 do
+      if FWork.FindById(Imported[I].Id) = nil then
+        Inc(NewCount);
+
+    Task.Caption := 'Import PIDs';
+    Task.Title := Format('%d PIDs read from %s', [Imported.Count, ExtractFileName(Dlg.FileName)]);
+    Task.Text := Format('%d have IDs that are not in the current list, %d have IDs that are.',
+      [NewCount, Imported.Count - NewCount]);
+    if Imported.Warnings.Count > 0 then
+      Task.Text := Task.Text + sLineBreak + Format('%d row(s) had problems; they are listed after the import.',
+        [Imported.Warnings.Count]);
+    Task.Text := Task.Text + sLineBreak + sLineBreak + 'Nothing is written until you press Save.';
+    Task.CommonButtons := [tcbCancel];
+    Task.Flags := [tfUseCommandLinks, tfAllowDialogCancellation];
+    AddChoice(Task, 'Merge: add new PIDs only',
+      'Keep every current PID as it is; add PIDs whose ID is new.', 101);
+    AddChoice(Task, 'Merge: add new and update existing',
+      'Add new PIDs; PIDs with the same ID are overwritten by the imported ones.', 102);
+    AddChoice(Task, 'Replace all',
+      'Throw away the current list and use only the imported PIDs.', 100);
+    if not Task.Execute then
+      Exit;
+    case Task.ModalResult of
+      100: Mode := mmReplace;
+      101: Mode := mmAddNew;
+      102: Mode := mmAddAndUpdate;
+    else
+      Exit;
+    end;
+
+    R := MergeCatalog(FWork, Imported, Mode);
+    AfterBulkChange;
+    case Mode of
+      mmReplace: Msg := Format('Replaced the list with %d imported PIDs.', [R.Added]);
+    else
+      Msg := Format('Added %d, updated %d, kept %d unchanged.', [R.Added, R.Updated, R.Skipped]);
+    end;
+    if Imported.Warnings.Count > 0 then
+      Msg := Msg + sLineBreak + sLineBreak + 'Rows with problems:' + sLineBreak +
+        string.Join(sLineBreak, Imported.Warnings.ToStringArray);
+    if Length(FProblems) > 0 then
+      Msg := Msg + sLineBreak + sLineBreak + Format('%d problem(s) must be fixed before saving (see the bottom left).',
+        [Length(FProblems)]);
+    MessageDlg(Msg, mtInformation, [mbOK], 0);
+  finally
+    Task.Free;
+    Imported.Free;
+    Dlg.Free;
+  end;
+end;
+
+procedure TPidEditorForm.btnDefaultsClick(Sender: TObject);
+begin
+  if MessageDlg('Replace all PID definitions with the factory defaults?' + sLineBreak + sLineBreak +
+    'Nothing is written until you press Save.', mtConfirmation, [mbYes, mbNo], 0) <> mrYes then
+    Exit;
+  try
+    FWork.LoadFromJsonText(DefaultPidsJson);
+  except
+    on E: Exception do
+    begin
+      MessageDlg('Could not load the built-in defaults: ' + E.Message, mtError, [mbOK], 0);
+      Exit;
+    end;
+  end;
+  AfterBulkChange;
 end;
 
 { Save }

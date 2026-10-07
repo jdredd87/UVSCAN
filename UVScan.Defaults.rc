@@ -1,0 +1,4 @@
+// Factory defaults compiled into UVScan.exe (see UVScan.Defaults.pas).
+DEFAULT_PIDS  RCDATA "data\\pids.json"
+DEFAULT_DTCS  RCDATA "data\\dtcs.json"
+DEFAULT_LISTS RCDATA "data\\lists.json"

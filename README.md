@@ -28,10 +28,11 @@ Everything the app reads or writes (apart from CSV logs) lives in **`C:\ProgramD
 | File | Purpose |
 |---|---|
 | `pids.json` | PID definitions (`TPidCatalog` / `TPidDef`) |
+| `lists.json` | Named scan lists (`TPidLists`): `{ "name": "Misfires", "pids": [1, 20, 21] }` |
 | `settings.json` | Port/baud, selected PIDs, stream speed, log folder, window layout (`TAppSettings`, written on exit) |
 | `dtcs.json` | Trouble code descriptions (`TDtcCatalog`): `{ "code": "P0300", "description": "…" }` |
 
-The repo's `data\` folder is the master copy the installer will ship into ProgramData; on a dev machine copy `data\pids.json` and `data\dtcs.json` there once. The only CSV files UVScan deals with are the logs it writes. CSV logs default to `Documents\UVScan Logs` (changeable on the Tools tab).
+The repo's `data\` folder holds the factory defaults (`pids.json`, `dtcs.json`, `lists.json`). They are compiled into `UVScan.exe` (`UVScan.Defaults.rc`), and any data file missing from ProgramData is created from them at startup, so a fresh install needs nothing but the exe. The only CSV files UVScan writes are scan logs; the only CSV it reads is an old UVSCAN `PIDS.csv`, when you import one. CSV logs default to `Documents\UVScan Logs` (changeable on the Tools tab).
 
 JSON files are UTF‑8, indented, carry a `"version"`, and are saved via a temp file + rename. Missing fields fall back to defaults; problems in `pids.json` are listed in the Messages tab instead of stopping the app; an unreadable `settings.json` is renamed to `settings.json.bad` and defaults are used.
 
@@ -48,6 +49,15 @@ JSON files are UTF‑8, indented, carry a `"version"`, and are saved via a temp 
 ### Editing PIDs
 
 **Edit PIDs…** (under the PID list; not while scanning) opens the editor: add, duplicate, delete and edit every field, with a live formula check, a "try the formula" box (data bytes in hex for vehicle/analog PIDs, `NAME=value` pairs for calculated ones) and a problem count. Save runs the same validation as loading and refuses to write `pids.json` while there are problems; Cancel discards everything.
+
+- **Import…** reads an old UVSCAN `PIDS.csv` and offers *Merge: add new PIDs only*, *Merge: add new and update existing* (matched by ID) or *Replace all*. Rows the old app ignored (`group` ≠ 1) come in disabled; the old `º` degree sign becomes `°`.
+- **Defaults…** puts the factory PID definitions (built into the exe) back.
+
+Both only change the editor's working copy; nothing is written until **Save**.
+
+### Scan lists
+
+The **Scan list** row above the PID list holds named selections, e.g. *Misfires* or *Transmission*. Pick one to tick its PIDs, **Save as…** to store the current ticks under a name (or update the selected list), **Delete** to remove a list (the PIDs themselves are untouched). Lists only store PID ids, so a formula fixed in the editor is fixed in every list. Defaults: *Basic engine*, *Misfires*, *Transmission*.
 The program itself can live anywhere (Program Files once there is an installer). Installer note: grant Users modify rights on `ProgramData\UVScan` — a folder created there by one user is read‑only for other users.
 
 Command line (same idea as legacy UVSCAN): `UVScan.exe -port COM9 -connect -scan -log`
@@ -63,6 +73,9 @@ Command line (same idea as legacy UVSCAN): `UVScan.exe -port COM9 -connect -scan
 | `src/UVScan.Formula.pas` | PID formula evaluator (replaces ArtFormula) |
 | `src/UVScan.Pids.pas` | `TPidCatalog`: pids.json load/save, validation, value formatting |
 | `src/UVScan.Dtc.pas` | `TDtcCatalog`: dtcs.json load/save |
+| `src/UVScan.PidLists.pas` | `TPidLists`: named scan lists (lists.json) |
+| `src/UVScan.LegacyImport.pas` | Old `PIDS.csv` import, catalog merge |
+| `src/UVScan.Defaults.pas` | Factory defaults built into the exe; creates missing data files |
 | `src/UVScan.Engine.pas` | Background thread that owns the port and runs everything |
 | `src/UVScan.Simulator.pas` | Simulated AVT + PCM |
 | `src/UVScan.MainForm.*` | Main window |
@@ -70,7 +83,7 @@ Command line (same idea as legacy UVSCAN): `UVScan.exe -port COM9 -connect -scan
 | `src/UVScan.Paths.pas` | Data folder (`C:\ProgramData\UVScan`) |
 | `src/UVScan.Settings.pas` | `TAppSettings` (settings.json) |
 | `src/UVScan.JsonFile.pas` | JSON read/write helpers (atomic save) |
-| `data/` | Master `pids.json` and `dtcs.json`, installed to ProgramData |
+| `data/` | Factory defaults (`pids.json`, `dtcs.json`, `lists.json`), compiled into the exe |
 | `tests/` | DUnitX tests, incl. end‑to‑end engine tests against the simulator |
 | `tools/UVScanProbe.dpr` | Console bench tool for real hardware |
 | `legacy/` | Original 2008 source for reference only (dead code stripped); not used by the new app |

@@ -1,7 +1,7 @@
 unit UVScan.Paths;
 
 { Where UVScan keeps its data: C:\ProgramData\UVScan (pids.json, dtcs.json,
-  settings.json). The program itself can live anywhere (e.g. Program Files);
+  lists.json, settings.json). The program itself can live anywhere (e.g. Program Files);
   the installer seeds this folder from the repo's data\ directory. }
 
 interface
@@ -10,6 +10,7 @@ function DataDir: string;
 function PidsFile: string;
 function DtcsFile: string;
 function SettingsFile: string;
+function ListsFile: string;
 
 implementation
 
@@ -39,6 +40,11 @@ end;
 function SettingsFile: string;
 begin
   Result := TPath.Combine(DataDir, 'settings.json');
+end;
+
+function ListsFile: string;
+begin
+  Result := TPath.Combine(DataDir, 'lists.json');
 end;
 
 end.

@@ -123,6 +123,30 @@ object PidEditorForm: TPidEditorForm
         TabOrder = 2
         OnClick = btnDeleteClick
       end
+      object btnImport: TButton
+        Left = 296
+        Top = 10
+        Width = 80
+        Height = 26
+        Hint = 'Import an old UVSCAN PIDS.csv (replace or merge)'
+        Caption = 'Import...'
+        ParentShowHint = False
+        ShowHint = True
+        TabOrder = 3
+        OnClick = btnImportClick
+      end
+      object btnDefaults: TButton
+        Left = 382
+        Top = 10
+        Width = 86
+        Height = 26
+        Hint = 'Put the factory default PID definitions back'
+        Caption = 'Defaults...'
+        ParentShowHint = False
+        ShowHint = True
+        TabOrder = 4
+        OnClick = btnDefaultsClick
+      end
     end
   end
   object pnlDetail: TPanel

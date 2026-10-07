@@ -15,10 +15,14 @@ uses
   UVScan.Paths in 'src\UVScan.Paths.pas',
   UVScan.JsonFile in 'src\UVScan.JsonFile.pas',
   UVScan.Settings in 'src\UVScan.Settings.pas',
+  UVScan.Defaults in 'src\UVScan.Defaults.pas',
+  UVScan.PidLists in 'src\UVScan.PidLists.pas',
+  UVScan.LegacyImport in 'src\UVScan.LegacyImport.pas',
   UVScan.PidEditor in 'src\UVScan.PidEditor.pas' {PidEditorForm},
   UVScan.MainForm in 'src\UVScan.MainForm.pas' {MainForm};
 
 {$R *.res}
+{$R 'UVScan.Defaults.res' 'UVScan.Defaults.rc'}
 
 begin
   {$IFDEF DEBUG}

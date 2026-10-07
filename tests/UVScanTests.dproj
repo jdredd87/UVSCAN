@@ -81,6 +81,13 @@
         <DCCReference Include="UVScan.Tests.Core.pas"/>
         <DCCReference Include="UVScan.Tests.Engine.pas"/>
         <DCCReference Include="UVScan.Tests.Json.pas"/>
+        <DCCReference Include="..\src\UVScan.Defaults.pas"/>
+        <DCCReference Include="..\src\UVScan.PidLists.pas"/>
+        <DCCReference Include="..\src\UVScan.LegacyImport.pas"/>
+        <DCCReference Include="UVScan.Tests.Data.pas"/>
+        <RcCompile Include="..\UVScan.Defaults.rc">
+            <Form>..\UVScan.Defaults.res</Form>
+        </RcCompile>
         <BuildConfiguration Include="Release">
             <Key>Cfg_1</Key>
             <CfgParent>Base</CfgParent>

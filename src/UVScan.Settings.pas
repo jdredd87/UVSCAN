@@ -4,7 +4,7 @@ unit UVScan.Settings;
 
   { "version": 1,
     "connection": { "port": "COM9", "baud": 115200 },
-    "scan":       { "selectedPids": [1, 3, 12], "streamSpeed": "fast" },
+    "scan":       { "selectedPids": [1, 3, 12], "activeList": "Misfires", "streamSpeed": "fast" },
     "logging":    { "folder": "C:\\Users\\me\\Documents\\UVScan Logs" },
     "advanced":   { "trace": false },
     "window":     { "left": 100, "top": 80, "width": 1180, "height": 720,
@@ -32,6 +32,7 @@ type
     Port: string;
     Baud: Integer;
     SelectedPids: TArray<Integer>;
+    ActiveList: string;     // name of the scan list last chosen, '' if none
     StreamSpeed: TStreamSpeed;
     LogFolder: string;
     Trace: Boolean;
@@ -82,6 +83,7 @@ begin
   Port := '';
   Baud := 115200;
   SelectedPids := nil;
+  ActiveList := '';
   StreamSpeed := ssFast;
   LogFolder := TPath.Combine(TPath.GetDocumentsPath, 'UVScan Logs');
   Trace := False;
@@ -107,6 +109,7 @@ begin
   for Id in SelectedPids do
     Ids.Add(Id);
   Sec.AddPair('selectedPids', Ids);
+  Sec.AddPair('activeList', ActiveList);
   Sec.AddPair('streamSpeed', StreamSpeedKeys[StreamSpeed]);
   Result.AddPair('scan', Sec);
 
@@ -155,6 +158,7 @@ begin
       for I := 0 to Ids.Count - 1 do
         if Ids.Items[I] is TJSONNumber then
           SelectedPids := SelectedPids + [TJSONNumber(Ids.Items[I]).AsInt];
+    ActiveList := JStr(Sec, 'activeList');
     for S := Low(TStreamSpeed) to High(TStreamSpeed) do
       if SameText(JStr(Sec, 'streamSpeed'), StreamSpeedKeys[S]) then
         StreamSpeed := S;

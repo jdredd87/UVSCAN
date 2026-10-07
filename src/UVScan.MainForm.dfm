@@ -145,10 +145,59 @@ object MainForm: TMainForm
     Padding.Right = 4
     Padding.Bottom = 4
     TabOrder = 1
+    object pnlListBar: TPanel
+      Left = 8
+      Top = 4
+      Width = 388
+      Height = 32
+      Align = alTop
+      BevelOuter = bvNone
+      TabOrder = 3
+      object lblList: TLabel
+        Left = 0
+        Top = 7
+        Width = 52
+        Height = 15
+        Caption = 'Scan list'
+      end
+      object cbLists: TComboBox
+        Left = 58
+        Top = 3
+        Width = 150
+        Height = 23
+        Hint = 'Pick a saved scan list to tick its PIDs'
+        Style = csDropDownList
+        ParentShowHint = False
+        ShowHint = True
+        TabOrder = 0
+        OnChange = cbListsChange
+      end
+      object btnSaveList: TButton
+        Left = 214
+        Top = 2
+        Width = 80
+        Height = 25
+        Hint = 'Save the ticked PIDs as a named scan list'
+        Caption = 'Save as...'
+        ParentShowHint = False
+        ShowHint = True
+        TabOrder = 1
+        OnClick = btnSaveListClick
+      end
+      object btnDeleteList: TButton
+        Left = 298
+        Top = 2
+        Width = 70
+        Height = 25
+        Caption = 'Delete'
+        TabOrder = 2
+        OnClick = btnDeleteListClick
+      end
+    end
     object edtSearch: TEdit
       AlignWithMargins = True
       Left = 8
-      Top = 4
+      Top = 36
       Width = 388
       Height = 23
       Margins.Left = 0

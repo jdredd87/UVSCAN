@@ -96,6 +96,12 @@
         <DCCReference Include="src\UVScan.Paths.pas"/>
         <DCCReference Include="src\UVScan.JsonFile.pas"/>
         <DCCReference Include="src\UVScan.Settings.pas"/>
+        <DCCReference Include="src\UVScan.Defaults.pas"/>
+        <DCCReference Include="src\UVScan.PidLists.pas"/>
+        <DCCReference Include="src\UVScan.LegacyImport.pas"/>
+        <RcCompile Include="UVScan.Defaults.rc">
+            <Form>UVScan.Defaults.res</Form>
+        </RcCompile>
         <DCCReference Include="src\UVScan.PidEditor.pas">
             <Form>PidEditorForm</Form>
             <FormType>dfm</FormType>

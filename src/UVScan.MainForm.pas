@@ -8,7 +8,7 @@ uses
   Vcl.Graphics, Vcl.Controls, Vcl.Forms, Vcl.Dialogs, Vcl.StdCtrls, Vcl.ExtCtrls,
   Vcl.ComCtrls, Vcl.Grids,
   UVScan.Serial, UVScan.Simulator, UVScan.Pids, UVScan.Dpid, UVScan.Dtc, UVScan.Engine,
-  UVScan.Class2, UVScan.Paths, UVScan.Settings, UVScan.PidEditor;
+  UVScan.Class2, UVScan.Paths, UVScan.Settings, UVScan.PidEditor, UVScan.PidLists, UVScan.Defaults;
 
 type
   TMainForm = class(TForm)
@@ -26,6 +26,11 @@ type
     btnLog: TButton;
     btnPause: TButton;
     pnlPids: TPanel;
+    pnlListBar: TPanel;
+    lblList: TLabel;
+    cbLists: TComboBox;
+    btnSaveList: TButton;
+    btnDeleteList: TButton;
     edtSearch: TEdit;
     lvPids: TListView;
     pnlPidFooter: TPanel;
@@ -98,6 +103,9 @@ type
     procedure btnTestPidsClick(Sender: TObject);
     procedure btnClearSelectionClick(Sender: TObject);
     procedure btnEditPidsClick(Sender: TObject);
+    procedure cbListsChange(Sender: TObject);
+    procedure btnSaveListClick(Sender: TObject);
+    procedure btnDeleteListClick(Sender: TObject);
     procedure grdLiveDrawCell(Sender: TObject; ACol, ARow: Integer; Rect: TRect; State: TGridDrawState);
     procedure btnResetMinMaxClick(Sender: TObject);
     procedure btnReadInfoClick(Sender: TObject);
@@ -133,6 +141,9 @@ type
     FAutoScan: Boolean;
     FAutoLog: Boolean;
     FSettings: TAppSettings;
+    FLists: TPidLists;
+    procedure FillLists(const Select: string);
+    procedure SaveLists;
     procedure ApplyCommandLine;
     procedure LoadData;
     procedure LoadSettings;
@@ -183,6 +194,7 @@ begin
   FCatalog := TPidCatalog.Create;
   FDtcs := TDtcCatalog.Create;
   FSettings := TAppSettings.Create;
+  FLists := TPidLists.Create;
   Caption := 'UVScan';
   pnlNotice.Visible := False;
   LoadData;
@@ -230,6 +242,7 @@ begin
   FEngine.Free; // stops the scan, closes the port, waits for the thread
   FCatalog.Free;
   FSettings.Free;
+  FLists.Free;
   FDtcs.Free;
   FSelected.Free;
   FSupport.Free;
@@ -266,6 +279,23 @@ procedure TMainForm.LoadData;
 var
   F: string;
 begin
+  try
+    for F in CreateMissingDataFiles do
+      AddMessage('Created ' + F + ' from the built-in defaults');
+  except
+    on E: Exception do
+      AddMessage('Could not create default data files: ' + E.Message);
+  end;
+
+  try
+    FLists.LoadFromFile(ListsFile);
+    for F in FLists.Warnings do
+      AddMessage('Scan lists: ' + F);
+  except
+    on E: Exception do
+      AddMessage('Could not load scan lists: ' + E.Message);
+  end;
+
   F := PidsFile;
   if not FileExists(F) then
   begin
@@ -323,6 +353,7 @@ begin
   for N in FSettings.SelectedPids do
     if (FCatalog.FindById(N) <> nil) and FCatalog.FindById(N).Enabled and not FSelected.Contains(N) then
       FSelected.Add(N);
+  FillLists(FSettings.ActiveList);
   if FSettings.Window.Saved then
   begin
     Position := poDesigned;
@@ -345,6 +376,10 @@ begin
   FSettings.StreamSpeed := TStreamSpeed(Max(0, cbRate.ItemIndex));
   FSettings.Trace := chkTrace.Checked;
   FSettings.SelectedPids := FSelected.ToArray;
+  if cbLists.ItemIndex > 0 then
+    FSettings.ActiveList := cbLists.Text
+  else
+    FSettings.ActiveList := '';
   Placement.length := SizeOf(Placement);
   GetWindowPlacement(Handle, @Placement);
   FSettings.Window.Left := Placement.rcNormalPosition.Left;
@@ -509,6 +544,107 @@ begin
   FRejected.Clear;
   FillPidList;
   AddMessage(Format('PID definitions saved (%d PIDs) to %s', [FCatalog.Count, PidsFile]));
+end;
+
+{ Scan lists }
+
+const
+  NoListCaption = '(none)';
+
+procedure TMainForm.FillLists(const Select: string);
+var
+  Name: string;
+begin
+  cbLists.Items.BeginUpdate;
+  try
+    cbLists.Items.Clear;
+    cbLists.Items.Add(NoListCaption);
+    for Name in FLists.Names do
+      cbLists.Items.Add(Name);
+  finally
+    cbLists.Items.EndUpdate;
+  end;
+  cbLists.ItemIndex := Max(0, cbLists.Items.IndexOf(Select));
+  btnDeleteList.Enabled := cbLists.ItemIndex > 0;
+end;
+
+procedure TMainForm.SaveLists;
+begin
+  try
+    FLists.SaveToFile(ListsFile);
+  except
+    on E: Exception do
+      MessageDlg('Could not save the scan lists: ' + E.Message, mtWarning, [mbOK], 0);
+  end;
+end;
+
+procedure TMainForm.cbListsChange(Sender: TObject);
+var
+  I, Id, Missing: Integer;
+  P: TPidDef;
+begin
+  btnDeleteList.Enabled := cbLists.ItemIndex > 0;
+  if cbLists.ItemIndex <= 0 then
+    Exit;
+  I := FLists.IndexOf(cbLists.Text);
+  if I < 0 then
+    Exit;
+  FSelected.Clear;
+  Missing := 0;
+  for Id in FLists[I].PidIds do
+  begin
+    P := FCatalog.FindById(Id);
+    if (P <> nil) and P.Enabled then
+      SetSelected(Id, True)
+    else
+      Inc(Missing);
+  end;
+  edtSearch.Text := '';
+  FillPidList;
+  if Missing > 0 then
+    ShowNotice(Format('Scan list "%s": %d PID(s) no longer exist or are disabled', [cbLists.Text, Missing]), False);
+end;
+
+procedure TMainForm.btnSaveListClick(Sender: TObject);
+var
+  Name: string;
+begin
+  if FSelected.Count = 0 then
+  begin
+    ShowNotice('Tick some PIDs first, then save them as a list', True);
+    Exit;
+  end;
+  if cbLists.ItemIndex > 0 then
+    Name := cbLists.Text
+  else
+    Name := '';
+  if not InputQuery('Save scan list', 'List name', Name) then
+    Exit;
+  Name := Trim(Name);
+  if Name = '' then
+    Exit;
+  if (FLists.IndexOf(Name) >= 0) and not SameText(Name, cbLists.Text) and
+    (MessageDlg(Format('Replace the existing list "%s"?', [Name]), mtConfirmation, [mbYes, mbNo], 0) <> mrYes) then
+    Exit;
+  FLists.Put(Name, FSelected.ToArray);
+  SaveLists;
+  FillLists(Name);
+  AddMessage(Format('Saved scan list "%s" (%d PIDs)', [Name, FSelected.Count]));
+end;
+
+procedure TMainForm.btnDeleteListClick(Sender: TObject);
+var
+  Name: string;
+begin
+  if cbLists.ItemIndex <= 0 then
+    Exit;
+  Name := cbLists.Text;
+  if MessageDlg(Format('Delete the scan list "%s"? The PIDs themselves are not affected.', [Name]),
+    mtConfirmation, [mbYes, mbNo], 0) <> mrYes then
+    Exit;
+  FLists.Delete(Name);
+  SaveLists;
+  FillLists('');
 end;
 
 procedure TMainForm.btnClearSelectionClick(Sender: TObject);
