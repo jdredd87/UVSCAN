@@ -60,7 +60,7 @@ begin
     Lines.Add('25,Inj Duty Cycle,,(%IPW% / (1 / ((%RPM% / 60 ) / 2) * 1000)) * 100,%,0,FPID,1,Inj DC,%f,6,%InjDutyCycle%');
     Lines.Add('30,RUNTIME,,,,0,FPID,1,RUNTIME,,6,%RUNTIME%');
     FCatalog := TPidCatalog.Create;
-    FCatalog.LoadFromStrings(Lines);
+    FCatalog.LoadFromCsvLines(Lines);
   finally
     Lines.Free;
   end;
@@ -293,7 +293,7 @@ begin
     Lines.Add('Counter,Long Name,Desc,Formula,Units,Datalength,PID,group,shortname,Results,PidCat,txtMCI');
     for I := 0 to 14 do
       Lines.Add(Format('%d,P%d,,N0,,2,%.4x,1,P%d,,1,%%P%d%%', [100 + I, I, $2000 + I, I, I]));
-    FCatalog.LoadFromStrings(Lines);
+    FCatalog.LoadFromCsvLines(Lines);
   finally
     Lines.Free;
   end;

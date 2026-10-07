@@ -13,6 +13,8 @@ uses
   UVScan.Simulator in 'src\UVScan.Simulator.pas',
   UVScan.Engine in 'src\UVScan.Engine.pas',
   UVScan.Paths in 'src\UVScan.Paths.pas',
+  UVScan.JsonFile in 'src\UVScan.JsonFile.pas',
+  UVScan.Settings in 'src\UVScan.Settings.pas',
   UVScan.MainForm in 'src\UVScan.MainForm.pas' {MainForm};
 
 {$R *.res}

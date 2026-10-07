@@ -69,13 +69,17 @@
         <DCCReference Include="..\src\UVScan.Avt.pas"/>
         <DCCReference Include="..\src\UVScan.Class2.pas"/>
         <DCCReference Include="..\src\UVScan.Formula.pas"/>
+        <DCCReference Include="..\src\UVScan.JsonFile.pas"/>
         <DCCReference Include="..\src\UVScan.Pids.pas"/>
+        <DCCReference Include="..\src\UVScan.Paths.pas"/>
+        <DCCReference Include="..\src\UVScan.Settings.pas"/>
         <DCCReference Include="..\src\UVScan.Dpid.pas"/>
         <DCCReference Include="..\src\UVScan.Serial.pas"/>
         <DCCReference Include="..\src\UVScan.Simulator.pas"/>
         <DCCReference Include="..\src\UVScan.Engine.pas"/>
         <DCCReference Include="UVScan.Tests.Core.pas"/>
         <DCCReference Include="UVScan.Tests.Engine.pas"/>
+        <DCCReference Include="UVScan.Tests.Json.pas"/>
         <BuildConfiguration Include="Release">
             <Key>Cfg_1</Key>
             <CfgParent>Base</CfgParent>

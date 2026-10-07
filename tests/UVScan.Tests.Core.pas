@@ -365,7 +365,7 @@ begin
     Lines.Add('20,AFR (LC-1),,%AD1% * 3.008 + 7.35,AFR,0,FPID,1,AFR,%f,6,%AFRWideband%');
     Lines.Add('21,AD1,,N0 * 0.0196,V,0,FFFF,1,AD1,%f,7,%AD1%');
     Lines.Add('22,Bad,,N0,x,1,ZZZZ,1,B,,1,');
-    C.LoadFromStrings(Lines);
+    C.LoadFromCsvLines(Lines);
     Assert.AreEqual(4, C.Count);
     Assert.AreEqual(1, C.Warnings.Count);
     Assert.AreEqual(Integer(pkVehicle), Integer(C[0].Kind));
@@ -412,19 +412,19 @@ begin
   F := '';
   for I := 0 to 5 do
   begin
-    if FileExists(Dir + 'data\pids.csv') then
+    if FileExists(Dir + 'data\pids.json') then
     begin
-      F := Dir + 'data\pids.csv';
+      F := Dir + 'data\pids.json';
       Break;
     end;
     Dir := ExtractFilePath(ExcludeTrailingPathDelimiter(Dir));
   end;
-  Assert.IsTrue(F <> '', 'data\pids.csv not found');
+  Assert.IsTrue(F <> '', 'data\pids.json not found');
   C := TPidCatalog.Create;
   try
     C.LoadFromFile(F);
     Assert.IsTrue(C.Count > 50);
-    Assert.AreEqual('', C.Warnings.Text, 'pids.csv warnings');
+    Assert.AreEqual('', C.Warnings.Text, 'pids.json warnings');
     Assert.AreEqual(#$B0'C', C.FindByMci('ECT').Units);
   finally
     C.Free;

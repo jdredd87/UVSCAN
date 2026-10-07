@@ -4,11 +4,11 @@ interface
 
 uses
   Winapi.Windows, Winapi.Messages, System.SysUtils, System.Variants, System.Classes,
-  System.Math, System.StrUtils, System.IniFiles, System.IOUtils, System.Generics.Collections, System.UITypes,
+  System.Math, System.StrUtils, System.IOUtils, System.Generics.Collections, System.UITypes,
   Vcl.Graphics, Vcl.Controls, Vcl.Forms, Vcl.Dialogs, Vcl.StdCtrls, Vcl.ExtCtrls,
   Vcl.ComCtrls, Vcl.Grids,
   UVScan.Serial, UVScan.Simulator, UVScan.Pids, UVScan.Dpid, UVScan.Dtc, UVScan.Engine,
-  UVScan.Class2, UVScan.Paths;
+  UVScan.Class2, UVScan.Paths, UVScan.Settings;
 
 type
   TMainForm = class(TForm)
@@ -130,6 +130,7 @@ type
     FClosing: Boolean;
     FAutoScan: Boolean;
     FAutoLog: Boolean;
+    FSettings: TAppSettings;
     procedure ApplyCommandLine;
     procedure LoadData;
     procedure LoadSettings;
@@ -179,6 +180,7 @@ begin
   FRejected := TList<Integer>.Create;
   FCatalog := TPidCatalog.Create;
   FDtcs := TDtcCatalog.Create;
+  FSettings := TAppSettings.Create;
   Caption := 'UVScan';
   pnlNotice.Visible := False;
   LoadData;
@@ -225,6 +227,7 @@ procedure TMainForm.FormDestroy(Sender: TObject);
 begin
   FEngine.Free; // stops the scan, closes the port, waits for the thread
   FCatalog.Free;
+  FSettings.Free;
   FDtcs.Free;
   FSelected.Free;
   FSupport.Free;
@@ -262,15 +265,34 @@ var
   F: string;
 begin
   F := PidsFile;
-  if not FileExists(F) then
-    ShowNotice('PID definitions not found: ' + F, True)
-  else
-  begin
-    FCatalog.LoadFromFile(F);
-    AddMessage(Format('Loaded %d PIDs from %s', [FCatalog.Count, F]));
-    for F in FCatalog.Warnings do
-      AddMessage('pids.csv: ' + F);
+  try
+    if FileExists(F) then
+      FCatalog.LoadFromFile(F)
+    else if FileExists(LegacyPidsCsvFile) then
+    begin
+      // One-time upgrade from the CSV layout.
+      FCatalog.LoadFromFile(LegacyPidsCsvFile);
+      FCatalog.SaveToJsonFile(F);
+      AddMessage(Format('Converted %s to %s', [LegacyPidsCsvFile, F]));
+    end
+    else
+    begin
+      ShowNotice('PID definitions not found: ' + F, True);
+      Exit;
+    end;
+  except
+    on E: Exception do
+    begin
+      ShowNotice('Could not load PID definitions: ' + E.Message, True);
+      AddMessage('Error: ' + E.Message);
+      Exit;
+    end;
   end;
+  AddMessage(Format('Loaded %d PIDs from %s', [FCatalog.Count, F]));
+  for F in FCatalog.Warnings do
+    AddMessage('PID definitions: ' + F);
+  if FCatalog.Warnings.Count > 0 then
+    ShowNotice(Format('%d problem(s) in the PID definitions - see Messages', [FCatalog.Warnings.Count]), False);
   F := DtcsFile;
   if FileExists(F) then
     FDtcs.LoadFromFile(F)
@@ -280,69 +302,71 @@ end;
 
 procedure TMainForm.LoadSettings;
 var
-  Ini: TMemIniFile;
-  Id: string;
+  Problem: string;
   N: Integer;
 begin
-  Ini := TMemIniFile.Create(SettingsFile);
-  try
-    FillPorts(Ini.ReadString('Connection', 'Port', ''));
-    cbBaud.ItemIndex := cbBaud.Items.IndexOf(Ini.ReadString('Connection', 'Baud', '115200'));
-    if cbBaud.ItemIndex < 0 then
-      cbBaud.ItemIndex := 0;
-    edtLogFolder.Text := Ini.ReadString('Logging', 'Folder',
-      TPath.Combine(TPath.GetDocumentsPath, 'UVScan Logs'));
-    cbRate.ItemIndex := EnsureRange(Ini.ReadInteger('Advanced', 'StreamRate', 0), 0, cbRate.Items.Count - 1);
-    chkTrace.Checked := Ini.ReadBool('Advanced', 'Trace', False);
-    for Id in Ini.ReadString('Scan', 'Selected', '').Split([',']) do
-      if TryStrToInt(Id, N) and (FCatalog.FindById(N) <> nil) and not FSelected.Contains(N) then
-        FSelected.Add(N);
-    if Ini.ValueExists('Window', 'Width') then
+  if not FileExists(SettingsFile) and FileExists(LegacySettingsIniFile) then
+  begin
+    // One-time upgrade from the INI layout.
+    FSettings.ImportIni(LegacySettingsIniFile);
+    AddMessage(Format('Imported settings from %s', [LegacySettingsIniFile]));
+  end
+  else
+  begin
+    FSettings.LoadFromFile(SettingsFile, Problem);
+    if Problem <> '' then
     begin
-      Position := poDesigned;
-      SetBounds(Ini.ReadInteger('Window', 'Left', Left), Ini.ReadInteger('Window', 'Top', Top),
-        Ini.ReadInteger('Window', 'Width', Width), Ini.ReadInteger('Window', 'Height', Height));
-      MakeFullyVisible;
-      if Ini.ReadBool('Window', 'Maximized', False) then
-        WindowState := wsMaximized;
+      AddMessage('Settings: ' + Problem);
+      ShowNotice('Settings could not be read - defaults used (see Messages)', False);
     end;
-    pnlPids.Width := Ini.ReadInteger('Window', 'PidPanel', pnlPids.Width);
-  finally
-    Ini.Free;
+  end;
+
+  FillPorts(FSettings.Port);
+  cbBaud.ItemIndex := cbBaud.Items.IndexOf(IntToStr(FSettings.Baud));
+  if cbBaud.ItemIndex < 0 then
+    cbBaud.ItemIndex := 0;
+  edtLogFolder.Text := FSettings.LogFolder;
+  cbRate.ItemIndex := Ord(FSettings.StreamSpeed);
+  chkTrace.Checked := FSettings.Trace;
+  for N in FSettings.SelectedPids do
+    if (FCatalog.FindById(N) <> nil) and not FSelected.Contains(N) then
+      FSelected.Add(N);
+  if FSettings.Window.Saved then
+  begin
+    Position := poDesigned;
+    SetBounds(FSettings.Window.Left, FSettings.Window.Top, FSettings.Window.Width, FSettings.Window.Height);
+    MakeFullyVisible;
+    if FSettings.Window.Maximized then
+      WindowState := wsMaximized;
+    if FSettings.Window.PidPanelWidth > 0 then
+      pnlPids.Width := FSettings.Window.PidPanelWidth;
   end;
 end;
 
 procedure TMainForm.SaveSettings;
 var
-  Ini: TMemIniFile;
-  Ids: TStringList;
-  Id: Integer;
   Placement: TWindowPlacement;
 begin
-  ForceDirectories(ExtractFilePath(SettingsFile));
-  Ini := TMemIniFile.Create(SettingsFile);
-  Ids := TStringList.Create;
+  FSettings.Port := cbPort.Text;
+  FSettings.Baud := StrToIntDef(cbBaud.Text, 115200);
+  FSettings.LogFolder := edtLogFolder.Text;
+  FSettings.StreamSpeed := TStreamSpeed(Max(0, cbRate.ItemIndex));
+  FSettings.Trace := chkTrace.Checked;
+  FSettings.SelectedPids := FSelected.ToArray;
+  Placement.length := SizeOf(Placement);
+  GetWindowPlacement(Handle, @Placement);
+  FSettings.Window.Left := Placement.rcNormalPosition.Left;
+  FSettings.Window.Top := Placement.rcNormalPosition.Top;
+  FSettings.Window.Width := Placement.rcNormalPosition.Width;
+  FSettings.Window.Height := Placement.rcNormalPosition.Height;
+  FSettings.Window.Maximized := WindowState = wsMaximized;
+  FSettings.Window.PidPanelWidth := pnlPids.Width;
+  FSettings.Window.Saved := True;
   try
-    Ini.WriteString('Connection', 'Port', cbPort.Text);
-    Ini.WriteString('Connection', 'Baud', cbBaud.Text);
-    Ini.WriteString('Logging', 'Folder', edtLogFolder.Text);
-    Ini.WriteInteger('Advanced', 'StreamRate', cbRate.ItemIndex);
-    Ini.WriteBool('Advanced', 'Trace', chkTrace.Checked);
-    for Id in FSelected do
-      Ids.Add(IntToStr(Id));
-    Ini.WriteString('Scan', 'Selected', string.Join(',', Ids.ToStringArray));
-    Placement.length := SizeOf(Placement);
-    GetWindowPlacement(Handle, @Placement);
-    Ini.WriteInteger('Window', 'Left', Placement.rcNormalPosition.Left);
-    Ini.WriteInteger('Window', 'Top', Placement.rcNormalPosition.Top);
-    Ini.WriteInteger('Window', 'Width', Placement.rcNormalPosition.Width);
-    Ini.WriteInteger('Window', 'Height', Placement.rcNormalPosition.Height);
-    Ini.WriteBool('Window', 'Maximized', WindowState = wsMaximized);
-    Ini.WriteInteger('Window', 'PidPanel', pnlPids.Width);
-    Ini.UpdateFile;
-  finally
-    Ids.Free;
-    Ini.Free;
+    FSettings.SaveToFile(SettingsFile);
+  except
+    on E: Exception do
+      MessageDlg('Settings could not be saved: ' + E.Message, mtWarning, [mbOK], 0);
   end;
 end;
 
@@ -1001,11 +1025,9 @@ begin
 end;
 
 procedure TMainForm.cbRateChange(Sender: TObject);
-const
-  Speeds: array[0..2] of Byte = (StreamSpeedFast, StreamSpeedMedium, StreamSpeedSlow);
 begin
   if (FEngine <> nil) and (cbRate.ItemIndex >= 0) then
-    FEngine.StreamSpeed := Speeds[cbRate.ItemIndex]; // applies from the next scan start
+    FEngine.StreamSpeed := StreamSpeedNibble(TStreamSpeed(cbRate.ItemIndex)); // applies from the next scan start
 end;
 
 { Messages }

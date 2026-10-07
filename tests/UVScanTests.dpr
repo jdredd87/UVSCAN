@@ -11,13 +11,17 @@ uses
   UVScan.Avt in '..\src\UVScan.Avt.pas',
   UVScan.Class2 in '..\src\UVScan.Class2.pas',
   UVScan.Formula in '..\src\UVScan.Formula.pas',
+  UVScan.JsonFile in '..\src\UVScan.JsonFile.pas',
   UVScan.Pids in '..\src\UVScan.Pids.pas',
+  UVScan.Paths in '..\src\UVScan.Paths.pas',
+  UVScan.Settings in '..\src\UVScan.Settings.pas',
   UVScan.Dpid in '..\src\UVScan.Dpid.pas',
   UVScan.Serial in '..\src\UVScan.Serial.pas',
   UVScan.Simulator in '..\src\UVScan.Simulator.pas',
   UVScan.Engine in '..\src\UVScan.Engine.pas',
   UVScan.Tests.Core in 'UVScan.Tests.Core.pas',
-  UVScan.Tests.Engine in 'UVScan.Tests.Engine.pas';
+  UVScan.Tests.Engine in 'UVScan.Tests.Engine.pas',
+  UVScan.Tests.Json in 'UVScan.Tests.Json.pas';
 
 var
   Runner: ITestRunner;

@@ -94,6 +94,8 @@
         <DCCReference Include="src\UVScan.Simulator.pas"/>
         <DCCReference Include="src\UVScan.Engine.pas"/>
         <DCCReference Include="src\UVScan.Paths.pas"/>
+        <DCCReference Include="src\UVScan.JsonFile.pas"/>
+        <DCCReference Include="src\UVScan.Settings.pas"/>
         <DCCReference Include="src\UVScan.MainForm.pas">
             <Form>MainForm</Form>
             <FormType>dfm</FormType>

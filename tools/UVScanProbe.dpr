@@ -20,7 +20,8 @@ uses
   UVScan.Pids in '..\src\UVScan.Pids.pas',
   UVScan.Dpid in '..\src\UVScan.Dpid.pas',
   UVScan.Engine in '..\src\UVScan.Engine.pas',
-  UVScan.Paths in '..\src\UVScan.Paths.pas';
+  UVScan.Paths in '..\src\UVScan.Paths.pas',
+  UVScan.JsonFile in '..\src\UVScan.JsonFile.pas';
 
 var
   Clock: TStopwatch;
@@ -238,6 +239,24 @@ begin
 end;
 
 
+{ Legacy pids.csv -> pids.json, using the app's own loader and serializer. }
+procedure ConvertPids(const CsvFile, JsonFile: string);
+var
+  Catalog: TPidCatalog;
+  W: string;
+begin
+  Catalog := TPidCatalog.Create;
+  try
+    Catalog.LoadFromFile(CsvFile);
+    for W in Catalog.Warnings do
+      Say('WARN  ' + W);
+    Catalog.SaveToJsonFile(JsonFile);
+    Say(Format('Wrote %d PIDs to %s', [Catalog.Count, JsonFile]));
+  finally
+    Catalog.Free;
+  end;
+end;
+
 procedure Pump(Ms: Integer);
 var
   W: TStopwatch;
@@ -391,10 +410,13 @@ begin
     begin
       Writeln('UVScanProbe <port> raw [baud] [rtscts|none]');
       Writeln('UVScanProbe <port> run <seconds> <pidIds,...> [-notest] [-nodtc] [-speed 4|3|2]');
-      Writeln('UVScanProbe <port> rawscan | rates');
+      Writeln('UVScanProbe <port> rawscan | rates | multi');
+      Writeln('UVScanProbe convert <pids.csv> <pids.json>');
       Halt(1);
     end;
-    if SameText(ParamStr(2), 'multi') then
+    if SameText(ParamStr(1), 'convert') then
+      ConvertPids(ParamStr(2), ParamStr(3))
+    else if SameText(ParamStr(2), 'multi') then
       MultiTest(ParamStr(1))
     else if SameText(ParamStr(2), 'rates') then
       RateTest(ParamStr(1))
