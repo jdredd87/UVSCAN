@@ -238,6 +238,76 @@ begin
   end;
 end;
 
+{ Read-only survey: asks the PCM for every PID in the given ranges with mode
+  $22 (the same request "Test PIDs" uses) and prints the ones it answers,
+  with the number of data bytes and the raw value. Ranges: "0000-00FF,1100-13FF". }
+procedure Sweep(const PortName, Ranges: string);
+var
+  Port: ISerialPort;
+  Parser: TAvtFrameParser;
+  Buf: array[0..255] of Byte;
+  N, RangeLo, RangeHi, Pid, Supported, Refused, Silent: Integer;
+  W: TStopwatch;
+  Fr: TAvtFrame;
+  Msg: TClass2Message;
+  R: string;
+  Parts: TArray<string>;
+  Done: Boolean;
+begin
+  Port := TWin32SerialPort.Create(PortName, 115200, fcRtsCts);
+  Parser := TAvtFrameParser.Create;
+  try
+    Port.Open;
+    Port.Write(HexToBytes('E1 33'));
+    RawListen(Port, 200);
+    Supported := 0;
+    Refused := 0;
+    Silent := 0;
+    for R in Ranges.Split([',']) do
+    begin
+      Parts := R.Split(['-']);
+      RangeLo := StrToInt('$' + Parts[0]);
+      RangeHi := StrToInt('$' + Parts[High(Parts)]);
+      for Pid := RangeLo to RangeHi do
+      begin
+        Parser.Clear;
+        Port.Write(EncodeBusMessage(ReadPidRequest(Pid)));
+        Done := False;
+        W := TStopwatch.StartNew;
+        while not Done and (W.ElapsedMilliseconds < 300) do
+        begin
+          N := Port.Read(Buf, SizeOf(Buf), 30);
+          if N > 0 then
+            Parser.Push(Buf, N);
+          while Parser.TryNext(Fr) do
+            if Fr.IsBusMessage and TryParseClass2(Fr.BusMessage, Msg) and (Msg.Source = AddrPcm) and
+              (Msg.Target = AddrToolPidTest) and (Length(Msg.Data) >= 2) then
+            begin
+              if (Msg.Mode = ModeReadPid + PositiveOffset) and (Msg.Data[0] = Hi(Word(Pid))) and (Msg.Data[1] = Lo(Word(Pid))) then
+              begin
+                Writeln(Format('PID %.4x bytes=%d data=%s', [Pid, Length(Msg.Data) - 2,
+                  BytesToHex(Copy(Msg.Data, 2, MaxInt))]));
+                Inc(Supported);
+                Done := True;
+              end
+              else if Msg.IsNegativeFor(ModeReadPid) then
+              begin
+                Inc(Refused);
+                Done := True;
+              end;
+            end;
+        end;
+        if not Done then
+          Inc(Silent);
+      end;
+    end;
+    Say(Format('Supported %d, refused %d, no answer %d', [Supported, Refused, Silent]));
+    Port.Close;
+  finally
+    Parser.Free;
+  end;
+end;
+
 procedure Pump(Ms: Integer);
 var
   W: TStopwatch;
@@ -394,7 +464,9 @@ begin
       Writeln('UVScanProbe <port> rawscan | rates | multi');
       Halt(1);
     end;
-    if SameText(ParamStr(2), 'multi') then
+    if SameText(ParamStr(2), 'sweep') then
+      Sweep(ParamStr(1), ParamStr(3))
+    else if SameText(ParamStr(2), 'multi') then
       MultiTest(ParamStr(1))
     else if SameText(ParamStr(2), 'rates') then
       RateTest(ParamStr(1))
