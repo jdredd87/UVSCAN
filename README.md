@@ -21,8 +21,18 @@ build.cmd [Debug|Release] [Win32|Win64]
 ```
 
 This builds the app and the DUnitX tests (`tests/UVScanTests.dproj`), runs the tests, and builds the bench probe (`tools\Win32\UVScanProbe.exe`).
-The app looks for `pids.csv` / `dtcs.csv` next to the exe, then in a `data` folder up the directory tree (so running from `Win32\Debug` finds `data\`).
-Settings are stored in `%APPDATA%\UVScan\settings.ini`.
+## Data location
+
+Everything the app reads or writes (apart from CSV logs) lives in **`C:\ProgramData\UVScan\`**:
+
+| File | Purpose |
+|---|---|
+| `pids.csv` | PID definitions (legacy layout, UTF‑8) |
+| `dtcs.csv` | Trouble code descriptions |
+| `settings.ini` | Port/baud, selected PIDs, stream speed, log folder, window layout (written on exit) |
+
+The repo's `data\` folder is the master copy the installer will ship into ProgramData; on a dev machine copy `data\pids.csv` and `data\dtcs.csv` there once. CSV logs default to `Documents\UVScan Logs` (changeable on the Tools tab).
+The program itself can live anywhere (Program Files once there is an installer). Installer note: grant Users modify rights on `ProgramData\UVScan` — a folder created there by one user is read‑only for other users.
 
 Command line (same idea as legacy UVSCAN): `UVScan.exe -port COM9 -connect -scan -log`
 
@@ -39,7 +49,8 @@ Command line (same idea as legacy UVSCAN): `UVScan.exe -port COM9 -connect -scan
 | `src/UVScan.Engine.pas` | Background thread that owns the port and runs everything |
 | `src/UVScan.Simulator.pas` | Simulated AVT + PCM |
 | `src/UVScan.MainForm.*` | UI |
-| `data/` | `pids.csv` (UTF‑8), `dtcs.csv` |
+| `src/UVScan.Paths.pas` | Data folder (`C:\ProgramData\UVScan`) |
+| `data/` | Master `pids.csv` (UTF‑8) and `dtcs.csv`, installed to ProgramData |
 | `tests/` | DUnitX tests, incl. end‑to‑end engine tests against the simulator |
 | `tools/UVScanProbe.dpr` | Console bench tool for real hardware |
 | `legacy/` | Original source, dead code stripped; `uvscan.doc` documents the CSV formats |
