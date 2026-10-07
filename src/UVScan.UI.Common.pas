@@ -12,7 +12,7 @@ interface
 
 uses
   System.SysUtils, System.Classes, System.UITypes, System.Types,
-  FMX.Types, FMX.Controls, FMX.Forms, FMX.Graphics, FMX.ListBox, FMX.StdCtrls, FMX.Menus, FMX.Objects;
+  FMX.Types, FMX.Controls, FMX.Forms, FMX.Graphics, FMX.ListBox, FMX.StdCtrls, FMX.Menus, FMX.Objects, FMX.Controls.Presentation;
 
 type
   TNamedColor = record
@@ -105,7 +105,7 @@ function AddLineIcon(Button: TControl; const PathData: string; Size: Single = 22
   font (styles differ: Win10Modern's text is bigger than the default's). }
 procedure FitTextWidth(C: TControl; MinWidth: Single = 0);
 { Height a word-wrapped label needs at Width (in the active style's font). }
-function WrappedTextHeight(L: TLabel; Width: Single): Single;
+function WrappedTextHeight(L: TPresentedTextControl; Width: Single): Single;
 
 { Keeps the screen on and the device awake while UVScan is open (On), or lets
   it sleep again. Android: the window's keep-screen-on flag (no permission,
@@ -123,7 +123,7 @@ procedure KeepInSafeArea(Form: TCommonCustomForm);
 implementation
 
 uses
-  System.Math, FMX.DialogService, FMX.Dialogs, FMX.Platform, FMX.TextLayout, FMX.Controls.Presentation,
+  System.Math, FMX.DialogService, FMX.Dialogs, FMX.Platform, FMX.TextLayout,
   FMX.Effects, UVScan.UI.Theme
   {$IFDEF ANDROID}, Androidapi.Helpers, Androidapi.JNI.App, Androidapi.JNI.GraphicsContentViewText,
   FMX.Helpers.Android{$ENDIF};
@@ -414,7 +414,7 @@ begin
   C.Width := Max(MinWidth, Ceil(W + Extra));
 end;
 
-function WrappedTextHeight(L: TLabel; Width: Single): Single;
+function WrappedTextHeight(L: TPresentedTextControl; Width: Single): Single;
 var
   Layout: TTextLayout;
 begin

@@ -1,7 +1,9 @@
 unit UVScan.DisplayEditor;
 
-{ "Display & alerts" for one PID: its normal look in the live grid, and the
-  alert levels (colours, flashing, sound) shared by the grid and the dashboard. }
+{ "Display & alerts" for one PID, as a page (full screen on a phone): its
+  normal look in the live grid, and the alert levels (colours, flashing,
+  sound) shared by the grid and the dashboard. The levels are cards; tapping
+  one opens it on its own page. }
 
 interface
 
@@ -9,66 +11,68 @@ uses
   System.SysUtils, System.Classes, System.Types, System.UITypes, System.Math,
   FMX.Types, FMX.Controls, FMX.Forms, FMX.Graphics, FMX.Dialogs, FMX.StdCtrls, FMX.Edit,
   FMX.ListBox, FMX.Layouts, FMX.Objects, FMX.Menus, FMX.Controls.Presentation,
-  UVScan.Pids, UVScan.Display, UVScan.UI.DataGrid;
+  UVScan.Pids, UVScan.Display;
 
 type
   TDisplayEditorForm = class(TForm)
-    lytButtons: TLayout;
-    btnClear: TButton;
-    btnCancel: TButton;
+    pnlBar: TRectangle;
+    btnCancel: TSpeedButton;
+    lblTitle: TLabel;
     btnOK: TButton;
     sbMain: TVertScrollBox;
     lblPid: TLabel;
-    lblHelp: TLabel;
-    gbNormal: TGroupBox;
+    pbPreview: TPaintBox;
+    rowPreview: TLayout;
+    lblPreviewValue: TLabel;
+    edtPreview: TEdit;
+    lblNormalCap: TLabel;
     rowFont: TLayout;
     lblFontSize: TLabel;
     cbFontSize: TComboBox;
-    rowNormalColors: TLayout;
-    pairText: TLayout;
+    rowText: TLayout;
     lblTextColor: TLabel;
     cbxText: TComboBox;
-    pairRow: TLayout;
+    rowRow: TLayout;
     lblRowColor: TLabel;
     cbxRow: TComboBox;
-    gbLevels: TGroupBox;
+    lblLevelsCap: TLabel;
+    lblLevelsHelp: TLabel;
     lytLevelList: TLayout;
-    lytLevelButtons: TLayout;
+    rowLevelButtons: TLayout;
     btnAddLevel: TButton;
-    btnDeleteLevel: TButton;
-    btnUp: TButton;
-    btnDown: TButton;
     btnPresets: TButton;
-    lytLevelGrid: TLayout;
+    btnClear: TButton;
+    pnlLevel: TRectangle;
+    pnlLevelBar: TRectangle;
+    btnLevelBack: TSpeedButton;
+    lblLevelTitle: TLabel;
+    btnDeleteLevel: TButton;
+    sbLevel: TVertScrollBox;
     rowName: TLayout;
-    pairName: TLayout;
     lblLevelName: TLabel;
     edtLevelName: TEdit;
-    pairWhen: TLayout;
     lblWhen: TLabel;
-    cbOp: TComboBox;
+    rowWhen: TLayout;
     edtValue: TEdit;
-    rowLevelColors: TLayout;
-    pairLevelRow: TLayout;
+    cbOp: TComboBox;
+    rowLevelRow: TLayout;
     lblLevelRow: TLabel;
     cbxLevelRow: TComboBox;
-    pairLevelText: TLayout;
+    rowLevelText: TLayout;
     lblLevelText: TLabel;
     cbxLevelText: TComboBox;
-    rowFlash: TLayout;
     chkFlash: TCheckBox;
     rowSound: TLayout;
     lblSound: TLabel;
     cbSound: TComboBox;
-    btnTestSound: TButton;
+    rowSoundFile: TLayout;
     btnBrowseSound: TButton;
     edtSoundFile: TEdit;
-    rowRepeat: TLayout;
+    btnTestSound: TButton;
     chkRepeat: TCheckBox;
-    gbPreview: TGroupBox;
-    lblPreviewValue: TLabel;
-    edtPreview: TEdit;
-    pbPreview: TPaintBox;
+    rowMove: TLayout;
+    btnUp: TButton;
+    btnDown: TButton;
     tmrFlash: TTimer;
     pmPresets: TPopupMenu;
     miHighIsBad: TMenuItem;
@@ -76,18 +80,21 @@ type
     procedure FormCreate(Sender: TObject);
     procedure FormDestroy(Sender: TObject);
     procedure FormResize(Sender: TObject);
+    procedure btnCancelClick(Sender: TObject);
+    procedure btnOKClick(Sender: TObject);
     procedure NormalChange(Sender: TObject);
     procedure btnAddLevelClick(Sender: TObject);
-    procedure btnDeleteLevelClick(Sender: TObject);
-    procedure btnUpClick(Sender: TObject);
-    procedure btnDownClick(Sender: TObject);
     procedure btnPresetsClick(Sender: TObject);
+    procedure btnClearClick(Sender: TObject);
+    procedure btnLevelBackClick(Sender: TObject);
+    procedure btnDeleteLevelClick(Sender: TObject);
     procedure LevelChange(Sender: TObject);
     procedure btnBrowseSoundClick(Sender: TObject);
     procedure btnTestSoundClick(Sender: TObject);
+    procedure btnUpClick(Sender: TObject);
+    procedure btnDownClick(Sender: TObject);
     procedure edtPreviewChange(Sender: TObject);
     procedure pbPreviewPaint(Sender: TObject; Canvas: TCanvas);
-    procedure btnClearClick(Sender: TObject);
     procedure tmrFlashTimer(Sender: TObject);
     procedure miHighIsBadClick(Sender: TObject);
     procedure miLowIsBadClick(Sender: TObject);
@@ -96,25 +103,26 @@ type
     FDisplay: TPidDisplay;
     FLoading: Boolean;
     FFlashOn: Boolean;
-    FNarrow: Boolean;
-    grdLevels: TDataGrid;
+    FEditing: Integer;               // level shown on the level page, -1 = none
+    FCards: TArray<TRectangle>;
     procedure LoadAll;
-    procedure FillLevels(Select: Integer);
+    procedure BuildCards;
+    procedure CardClick(Sender: TObject);
+    procedure OpenLevel(Index: Integer);
+    procedure CloseLevel;
     procedure ShowLevel;
-    function CurrentLevel: Integer;
     procedure MoveLevel(Delta: Integer);
-    procedure UpdateButtons;
+    procedure UpdateLevelButtons;
     procedure ApplyPreset(HighIsBad: Boolean);
     procedure SetPreset(HighIsBad: Boolean; const Warn, Alarm: Double; const AlarmText: string);
     function PreviewValue: Double;
     procedure SetValueValid(Valid: Boolean);
-    procedure LevelsGetText(Sender: TObject; Col, Row: Integer; var Text: string);
-    procedure LevelsGetStyle(Sender: TObject; Col, Row: Integer; var Style: TCellStyle);
-    procedure LevelsSelect(Sender: TObject);
-    procedure ArrangeRows;
+    procedure FitLayout;
+    procedure ApplyPalette;
+    procedure FormKeyUp(Sender: TObject; var Key: Word; var KeyChar: WideChar; Shift: TShiftState);
   public
     { Edits Settings' entry for Pid; the caller saves display.json. OnDone
-      (may be nil) runs when the dialog closes: True = OK and Settings updated. }
+      (may be nil) runs when the page closes: True = saved and Settings updated. }
     class procedure Execute(Pid: TPidDef; Settings: TDisplaySettings; const OnDone: TProc<Boolean>);
   end;
 
@@ -130,16 +138,11 @@ implementation
 {$R *.fmx}
 
 uses
-  System.StrUtils, FMX.DialogService, UVScan.UI.Common, UVScan.Sound;
+  System.StrUtils, FMX.DialogService, UVScan.UI.Common, UVScan.UI.Theme, UVScan.Sound;
 
 const
-  ColName = 0;
-  ColWhen = 1;
-  ColColours = 2;
-  ColFlash = 3;
-  ColSound = 4;
-  NarrowWidth = 560;
   PtToDip = 96 / 72; // the live grid's font sizes are in points
+  CardHeight = 64;
 
 class procedure TDisplayEditorForm.Execute(Pid: TPidDef; Settings: TDisplaySettings; const OnDone: TProc<Boolean>);
 var
@@ -169,9 +172,12 @@ var
   Op: TCompareOp;
   S: TAlertSound;
   N: Integer;
+  L: TLabel;
 begin
   FLoading := True; // filling the boxes fires their OnChange
+  FEditing := -1;
   FDisplay := TPidDisplay.Create(0);
+  OnKeyUp := FormKeyUp;
   for N in FontSizes do
     if N = 0 then
       cbFontSize.Items.Add('Default')
@@ -186,31 +192,22 @@ begin
   SetupColorCombo(cbxLevelRow, True);
   SetupColorCombo(cbxLevelText, True);
 
-  lblPid.StyledSettings := lblPid.StyledSettings - [TStyledSetting.Style, TStyledSetting.Size];
-  lblPid.TextSettings.Font.Style := [TFontStyle.fsBold];
-  lblPid.TextSettings.Font.Size := 14;
-  lblHelp.StyledSettings := lblHelp.StyledSettings - [TStyledSetting.FontColor];
-  lblHelp.TextSettings.FontColor := $FF707070;
-
-  grdLevels := TDataGrid.Create(Self);
-  grdLevels.Parent := lytLevelGrid;
-  grdLevels.Align := TAlignLayout.Client;
-  grdLevels.AddColumn('Name', 110);
-  grdLevels.AddColumn('When', 90);
-  grdLevels.AddColumn('Colours', 70);
-  grdLevels.AddColumn('Flash', 46);
-  grdLevels.AddColumn('Sound', 100, gaLeft, True);
-  grdLevels.RowHeight := 24;
-  grdLevels.HeaderHeight := 24;
-  grdLevels.FontSize := 12;
-  grdLevels.OnGetText := LevelsGetText;
-  grdLevels.OnGetStyle := LevelsGetStyle;
-  grdLevels.OnSelect := LevelsSelect;
-
+  btnCancel.Text := '';
+  btnLevelBack.Text := '';
+  AddLineIcon(btnCancel, IconBack);
+  AddLineIcon(btnLevelBack, IconBack);
+  for L in [lblPid, lblNormalCap, lblLevelsCap] do
+  begin
+    L.StyledSettings := L.StyledSettings - [TStyledSetting.Style];
+    L.TextSettings.Font.Style := [TFontStyle.fsBold];
+  end;
+  lblPid.StyledSettings := lblPid.StyledSettings - [TStyledSetting.Size];
+  lblPid.TextSettings.Font.Size := 16;
   chkFlash.TextSettings.WordWrap := True;
   chkRepeat.TextSettings.WordWrap := True;
-  btnBrowseSound.Visible := not IsMobile;
-  ArrangeRows;
+  rowSoundFile.Visible := False;
+  btnBrowseSound.Visible := not IsMobile; // no file picker on a phone: type the path
+  ApplyPalette;
   FLoading := False;
 end;
 
@@ -220,82 +217,66 @@ begin
   FDisplay.Free;
 end;
 
-{ Two label + box pairs per row on a wide window, one per row on a phone. }
-procedure TDisplayEditorForm.ArrangeRows;
-type
-  TPair = record
-    Row, Left, Right: TLayout;
-  end;
+procedure TDisplayEditorForm.ApplyPalette;
 var
-  Pairs: array[0..2] of TPair;
-  P: TPair;
-
-  procedure FitGroup(G: TGroupBox);
-  var
-    I: Integer;
-    H: Single;
-    C: TControl;
-  begin
-    H := G.Padding.Top + G.Padding.Bottom;
-    for I := 0 to G.ControlsCount - 1 do
-    begin
-      C := G.Controls[I];
-      if C.Visible and (C.Align = TAlignLayout.Top) then
-        H := H + C.Height + C.Margins.Top + C.Margins.Bottom;
-    end;
-    G.Height := H;
-  end;
-
+  P: TPalette;
+  R: TRectangle;
 begin
-  Pairs[0].Row := rowNormalColors;
-  Pairs[0].Left := pairText;
-  Pairs[0].Right := pairRow;
-  Pairs[1].Row := rowName;
-  Pairs[1].Left := pairName;
-  Pairs[1].Right := pairWhen;
-  Pairs[2].Row := rowLevelColors;
-  Pairs[2].Left := pairLevelRow;
-  Pairs[2].Right := pairLevelText;
-  for P in Pairs do
-    if FNarrow then
-    begin
-      P.Row.Height := 64;
-      P.Left.Align := TAlignLayout.Top;
-      P.Left.Height := 32;
-      P.Right.Align := TAlignLayout.Client;
-      P.Right.Margins.Left := 0;
-    end
-    else
-    begin
-      P.Row.Height := 32;
-      P.Left.Align := TAlignLayout.Left;
-      P.Left.Width := Max(200, (P.Row.Width - 12) / 2);
-      P.Right.Align := TAlignLayout.Client;
-      P.Right.Margins.Left := 12;
-    end;
-  if FNarrow then
+  P := Palette;
+  for R in [pnlBar, pnlLevelBar] do
   begin
-    lblHelp.Height := 58;
-    rowFlash.Height := 44;
-    rowRepeat.Height := 44;
-    grdLevels.SetColumnWidth(ColName, 80);
-  end
-  else
-  begin
-    lblHelp.Height := 40;
-    rowFlash.Height := 28;
-    rowRepeat.Height := 28;
-    grdLevels.SetColumnWidth(ColName, 110);
+    R.Fill.Color := P.Bar;
+    R.Stroke.Color := P.BarLine;
   end;
-  FitGroup(gbNormal);
-  FitGroup(gbLevels);
+  pnlLevel.Fill.Color := P.Back;
+  lblLevelsHelp.StyledSettings := lblLevelsHelp.StyledSettings - [TStyledSetting.FontColor];
+  lblLevelsHelp.TextSettings.FontColor := P.Muted;
 end;
 
 procedure TDisplayEditorForm.FormResize(Sender: TObject);
 begin
-  FNarrow := ClientWidth < NarrowWidth;
-  if grdLevels <> nil then
-    ArrangeRows;
+  FitLayout;
+end;
+
+{ Captions as wide as the widest of them (fonts differ by style), wrapped
+  labels as tall as their text. }
+procedure TDisplayEditorForm.FitLayout;
+var
+  Caps: TArray<TLabel>;
+  L: TLabel;
+  W: Single;
+  C: TCheckBox;
+begin
+  if lblPid = nil then
+    Exit;
+  Caps := [lblPreviewValue, lblFontSize, lblTextColor, lblRowColor];
+  W := 0;
+  for L in Caps do
+  begin
+    L.WordWrap := False;
+    FitTextWidth(L);
+    W := Max(W, L.Width);
+  end;
+  for L in Caps do
+    L.Width := W + 8;
+  Caps := [lblLevelName, lblLevelRow, lblLevelText, lblSound];
+  W := 0;
+  for L in Caps do
+  begin
+    L.WordWrap := False;
+    FitTextWidth(L);
+    W := Max(W, L.Width);
+  end;
+  for L in Caps do
+    L.Width := W + 8;
+  if lblPid.Width > 50 then
+    lblPid.Height := WrappedTextHeight(lblPid, lblPid.Width) + 2;
+  if lblLevelsHelp.Width > 50 then
+    lblLevelsHelp.Height := WrappedTextHeight(lblLevelsHelp, lblLevelsHelp.Width) + 2;
+  for C in [chkFlash, chkRepeat] do
+    if C.Width > 80 then
+      C.Height := Max(40, WrappedTextHeight(C, C.Width - 40) + 12); // the box takes about 40
+  BuildCards;
 end;
 
 procedure TDisplayEditorForm.LoadAll;
@@ -319,7 +300,8 @@ begin
   finally
     FLoading := False;
   end;
-  FillLevels(0);
+  FitLayout;
+  pbPreview.Repaint;
 end;
 
 procedure TDisplayEditorForm.NormalChange(Sender: TObject);
@@ -335,102 +317,172 @@ begin
   pbPreview.Repaint;
 end;
 
-{ Levels }
+{ Level cards: a swatch in the level's colours, its name and condition, and a
+  line with what else it does. }
 
-procedure TDisplayEditorForm.LevelsGetText(Sender: TObject; Col, Row: Integer; var Text: string);
+function LevelDetails(const L: TDisplayLevel): string;
 var
-  L: TDisplayLevel;
+  Parts: TArray<string>;
 begin
-  if Row > High(FDisplay.Levels) then
-    Exit;
-  L := FDisplay.Levels[Row];
-  case Col of
-    ColName: Text := L.Name;
-    ColWhen: Text := L.Describe;
-    ColColours: Text := 'Sample';
-    ColFlash: Text := IfThen(L.Flash, 'flash', '');
-    ColSound:
-      begin
-        if L.Sound = asFile then
-          Text := ExtractFileName(L.SoundFile)
-        else if L.Sound = asNone then
-          Text := ''
-        else
-          Text := AlertSoundCaptions[L.Sound];
-        if (Text <> '') and L.RepeatSound then
-          Text := Text + ', repeat';
-      end;
-  end;
-end;
-
-procedure TDisplayEditorForm.LevelsGetStyle(Sender: TObject; Col, Row: Integer; var Style: TCellStyle);
-var
-  L: TDisplayLevel;
-begin
-  // (The selected row is drawn in the selection colours; the editor below shows its colours.)
-  if (Col <> ColColours) or (Row > High(FDisplay.Levels)) or (Row = grdLevels.ItemIndex) then
-    Exit;
-  L := FDisplay.Levels[Row];
+  Parts := nil;
   if L.RowColor <> NoColor then
-    Style.Back := L.RowColor
+    Parts := Parts + [ColorName(L.RowColor)];
+  if L.TextColor <> NoColor then
+    Parts := Parts + [ColorName(L.TextColor) + ' text'];
+  if L.Flash then
+    Parts := Parts + ['flashes'];
+  if L.Sound = asFile then
+    Parts := Parts + [ExtractFileName(L.SoundFile)]
+  else if L.Sound <> asNone then
+    Parts := Parts + [AlertSoundCaptions[L.Sound]];
+  if (L.Sound <> asNone) and L.RepeatSound then
+    Parts := Parts + ['repeats'];
+  if Parts = nil then
+    Result := 'no change'
   else
-    Style.Back := TAlphaColors.White;
-  Style.Fore := L.TextColor;
+    Result := string.Join('  ' + #$00B7 + '  ', Parts);
 end;
 
-procedure TDisplayEditorForm.LevelsSelect(Sender: TObject);
+procedure TDisplayEditorForm.BuildCards;
+var
+  I: Integer;
+  P: TPalette;
+  Card, Swatch: TRectangle;
+  Texts: TLayout;
+  Top, Sub: TLabel;
+  H: Single;
+  L: TDisplayLevel;
+  Y: Single;
 begin
+  for Card in FCards do
+    Card.Free;
+  FCards := nil;
+  P := Palette;
+  Y := 0;
+  for I := 0 to High(FDisplay.Levels) do
+  begin
+    L := FDisplay.Levels[I];
+    Card := TRectangle.Create(Self);
+    Card.Parent := lytLevelList;
+    Card.Stored := False;
+    Card.SetBounds(8, Y, Max(100, lytLevelList.Width - 16), CardHeight);
+    Card.Fill.Color := P.Bar;
+    Card.Stroke.Color := P.BarLine;
+    Card.XRadius := 8;
+    Card.YRadius := 8;
+    Card.HitTest := True;
+    Card.Cursor := crHandPoint;
+    Card.Tag := I;
+    Card.OnClick := CardClick;
+    Swatch := TRectangle.Create(Card);
+    Swatch.Parent := Card;
+    Swatch.Align := TAlignLayout.Left;
+    Swatch.Width := 26;
+    Swatch.Margins.Rect := TRectF.Create(12, 18, 6, 18);
+    Swatch.HitTest := False;
+    Swatch.XRadius := 4;
+    Swatch.YRadius := 4;
+    if L.RowColor <> NoColor then
+      Swatch.Fill.Color := L.RowColor
+    else
+      Swatch.Fill.Color := P.GridBack;
+    Swatch.Stroke.Color := P.BarLine;
+    AddLineIcon(Card, IconChevron, 18).Align := TAlignLayout.Right;
+    TControl(Card.Controls[Card.ControlsCount - 1]).Margins.Rect := TRectF.Create(4, 0, 12, 0);
+    // Name line and details in their own box: top-aligned controls would
+    // otherwise take the card's full width before the swatch and the chevron.
+    Texts := TLayout.Create(Card);
+    Texts.Parent := Card;
+    Texts.Align := TAlignLayout.Client;
+    Texts.HitTest := False;
+    Top := TLabel.Create(Card);
+    Top.Parent := Texts;
+    Top.Align := TAlignLayout.Top;
+    Top.Height := 28;
+    Top.Margins.Rect := TRectF.Create(8, 6, 4, 0);
+    Top.HitTest := False;
+    Top.StyledSettings := Top.StyledSettings - [TStyledSetting.Style];
+    Top.TextSettings.Font.Style := [TFontStyle.fsBold];
+    Top.TextSettings.WordWrap := False;
+    Top.TextSettings.Trimming := TTextTrimming.Character;
+    Top.Text := IfThen(L.Name <> '', L.Name, 'Level ' + IntToStr(I + 1)) + '     ' + L.Describe;
+    Sub := TLabel.Create(Card);
+    Sub.Parent := Texts;
+    Sub.Align := TAlignLayout.Client;
+    Sub.Margins.Rect := TRectF.Create(8, 0, 4, 6);
+    Sub.HitTest := False;
+    Sub.StyledSettings := Sub.StyledSettings - [TStyledSetting.FontColor];
+    Sub.TextSettings.FontColor := P.Muted;
+    Sub.TextSettings.WordWrap := True;
+    Sub.TextSettings.VertAlign := TTextAlign.Leading;
+    Sub.Text := LevelDetails(L);
+    // as tall as the details need (swatch 26 + chevron 34 + margins take ~100)
+    H := Max(CardHeight, 34 + WrappedTextHeight(Sub, Card.Width - 100) + 10);
+    Card.Height := H;
+    FCards := FCards + [Card];
+    Y := Y + H + 8;
+  end;
+  if Length(FDisplay.Levels) = 0 then
+    lytLevelList.Height := 4
+  else
+    lytLevelList.Height := Y;
+end;
+
+procedure TDisplayEditorForm.CardClick(Sender: TObject);
+begin
+  OpenLevel(TControl(Sender).Tag);
+end;
+
+{ The level page }
+
+procedure TDisplayEditorForm.OpenLevel(Index: Integer);
+begin
+  if (Index < 0) or (Index > High(FDisplay.Levels)) then
+    Exit;
+  FEditing := Index;
   ShowLevel;
+  pnlLevel.Visible := True;
+  pnlLevel.BringToFront;
+  sbLevel.ViewportPosition := TPointF.Zero;
+  FitLayout;
 end;
 
-procedure TDisplayEditorForm.FillLevels(Select: Integer);
+procedure TDisplayEditorForm.CloseLevel;
 begin
-  grdLevels.RowCount := Length(FDisplay.Levels);
-  if Length(FDisplay.Levels) > 0 then
-    Select := EnsureRange(Select, 0, High(FDisplay.Levels))
-  else
-    Select := -1;
-  if grdLevels.ItemIndex = Select then
-    ShowLevel // OnSelect does not fire for the same row
-  else
-    grdLevels.ItemIndex := Select; // shows the level
-  grdLevels.Refresh;
+  StopAlertSound;
+  pnlLevel.Visible := False;
+  FEditing := -1;
+  BuildCards;
+  pbPreview.Repaint;
 end;
 
-function TDisplayEditorForm.CurrentLevel: Integer;
+procedure TDisplayEditorForm.btnLevelBackClick(Sender: TObject);
 begin
-  if grdLevels = nil then
-    Exit(-1);
-  Result := grdLevels.ItemIndex;
-  if Result > High(FDisplay.Levels) then
-    Result := -1;
+  CloseLevel;
 end;
 
 procedure TDisplayEditorForm.SetValueValid(Valid: Boolean);
 begin
   edtValue.StyledSettings := edtValue.StyledSettings - [TStyledSetting.FontColor];
   if Valid then
-    edtValue.TextSettings.FontColor := TAlphaColors.Black
+    edtValue.TextSettings.FontColor := Palette.Text
   else
-    edtValue.TextSettings.FontColor := TAlphaColors.Red; // keeps the last good value
+    edtValue.TextSettings.FontColor := Palette.Bad; // keeps the last good value
 end;
 
 procedure TDisplayEditorForm.ShowLevel;
 var
-  I: Integer;
   L: TDisplayLevel;
-  Ctl: TControl;
 begin
-  I := CurrentLevel;
+  if FEditing < 0 then
+    Exit;
+  L := FDisplay.Levels[FEditing];
   FLoading := True;
   try
-    if I >= 0 then
-      L := FDisplay.Levels[I]
-    else
-      L := NewLevel;
-    edtLevelName.Text := IfThen(I >= 0, L.Name, '');
+    lblLevelTitle.Text := IfThen(L.Name <> '', L.Name, 'Level ' + IntToStr(FEditing + 1));
+    edtLevelName.Text := L.Name;
     cbOp.ItemIndex := Ord(L.Op);
-    edtValue.Text := IfThen(I >= 0, FormatFloat('0.###', L.Value), '');
+    edtValue.Text := FormatFloat('0.###', L.Value);
     SetValueValid(True);
     SetComboColor(cbxLevelRow, L.RowColor);
     SetComboColor(cbxLevelText, L.TextColor);
@@ -438,44 +490,32 @@ begin
     cbSound.ItemIndex := Ord(L.Sound);
     edtSoundFile.Text := L.SoundFile;
     chkRepeat.IsChecked := L.RepeatSound;
-    for Ctl in TArray<TControl>.Create(lblLevelName, edtLevelName, lblWhen, cbOp, edtValue, lblLevelRow,
-      cbxLevelRow, lblLevelText, cbxLevelText, chkFlash, lblSound, cbSound, btnTestSound, chkRepeat) do
-      Ctl.Enabled := I >= 0;
   finally
     FLoading := False;
   end;
-  UpdateButtons;
-  pbPreview.Repaint;
+  UpdateLevelButtons;
 end;
 
-procedure TDisplayEditorForm.UpdateButtons;
+procedure TDisplayEditorForm.UpdateLevelButtons;
 var
-  I: Integer;
-  FileSound: Boolean;
+  Sound: Boolean;
 begin
-  I := CurrentLevel;
-  btnDeleteLevel.Enabled := I >= 0;
-  btnUp.Enabled := I > 0;
-  btnDown.Enabled := (I >= 0) and (I < High(FDisplay.Levels));
-  FileSound := (I >= 0) and (cbSound.ItemIndex = Ord(asFile));
-  edtSoundFile.Enabled := FileSound;
-  btnBrowseSound.Enabled := FileSound;
-  btnTestSound.Enabled := (I >= 0) and (cbSound.ItemIndex > 0);
-  chkRepeat.Enabled := (I >= 0) and (cbSound.ItemIndex > 0);
+  btnUp.Enabled := FEditing > 0;
+  btnDown.Enabled := (FEditing >= 0) and (FEditing < High(FDisplay.Levels));
+  Sound := cbSound.ItemIndex > 0;
+  rowSoundFile.Visible := cbSound.ItemIndex = Ord(asFile);
+  btnTestSound.Enabled := Sound;
+  chkRepeat.Enabled := Sound;
 end;
 
 procedure TDisplayEditorForm.LevelChange(Sender: TObject);
 var
-  I: Integer;
   L: TDisplayLevel;
   V: Double;
 begin
-  if FLoading then
+  if FLoading or (FEditing < 0) then
     Exit;
-  I := CurrentLevel;
-  if I < 0 then
-    Exit;
-  L := FDisplay.Levels[I];
+  L := FDisplay.Levels[FEditing];
   L.Name := Trim(edtLevelName.Text);
   L.Op := TCompareOp(Max(0, cbOp.ItemIndex));
   if TryParseNumber(edtValue.Text, V) then
@@ -491,9 +531,9 @@ begin
   L.Sound := TAlertSound(Max(0, cbSound.ItemIndex));
   L.SoundFile := Trim(edtSoundFile.Text);
   L.RepeatSound := chkRepeat.IsChecked;
-  FDisplay.Levels[I] := L;
-  grdLevels.Refresh;
-  UpdateButtons;
+  FDisplay.Levels[FEditing] := L;
+  lblLevelTitle.Text := IfThen(L.Name <> '', L.Name, 'Level ' + IntToStr(FEditing + 1));
+  UpdateLevelButtons;
   pbPreview.Repaint;
 end;
 
@@ -505,19 +545,27 @@ begin
   L.Name := 'Level ' + IntToStr(Length(FDisplay.Levels) + 1);
   L.RowColor := WarnColor;
   FDisplay.Levels := FDisplay.Levels + [L];
-  FillLevels(High(FDisplay.Levels));
-  edtValue.SetFocus;
+  BuildCards;
+  OpenLevel(High(FDisplay.Levels));
+  if not IsMobile then
+    edtValue.SetFocus;
 end;
 
 procedure TDisplayEditorForm.btnDeleteLevelClick(Sender: TObject);
 var
   I: Integer;
 begin
-  I := CurrentLevel;
+  I := FEditing;
   if I < 0 then
     Exit;
-  Delete(FDisplay.Levels, I, 1);
-  FillLevels(I);
+  Confirm(Format('Delete the level "%s"?', [IfThen(FDisplay.Levels[I].Name <> '', FDisplay.Levels[I].Name,
+    'Level ' + IntToStr(I + 1))]),
+    procedure
+    begin
+      if I <= High(FDisplay.Levels) then
+        Delete(FDisplay.Levels, I, 1);
+      CloseLevel;
+    end);
 end;
 
 procedure TDisplayEditorForm.MoveLevel(Delta: Integer);
@@ -525,13 +573,15 @@ var
   I: Integer;
   L: TDisplayLevel;
 begin
-  I := CurrentLevel;
+  I := FEditing;
   if (I < 0) or (I + Delta < 0) or (I + Delta > High(FDisplay.Levels)) then
     Exit;
   L := FDisplay.Levels[I];
   FDisplay.Levels[I] := FDisplay.Levels[I + Delta];
   FDisplay.Levels[I + Delta] := L;
-  FillLevels(I + Delta);
+  FEditing := I + Delta;
+  UpdateLevelButtons;
+  pbPreview.Repaint;
 end;
 
 procedure TDisplayEditorForm.btnUpClick(Sender: TObject);
@@ -634,7 +684,7 @@ begin
   finally
     FLoading := False;
   end;
-  FillLevels(0);
+  BuildCards;
   edtPreview.Text := AlarmText;
   pbPreview.Repaint;
 end;
@@ -671,11 +721,37 @@ end;
 
 procedure TDisplayEditorForm.btnClearClick(Sender: TObject);
 begin
-  FDisplay.FontSize := 0;
-  FDisplay.TextColor := NoColor;
-  FDisplay.RowColor := NoColor;
-  FDisplay.Levels := nil;
-  LoadAll;
+  Confirm('Clear the normal look and all alert levels of this PID?',
+    procedure
+    begin
+      FDisplay.FontSize := 0;
+      FDisplay.TextColor := NoColor;
+      FDisplay.RowColor := NoColor;
+      FDisplay.Levels := nil;
+      LoadAll;
+    end);
+end;
+
+procedure TDisplayEditorForm.btnOKClick(Sender: TObject);
+begin
+  ModalResult := mrOk;
+end;
+
+procedure TDisplayEditorForm.btnCancelClick(Sender: TObject);
+begin
+  ModalResult := mrCancel;
+end;
+
+procedure TDisplayEditorForm.FormKeyUp(Sender: TObject; var Key: Word; var KeyChar: WideChar; Shift: TShiftState);
+begin
+  if (Key = vkHardwareBack) or (Key = vkEscape) then
+  begin
+    Key := 0;
+    if pnlLevel.Visible then
+      CloseLevel
+    else
+      ModalResult := mrCancel;
+  end;
 end;
 
 { Preview: one live-grid row painted the way the grid will paint it. }
@@ -712,30 +788,37 @@ begin
   S := ResolveDisplay(FDisplay, V);
   S.Colors(FFlashOn, Row, Txt);
   if Row = NoColor then
-    Row := TAlphaColors.White;
+    Row := Palette.GridBack;
   if Txt = NoColor then
-    Txt := $FF1E1E1E;
+  begin
+    if (S.RowColor <> NoColor) or (FDisplay.RowColor <> NoColor) then
+      Txt := ContrastColor(Row)
+    else
+      Txt := Palette.GridText;
+  end;
   R := pbPreview.LocalRect;
   Canvas.Fill.Kind := TBrushKind.Solid;
   Canvas.Fill.Color := Row;
-  Canvas.FillRect(R, 0, 0, [], 1);
+  Canvas.FillRect(R, 6, 6, AllCorners, 1);
   Canvas.Stroke.Kind := TBrushKind.Solid;
-  Canvas.Stroke.Color := $FFA0A0A0;
+  Canvas.Stroke.Color := Palette.BarLine;
   Canvas.Stroke.Thickness := 1;
-  Canvas.DrawRect(TRectF.Create(R.Left + 0.5, R.Top + 0.5, R.Right - 0.5, R.Bottom - 0.5), 0, 0, [], 1);
-  R.Inflate(-8, 0);
+  Canvas.DrawRect(TRectF.Create(R.Left + 0.5, R.Top + 0.5, R.Right - 0.5, R.Bottom - 0.5), 6, 6, AllCorners, 1);
+  R.Inflate(-10, 0);
   if S.Level >= 0 then
-    Status := FPid.LongName + '   [' + IfThen(S.LevelName <> '', S.LevelName, 'level ' + IntToStr(S.Level + 1)) + ']'
+    Status := IfThen(S.LevelName <> '', S.LevelName, 'level ' + IntToStr(S.Level + 1))
+  else if IsNan(V) then
+    Status := 'type a value below'
   else
-    Status := FPid.LongName;
+    Status := 'normal';
   Canvas.Fill.Color := Txt;
   Canvas.Font.Style := [];
-  Canvas.Font.Size := 10 * PtToDip;
-  Canvas.FillText(TRectF.Create(R.Left, R.Top, R.Left + R.Width * 0.6, R.Bottom), Status, False, 1, [],
+  Canvas.Font.Size := 11 * PtToDip;
+  Canvas.FillText(TRectF.Create(R.Left, R.Top, R.Left + R.Width * 0.5, R.Bottom), Status, False, 1, [],
     TTextAlign.Leading, TTextAlign.Center);
   Canvas.Font.Style := [TFontStyle.fsBold];
   if S.FontSize > 0 then
-    Canvas.Font.Size := S.FontSize * PtToDip
+    Canvas.Font.Size := Min(S.FontSize, 22) * PtToDip
   else
     Canvas.Font.Size := 14 * PtToDip;
   Canvas.FillText(R, FPid.FormatValue(V) + ' ' + FPid.Units, False, 1, [], TTextAlign.Trailing, TTextAlign.Center);
