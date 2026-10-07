@@ -396,9 +396,7 @@ object ControlEditorForm: TControlEditorForm
         Margins.Top = 4
         Margins.Bottom = 4
         OnChangeTracking = Changed
-        TextPrompt = 
-          'Question asked before sending, e.g. "Reset the learned fuel ' +
-          'trims?" (empty = none)'
+        TextPrompt = 'Optional question, e.g. Engine off?'
       end
     end
     object rowNotes: TLayout

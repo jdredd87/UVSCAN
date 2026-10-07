@@ -93,7 +93,7 @@ implementation
 {$R *.fmx}
 
 uses
-  System.StrUtils, UVScan.Class2, UVScan.Hex, UVScan.Display, UVScan.UI.Common;
+  System.StrUtils, UVScan.Class2, UVScan.Hex, UVScan.Display, UVScan.UI.Common, UVScan.UI.Theme;
 
 const
   Modules: array[0..8] of Byte = ($10, $18, $20, $28, $40, $58, $60, $80, $C0);
@@ -119,6 +119,7 @@ begin
   else
     F.Caption := 'Edit real-time control';
   F.LoadFrom(C);
+  MakePage(F, F.Caption, F.btnOK);
   ShowDialog(F,
     procedure(R: TModalResult)
     begin
@@ -159,9 +160,9 @@ begin
   lblSends.StyledSettings := lblSends.StyledSettings - [TStyledSetting.Family];
   lblSends.TextSettings.Font.Family := MonoFont;
   lblHelp.StyledSettings := lblHelp.StyledSettings - [TStyledSetting.FontColor];
-  lblHelp.TextSettings.FontColor := $FF707070;
+  lblHelp.TextSettings.FontColor := Palette.Muted;
   lblProblem.StyledSettings := lblProblem.StyledSettings - [TStyledSetting.FontColor];
-  lblProblem.TextSettings.FontColor := TAlphaColors.Red;
+  lblProblem.TextSettings.FontColor := Palette.Bad;
   for Lbl in TArray<TLabel>.Create(lblNotes, lblSendsCaption) do
     Lbl.TextSettings.VertAlign := TTextAlign.Leading;
   FLoading := False;
@@ -169,46 +170,82 @@ end;
 
 procedure TControlEditorForm.FormResize(Sender: TObject);
 var
-  PerRow, Rows: Integer;
+  Narrow: Boolean;
+  W, PairW, H: Single;
+  PerRow, Rows, I: Integer;
+  L: TLabel;
+  Pairs: TArray<TLayout>;
 begin
-  if ClientWidth < NarrowWidth then
+  Narrow := ClientWidth < NarrowWidth;
+  // Name and group: side by side on a wide window, one under the other on a phone.
+  if Narrow then
   begin
-    rowName.Height := 64;
     pairName.Align := TAlignLayout.Top;
-    pairName.Height := 32;
     pairGroup.Margins.Left := 0;
-    lblGroup.Width := 100;
-    lblHelp.Height := 86;
   end
   else
   begin
-    rowName.Height := 32;
     pairName.Align := TAlignLayout.Left;
     pairName.Width := Max(200, rowName.Width * 0.58);
     pairGroup.Margins.Left := 12;
-    lblGroup.Width := 50;
-    lblHelp.Height := 52;
   end;
-  // The value boxes wrap; make the group as tall as the rows they need.
-  PerRow := Max(1, Trunc((gbValue.Width - gbValue.Padding.Left - gbValue.Padding.Right) / pairMin.Width));
-  Rows := (flowValue.ChildrenCount + PerRow - 1) div PerRow;
-  gbValue.Height := gbValue.Padding.Top + gbValue.Padding.Bottom + Rows * pairMin.Height;
-  // Radio buttons: two per line on a narrow screen.
-  if ClientWidth < NarrowWidth then
-    gbKind.Height := 26 + 2 * 28 + 4
+  ArrangeCaptionRows([pairName, pairGroup, rowModule, rowOn, rowOff, rowConfirm],
+    [lblName, lblGroup, lblModule, lblOn, lblOff, lblConfirm], Narrow);
+  if Narrow then
+    rowName.Height := pairName.Height * 2
   else
-    gbKind.Height := 26 + 28 + 6;
-  for var I := 0 to High(FKindButtons) do
-    if ClientWidth < NarrowWidth then
+    rowName.Height := pairName.Height;
+  ArrangeCaptionRows([rowNotes], [lblNotes], Narrow, 80);
+  lblSends.WordWrap := True;
+  H := Max(30, WrappedTextHeight(lblSends, Max(100, lblSends.Width)) + 6);
+  ArrangeCaptionRows([rowSends], [lblSendsCaption], Narrow, H);
+  for L in [lblHelp, lblProblem] do
+  begin
+    // under the fields on a wide window, full width on a phone
+    if Narrow then
+      L.Margins.Left := 12
+    else
+      L.Margins.Left := lblOn.Width + 8;
+    L.WordWrap := True;
+    L.Height := Max(20, WrappedTextHeight(L, Max(100, ClientWidth - L.Margins.Left - L.Margins.Right - 30)) + 4);
+  end;
+  // Value boxes: the captions as wide as the widest, the boxes wrap; the group
+  // as tall as the rows they need.
+  W := 0;
+  for L in [lblMin, lblMax, lblStep, lblUnits, lblScale, lblOffset] do
+  begin
+    L.WordWrap := False;
+    FitTextWidth(L);
+    W := Max(W, L.Width);
+  end;
+  PairW := W + 8 + 100;
+  Pairs := [pairMin, pairMax, pairStep, pairUnits, pairScale, pairOffset];
+  for I := 0 to High(Pairs) do
+  begin
+    TLabel(Pairs[I].Controls[0]).Width := W + 8;
+    Pairs[I].Width := PairW;
+    Pairs[I].Height := 42;
+  end;
+  PerRow := Max(1, Trunc((gbValue.Width - gbValue.Padding.Left - gbValue.Padding.Right) / PairW));
+  Rows := (Length(Pairs) + PerRow - 1) div PerRow;
+  gbValue.Height := gbValue.Padding.Top + gbValue.Padding.Bottom + Rows * 42 + 4;
+  // Type: one per line on a phone, all on one line on a wide window.
+  for I := 0 to High(FKindButtons) do
+    if Narrow then
     begin
       FKindButtons[I].Align := TAlignLayout.None;
-      FKindButtons[I].SetBounds(gbKind.Padding.Left + (I mod 2) * 160, 24 + (I div 2) * 28, 150, 26);
+      FKindButtons[I].SetBounds(gbKind.Padding.Left + 4, 28 + I * 36, gbKind.Width - 24, 34);
     end
     else
     begin
-      FKindButtons[I].Position.X := I * 150;
+      FKindButtons[I].Position.X := I * 170;
       FKindButtons[I].Align := TAlignLayout.Left;
+      FitTextWidth(FKindButtons[I], 120);
     end;
+  if Narrow then
+    gbKind.Height := 28 + Length(FKindButtons) * 36 + 6
+  else
+    gbKind.Height := 28 + 34 + 8;
 end;
 
 function TControlEditorForm.KindIndex: Integer;
@@ -324,6 +361,7 @@ begin
   end;
   lblSends.Text := Sends;
   lblProblem.Text := Problem;
+  FormResize(nil); // their wrapped height may have changed
   btnOK.Enabled := Problem = '';
 end;
 

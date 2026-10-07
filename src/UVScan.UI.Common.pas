@@ -101,6 +101,24 @@ const
   the theme's text colour. }
 function AddLineIcon(Button: TControl; const PathData: string; Size: Single = 22): TPath;
 
+{ Turns a dialog form into a page like the main window's: a top bar with a
+  back arrow (= Cancel), Title, and OkButton moved into the bar as OkText.
+  The Cancel button and the then empty button row are hidden. The back key
+  and Escape cancel. }
+procedure MakePage(Form: TCustomForm; const Title: string; OkButton: TButton; const OkText: string = 'Save');
+
+{ Caption + field rows. Narrow: each caption above its field; otherwise left
+  of it, all captions as wide as the widest. A row's field is the control
+  aligned Client in it. FieldHeight = the field's height. }
+procedure ArrangeCaptionRows(const Rows: array of TControl; const Captions: array of TLabel; Narrow: Boolean;
+  FieldHeight: Single = 36);
+
+{ Places Items left to right in Container, wrapping to more lines as the
+  width needs (buttons as wide as their text, at least MinWidth), and makes
+  Container as tall as the lines. }
+procedure FlowControls(Container: TControl; const Items: array of TControl; MinWidth: Single = 90;
+  ItemHeight: Single = 40; Gap: Single = 8);
+
 { Widens a button, check box or label so its text fits in the active style's
   font (styles differ: Win10Modern's text is bigger than the default's). }
 procedure FitTextWidth(C: TControl; MinWidth: Single = 0);
@@ -360,6 +378,157 @@ begin
     Items := Items + [It];
   end;
   ShowActionMenu(Form, Items, At);
+end;
+
+type
+  TPageChrome = class(TComponent)
+  private
+    FForm: TCustomForm;
+    FOldKeyUp: TKeyEvent;
+    procedure BackClick(Sender: TObject);
+    procedure KeyUp(Sender: TObject; var Key: Word; var KeyChar: WideChar; Shift: TShiftState);
+  end;
+
+procedure TPageChrome.BackClick(Sender: TObject);
+begin
+  FForm.ModalResult := mrCancel;
+end;
+
+procedure TPageChrome.KeyUp(Sender: TObject; var Key: Word; var KeyChar: WideChar; Shift: TShiftState);
+begin
+  // The form first (it may use the back key itself, e.g. to leave a sub-page).
+  if Assigned(FOldKeyUp) then
+    FOldKeyUp(Sender, Key, KeyChar, Shift);
+  if Key = vkHardwareBack then
+  begin
+    Key := 0;
+    FForm.ModalResult := mrCancel;
+  end;
+end;
+
+procedure MakePage(Form: TCustomForm; const Title: string; OkButton: TButton; const OkText: string);
+var
+  Chrome: TPageChrome;
+  Bar: TRectangle;
+  Back: TSpeedButton;
+  L: TLabel;
+  Row: TFmxObject;
+  I: Integer;
+  AnyLeft: Boolean;
+  P: TPalette;
+begin
+  P := Palette;
+  Chrome := TPageChrome.Create(Form);
+  Chrome.FForm := Form;
+  Chrome.FOldKeyUp := Form.OnKeyUp;
+  Form.OnKeyUp := Chrome.KeyUp;
+  Bar := TRectangle.Create(Form);
+  Bar.Parent := Form;
+  Bar.Stored := False;
+  Bar.Align := TAlignLayout.Top;
+  Bar.Position.Y := -100; // above every other top-aligned control
+  Bar.Height := 52;
+  Bar.Sides := [TSide.Bottom];
+  Bar.Fill.Color := P.Bar;
+  Bar.Stroke.Color := P.BarLine;
+  Back := TSpeedButton.Create(Form);
+  Back.Parent := Bar;
+  Back.Stored := False;
+  Back.Align := TAlignLayout.Left;
+  Back.Width := 48;
+  Back.Text := '';
+  Back.Hint := 'Back';
+  Back.OnClick := Chrome.BackClick;
+  AddLineIcon(Back, IconBack);
+  Row := OkButton.Parent;
+  OkButton.Parent := Bar;
+  OkButton.Align := TAlignLayout.Right;
+  OkButton.Margins.Rect := TRectF.Create(6, 8, 8, 8);
+  OkButton.Width := 96;
+  OkButton.Text := OkText;
+  L := TLabel.Create(Form);
+  L.Parent := Bar;
+  L.Stored := False;
+  L.Align := TAlignLayout.Client;
+  L.Margins.Left := 6;
+  L.StyledSettings := L.StyledSettings - [TStyledSetting.Size];
+  L.TextSettings.Font.Size := 19;
+  L.TextSettings.WordWrap := False;
+  L.TextSettings.Trimming := TTextTrimming.Character;
+  L.Text := Title;
+  // The old button row: hide its Cancel button, and the row if nothing is left.
+  if Row is TControl then
+  begin
+    AnyLeft := False;
+    for I := 0 to TControl(Row).ControlsCount - 1 do
+      if (TControl(Row).Controls[I] is TButton) and
+        ((TButton(TControl(Row).Controls[I]).ModalResult = mrCancel) or TButton(TControl(Row).Controls[I]).Cancel) then
+        TControl(Row).Controls[I].Visible := False
+      else if TControl(Row).Controls[I].Visible then
+        AnyLeft := True;
+    if not AnyLeft then
+      TControl(Row).Visible := False;
+  end;
+end;
+
+procedure FlowControls(Container: TControl; const Items: array of TControl; MinWidth: Single;
+  ItemHeight: Single; Gap: Single);
+var
+  I: Integer;
+  X, Y, W: Single;
+begin
+  W := Container.Width - Container.Padding.Left - Container.Padding.Right;
+  if W < 50 then
+    Exit;
+  X := 0;
+  Y := 0;
+  for I := 0 to High(Items) do
+  begin
+    if not Items[I].Visible then
+      Continue;
+    Items[I].Align := TAlignLayout.None;
+    FitTextWidth(Items[I], MinWidth);
+    if (X > 0) and (X + Items[I].Width > W) then
+    begin
+      X := 0;
+      Y := Y + ItemHeight + Gap;
+    end;
+    Items[I].SetBounds(Container.Padding.Left + X, Container.Padding.Top + Y, Min(Items[I].Width, W), ItemHeight);
+    X := X + Items[I].Width + Gap;
+  end;
+  Container.Height := Container.Padding.Top + Y + ItemHeight + Container.Padding.Bottom + 4;
+end;
+
+procedure ArrangeCaptionRows(const Rows: array of TControl; const Captions: array of TLabel; Narrow: Boolean;
+  FieldHeight: Single);
+var
+  I: Integer;
+  W: Single;
+begin
+  W := 0;
+  for I := 0 to High(Captions) do
+  begin
+    Captions[I].WordWrap := False;
+    FitTextWidth(Captions[I]);
+    W := Max(W, Captions[I].Width);
+  end;
+  for I := 0 to High(Captions) do
+    if Narrow then
+    begin
+      Captions[I].Align := TAlignLayout.Top;
+      Captions[I].Height := 26;
+      Captions[I].TextSettings.VertAlign := TTextAlign.Trailing;
+      if I <= High(Rows) then
+        Rows[I].Height := 26 + FieldHeight + 6;
+    end
+    else
+    begin
+      Captions[I].Align := TAlignLayout.Left;
+      Captions[I].Width := W + 10;
+      Captions[I].TextSettings.VertAlign := TTextAlign.Center;
+      if I <= High(Rows) then
+        Rows[I].Height := FieldHeight + 6;
+    end;
 end;
 
 function AddLineIcon(Button: TControl; const PathData: string; Size: Single): TPath;

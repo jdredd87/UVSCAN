@@ -8,10 +8,16 @@ interface
 uses
   System.SysUtils, System.Classes, System.Math, System.UITypes, System.StrUtils, System.Types,
   FMX.Types, FMX.Controls, FMX.Forms, FMX.Graphics, FMX.StdCtrls, FMX.Edit, FMX.ListBox,
-  FMX.Layouts, FMX.Controls.Presentation, FMX.ComboEdit,
+  FMX.Layouts, FMX.Controls.Presentation, FMX.ComboEdit, FMX.Objects,
   UVScan.Pids, UVScan.UI.DataGrid;
 
 type
+  TSavedBounds = record
+    Ctl: TControl;
+    R: TRectF;
+    Anchors: TAnchors;
+  end;
+
   TPidEditorForm = class(TForm)
     pnlList: TLayout;
     edtFilter: TEdit;
@@ -93,6 +99,15 @@ type
     FDiscardOk: Boolean;
     FNarrow: Boolean;
     FProblems: TArray<TPidProblem>;
+    FDetailMode: Boolean;            // narrow window: the details page is showing
+    FDetailBar: TRectangle;          // "< All PIDs" above the details
+    FOrig: TArray<TSavedBounds>;     // the wide layout, to go back to
+    procedure SaveBounds(const Ctls: array of TControl);
+    procedure RestoreBounds;
+    procedure StackDetail;
+    procedure SetDetailMode(Value: Boolean);
+    procedure DetailBackClick(Sender: TObject);
+    procedure FormKeyUp(Sender: TObject; var Key: Word; var KeyChar: WideChar; Shift: TShiftState);
     procedure ListGetText(Sender: TObject; Col, Row: Integer; var Text: string);
     procedure ListSelect(Sender: TObject);
     procedure AfterBulkChange;
@@ -121,7 +136,7 @@ implementation
 
 uses
   FMX.Dialogs, FMX.Memo, FMX.Memo.Types,
-  UVScan.Formula, UVScan.LegacyImport, UVScan.Defaults, UVScan.UI.Common;
+  UVScan.Formula, UVScan.LegacyImport, UVScan.Defaults, UVScan.UI.Common, UVScan.UI.Theme;
 
 const
   KindCaptions: array[TPidKind] of string = ('Vehicle PID', 'Calculated', 'Analog input');
@@ -301,6 +316,7 @@ begin
     F.ShowCurrent;
   F.UpdateProblems;
   F.FModified := False;
+  MakePage(F, 'PID definitions', F.btnSave);
   ShowDialog(F,
     procedure(R: TModalResult)
     begin
@@ -334,7 +350,169 @@ begin
     cbCategory.Items.Add(CategoryNames[C]);
   btnImport.Visible := not IsMobile; // no file picker for an old PC file on a phone
   lblTestResult.TextSettings.Font.Style := [TFontStyle.fsBold];
+  OnKeyUp := FormKeyUp;
+  // The wide layout (absolute positions), kept for when the window is wide again.
+  SaveBounds([lblId, edtId, chkEnabled, lblName, edtName, lblShortName, edtShortName, lblUnits, edtUnits,
+    lblDescription, edtDescription, lblKind, cbKind, lblCategory, cbCategory, lblPid, edtPid, lblBytes, cbBytes,
+    lblChannel, cbChannel, lblFormula, edtFormula, lblFormulaStatus, lblFormat, cbFormat, lblFormatHelp, lblMci,
+    edtMci, lblMciHelp, gbTest, lblTestInput, edtTestInput, lblTestResultCaption, lblTestResult, btnAdd,
+    btnDuplicate, btnDelete, btnImport, btnDefaults, pnlDetail, pnlListButtons]);
+  // Narrow window: "< All PIDs" above the details page.
+  FDetailBar := TRectangle.Create(Self);
+  FDetailBar.Parent := Self;
+  FDetailBar.Stored := False;
+  FDetailBar.Align := TAlignLayout.Top;
+  FDetailBar.Height := 46;
+  FDetailBar.Sides := [TSide.Bottom];
+  FDetailBar.Fill.Color := Palette.Bar;
+  FDetailBar.Stroke.Color := Palette.BarLine;
+  FDetailBar.HitTest := True;
+  FDetailBar.Cursor := crHandPoint;
+  FDetailBar.OnClick := DetailBackClick;
+  FDetailBar.Visible := False;
+  with TLabel.Create(FDetailBar) do
+  begin
+    Parent := FDetailBar;
+    Align := TAlignLayout.Client;
+    Margins.Left := 46;
+    HitTest := False;
+    Text := 'All PIDs';
+  end;
+  AddLineIcon(FDetailBar, IconBack, 20).Align := TAlignLayout.Left;
+  TControl(FDetailBar.Controls[FDetailBar.ControlsCount - 1]).Margins.Rect := TRectF.Create(14, 13, 0, 13);
   FormResize(nil);
+end;
+
+procedure TPidEditorForm.SaveBounds(const Ctls: array of TControl);
+var
+  C: TControl;
+  S: TSavedBounds;
+begin
+  for C in Ctls do
+  begin
+    S.Ctl := C;
+    S.R := TRectF.Create(C.Position.X, C.Position.Y, C.Position.X + C.Width, C.Position.Y + C.Height);
+    S.Anchors := C.Anchors;
+    FOrig := FOrig + [S];
+  end;
+end;
+
+procedure TPidEditorForm.RestoreBounds;
+var
+  S: TSavedBounds;
+begin
+  for S in FOrig do
+  begin
+    if (S.Ctl = edtPid) or (S.Ctl = cbBytes) or (S.Ctl = cbChannel) or (S.Ctl = lblPid) or (S.Ctl = lblBytes) or
+      (S.Ctl = lblChannel) then
+      S.Ctl.Visible := True;
+    S.Ctl.Anchors := S.Anchors;
+    S.Ctl.SetBounds(S.R.Left, S.R.Top, S.R.Width, S.R.Height);
+  end;
+end;
+
+{ Narrow window: every caption above its field, one under the other. }
+procedure TPidEditorForm.StackDetail;
+type
+  TPair = record
+    Cap, Ctl: TControl;
+  end;
+
+  function Pair(Cap, Ctl: TControl): TPair;
+  begin
+    Result.Cap := Cap;
+    Result.Ctl := Ctl;
+  end;
+
+var
+  Pairs: TArray<TPair>;
+  P: TPair;
+  Y, W, H, TY: Single;
+begin
+  W := sbDetail.Width - 40;
+  if W < 100 then
+    W := ClientWidth - 40;
+  Pairs := [Pair(lblId, edtId), Pair(nil, chkEnabled), Pair(lblName, edtName), Pair(lblShortName, edtShortName),
+    Pair(lblUnits, edtUnits), Pair(lblDescription, edtDescription), Pair(lblKind, cbKind),
+    Pair(lblCategory, cbCategory), Pair(lblPid, edtPid), Pair(lblBytes, cbBytes), Pair(lblChannel, cbChannel),
+    Pair(lblFormula, edtFormula), Pair(nil, lblFormulaStatus), Pair(lblFormat, cbFormat), Pair(nil, lblFormatHelp),
+    Pair(lblMci, edtMci), Pair(nil, lblMciHelp), Pair(nil, gbTest)];
+  Y := 10;
+  for P in Pairs do
+  begin
+    // Fields that do not apply to this kind of PID are left out on a phone.
+    if (P.Ctl = edtPid) or (P.Ctl = cbBytes) or (P.Ctl = cbChannel) then
+    begin
+      P.Ctl.Visible := P.Ctl.Enabled;
+      P.Cap.Visible := P.Ctl.Enabled;
+    end;
+    if not P.Ctl.Visible then
+      Continue;
+    // Positions here are final: right anchors would shrink fields later.
+    P.Ctl.Anchors := [TAnchorKind.akLeft, TAnchorKind.akTop];
+    if P.Cap <> nil then
+    begin
+      P.Cap.Anchors := [TAnchorKind.akLeft, TAnchorKind.akTop];
+      TLabel(P.Cap).WordWrap := False;
+      P.Cap.SetBounds(16, Y, W, 24);
+      Y := Y + 26;
+    end;
+    if P.Ctl is TLabel then
+    begin
+      TLabel(P.Ctl).WordWrap := True;
+      H := Max(20, WrappedTextHeight(TLabel(P.Ctl), W) + 4);
+    end
+    else if P.Ctl = chkEnabled then
+    begin
+      chkEnabled.TextSettings.WordWrap := True;
+      H := Max(36, WrappedTextHeight(chkEnabled, W - 40) + 10);
+    end
+    else if P.Ctl = gbTest then
+    begin
+      // the test box: caption over field inside it too
+      TY := 30;
+      lblTestInput.SetBounds(12, TY, W - 24, 24);
+      edtTestInput.SetBounds(12, TY + 26, W - 24, 36);
+      lblTestResultCaption.SetBounds(12, TY + 70, W - 24, 24);
+      lblTestResult.WordWrap := True;
+      lblTestResult.SetBounds(12, TY + 96, W - 24, Max(26, WrappedTextHeight(lblTestResult, W - 24) + 4));
+      H := lblTestResult.Position.Y + lblTestResult.Height + 12;
+    end
+    else
+      H := 40;
+    P.Ctl.SetBounds(16, Y, W, H);
+    Y := Y + H + 10;
+  end;
+  pnlDetail.Height := Y + 10;
+end;
+
+procedure TPidEditorForm.SetDetailMode(Value: Boolean);
+begin
+  FDetailMode := Value;
+  FormResize(nil);
+  if Value then
+    sbDetail.ViewportPosition := TPointF.Zero;
+end;
+
+procedure TPidEditorForm.DetailBackClick(Sender: TObject);
+begin
+  SetDetailMode(False);
+  lvList.OnSelect := nil;
+  try
+    lvList.ItemIndex := -1; // so a tap on the same PID opens it again
+  finally
+    lvList.OnSelect := ListSelect;
+  end;
+  lvList.Refresh;
+end;
+
+procedure TPidEditorForm.FormKeyUp(Sender: TObject; var Key: Word; var KeyChar: WideChar; Shift: TShiftState);
+begin
+  if (Key = vkHardwareBack) and FNarrow and FDetailMode then
+  begin
+    Key := 0; // back from the details to the list, not out of the editor
+    DetailBackClick(nil);
+  end;
 end;
 
 procedure TPidEditorForm.FormDestroy(Sender: TObject);
@@ -361,32 +539,55 @@ begin
   ModalResult := mrCancel;
 end;
 
-{ Side by side on a wide window, list above the details on a narrow one (phone). }
+{ Side by side on a wide window. On a narrow one (phone) two pages: the list,
+  and the details of the PID tapped in it. }
 procedure TPidEditorForm.FormResize(Sender: TObject);
 var
   Narrow: Boolean;
 begin
-  if pnlList = nil then
+  if (pnlList = nil) or (FDetailBar = nil) then
     Exit;
   Narrow := ClientWidth < NarrowWidth;
-  if (Narrow = FNarrow) and (Sender <> nil) then
-    Exit;
+  if not Narrow then
+    FDetailMode := False;
   FNarrow := Narrow;
   if Narrow then
   begin
-    pnlList.Align := TAlignLayout.Top;
-    pnlList.Height := Max(200, ClientHeight * 0.4);
-    splMain.Align := TAlignLayout.Top;
-    splMain.Height := 6;
-    splMain.Position.Y := pnlList.Position.Y + pnlList.Height + 1;
+    splMain.Visible := False;
+    pnlList.Visible := not FDetailMode;
+    pnlList.Align := TAlignLayout.Client;
+    sbDetail.Visible := FDetailMode;
+    FDetailBar.Visible := FDetailMode;
+    FDetailBar.Position.Y := 10000; // below the page's top bar
+    lvList.SetColumnVisible(0, False); // ID
+    lvList.SetColumnVisible(2, False); // kind
+    lvList.SetColumnVisible(4, False); // bytes
+    lvList.SetColumnWrap(1, True);
+    lvList.SetColumnWrap(5, True);
+    lvList.AutoHeights := True;
+    lvList.AutoRowHeights;
+    FlowControls(pnlListButtons, [btnAdd, btnDuplicate, btnDelete, btnImport, btnDefaults]);
+    StackDetail;
   end
   else
   begin
+    FDetailBar.Visible := False;
+    pnlList.Visible := True;
+    sbDetail.Visible := True;
+    RestoreBounds;
     pnlList.Align := TAlignLayout.Left;
     pnlList.Width := 480;
+    splMain.Visible := True;
     splMain.Align := TAlignLayout.Left;
     splMain.Width := 5;
     splMain.Position.X := pnlList.Position.X + pnlList.Width + 1;
+    lvList.SetColumnVisible(0, True);
+    lvList.SetColumnVisible(2, True);
+    lvList.SetColumnVisible(4, True);
+    lvList.SetColumnWrap(1, False);
+    lvList.SetColumnWrap(5, False);
+    lvList.AutoHeights := False;
+    lvList.ResetRowHeights;
   end;
 end;
 
@@ -434,7 +635,12 @@ begin
   lvList.OnSelect := nil;
   try
     lvList.RowCount := Length(FRows);
-    lvList.ItemIndex := RowOf(FCurrent);
+    lvList.AutoRowHeights;
+    // A phone opens a PID with a tap, so nothing is selected in the list there.
+    if FNarrow then
+      lvList.ItemIndex := -1
+    else
+      lvList.ItemIndex := RowOf(FCurrent);
   finally
     lvList.OnSelect := ListSelect;
   end;
@@ -472,6 +678,8 @@ begin
     FCurrent := FRows[Row];
     ShowCurrent;
   end;
+  if FNarrow and (Row >= 0) then
+    SetDetailMode(True); // a phone: the details get the whole page
 end;
 
 procedure TPidEditorForm.edtFilterChange(Sender: TObject);
@@ -524,6 +732,8 @@ begin
   UpdateKindControls;
   UpdateFormulaStatus;
   UpdateTest;
+  if FNarrow then
+    StackDetail;
 end;
 
 function ParseHexPid(const S: string; out Value: Integer): Boolean;
@@ -612,6 +822,8 @@ begin
   UpdateFormulaStatus;
   UpdateTest;
   UpdateProblems;
+  if FNarrow then
+    StackDetail; // status texts may need more or fewer lines
 end;
 
 procedure TPidEditorForm.UpdateKindControls;

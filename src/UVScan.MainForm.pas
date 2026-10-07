@@ -321,6 +321,7 @@ type
     function CurrentPage: TTabItem;
     procedure UpdateAppBar;
     procedure PlaceAddGauge;
+    procedure CtlWarnClick(Sender: TObject);
     procedure NavClick(Sender: TObject);
     procedure NavPaint(Sender: TObject; Canvas: TCanvas; const ARect: TRectF);
     procedure AddPageMenuItem(const Text: string; Handler: TNotifyEvent; Enabled: Boolean = True;
@@ -590,11 +591,15 @@ begin
     // A phone is too narrow for these columns: wrap the text instead of cutting it.
     grdMessages.SetColumnWrap(0, True);
     grdMessages.AutoHeights := True;
+    grdPids.SetColumnWrap(0, True);
+    grdPids.SetColumnWrap(1, True);
+    grdPids.AutoHeights := True;
     grdControls.SetColumnVisible(2, False); // the raw command is on the edit screen
     grdControls.SetColumnWidth(0, 120);
     grdControls.SetColumnWidth(1, 84);
     grdControls.SetColumnWidth(3, 110);
     grdControls.SetColumnWrap(0, True);
+    grdControls.SetColumnWrap(1, True);
     grdControls.SetColumnWrap(3, True);
     grdControls.AutoHeights := True;
   end;
@@ -731,6 +736,12 @@ begin
   FPageMenu.Parent := Self;
   tiConnect.Text := 'Connection';
 
+  // The controls warning hides with a tap (it takes a lot of a phone's screen).
+  pnlCtlWarn.HitTest := True;
+  pnlCtlWarn.Cursor := crHandPoint;
+  pnlCtlWarn.OnClick := CtlWarnClick;
+  lblCtlWarn.HitTest := False;
+  lblCtlWarn.Text := lblCtlWarn.Text + IfThen(IsMobile, '  (Tap to hide.)', '  (Click to hide.)');
   if IsMobile then
   begin
     btnBrowseLogFolder.Visible := False; // no folder picker on a phone
@@ -776,6 +787,7 @@ begin
   // Wide windows show the page tool bars; otherwise their buttons are in the menu.
   pnlLiveFooter.Visible := Wide;
   pnlDashBar.Visible := Wide;
+  pnlCtlBar.Visible := Wide;
   // The tab bar buttons share the width.
   N := 0;
   for I := 0 to 4 do
@@ -837,9 +849,15 @@ begin
   P := CurrentPage;
   lblTitle.Text := P.Text;
   btnBack.Visible := (tcMain.ActiveTab = tiMore) and (P <> tiMoreMenu);
-  btnMenu.Visible := (P = tiLive) or (P = tiDashboard) or (P = tiPids) or (P = tiMessages) or (P = tiConnect);
+  btnMenu.Visible := (P = tiLive) or (P = tiDashboard) or (P = tiPids) or (P = tiMessages) or (P = tiConnect) or
+    (P = tiControls);
   for I := 0 to 4 do
     FNavButtons[I].Repaint;
+end;
+
+procedure TMainForm.CtlWarnClick(Sender: TObject);
+begin
+  pnlCtlWarn.Visible := False;
 end;
 
 { The round + sits bottom right on the Gauges page, over the gauges. }
@@ -1015,7 +1033,17 @@ begin
     AddPageMenuItem('Clear', btnClearMessagesClick);
   end
   else if P = tiConnect then
-    AddPageMenuItem('Refresh ports', btnRefreshPortsClick, btnRefreshPorts.Enabled);
+    AddPageMenuItem('Refresh ports', btnRefreshPortsClick, btnRefreshPorts.Enabled)
+  else if P = tiControls then
+  begin
+    AddPageMenuItem('Add...', btnCtlAddClick, btnCtlAdd.Enabled);
+    AddPageMenuItem('Edit...', btnCtlEditClick, btnCtlEdit.Enabled);
+    AddPageMenuItem('Duplicate', btnCtlDupClick, btnCtlDup.Enabled);
+    AddPageMenuItem('Delete', btnCtlDeleteClick, btnCtlDelete.Enabled);
+    AddPageMenuItem('Restore built-ins', btnCtlRestoreClick, btnCtlRestore.Enabled);
+    AddPageMenuItem('-', nil);
+    AddPageMenuItem('Release all', btnReleaseAllClick, btnReleaseAll.Enabled);
+  end;
   if FPageMenu.ItemsCount = 0 then
     Exit;
   // Right-aligned under the button (the menu keeps itself on the form).
@@ -1625,6 +1653,7 @@ begin
     Rows.Free;
   end;
   grdPids.RowCount := Length(FPidRows);
+  grdPids.AutoRowHeights;
   grdPids.ItemIndex := -1;
   if Keep >= 0 then
     for I := 0 to High(FPidRows) do
