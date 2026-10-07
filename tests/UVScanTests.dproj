@@ -72,6 +72,7 @@
         <DCCReference Include="..\src\UVScan.JsonFile.pas"/>
         <DCCReference Include="..\src\UVScan.Pids.pas"/>
         <DCCReference Include="..\src\UVScan.Paths.pas"/>
+        <DCCReference Include="..\src\UVScan.Dtc.pas"/>
         <DCCReference Include="..\src\UVScan.Settings.pas"/>
         <DCCReference Include="..\src\UVScan.Dpid.pas"/>
         <DCCReference Include="..\src\UVScan.Serial.pas"/>

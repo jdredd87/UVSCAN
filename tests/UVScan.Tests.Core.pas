@@ -4,7 +4,7 @@ interface
 
 uses
   System.SysUtils, System.Classes, System.Math, DUnitX.TestFramework,
-  UVScan.Hex, UVScan.Avt, UVScan.Class2, UVScan.Formula, UVScan.Pids, UVScan.Dpid;
+  UVScan.Hex, UVScan.Avt, UVScan.Class2, UVScan.Formula, UVScan.Pids, UVScan.Dpid, UVScan.Dtc;
 
 type
   [TestFixture]
@@ -51,9 +51,10 @@ type
   [TestFixture]
   TPidCatalogTests = class
   public
-    [Test] procedure LoadsLegacyLayout;
+    [Test] procedure LoadsCatalog;
     [Test] procedure FormatsResults;
     [Test] procedure ShippedPidFileLoadsCleanly;
+    [Test] procedure ShippedDtcFileLoadsCleanly;
   end;
 
   [TestFixture]
@@ -350,35 +351,32 @@ end;
 
 { TPidCatalogTests }
 
-procedure TPidCatalogTests.LoadsLegacyLayout;
+procedure TPidCatalogTests.LoadsCatalog;
 var
-  Lines: TStringList;
   C: TPidCatalog;
 begin
-  Lines := TStringList.Create;
   C := TPidCatalog.Create;
   try
-    Lines.Add('Counter,Long Name,Desc,Formula,Units,Datalength,PID,group,shortname,Results,PidCat,txtMCI');
-    Lines.Add('1,ENGINE SPEED,,((N1 << 8) +N2) *0.25,RPM,2,000C,1,RPM,,1,%RPM%');
-    Lines.Add('3,ECT,,N0-40,C,1,5,1,ECT,,1,%ECT%');
-    Lines.Add('9,Unused,,N0,x,1,1234,0,U,,1,%U%');
-    Lines.Add('20,AFR (LC-1),,%AD1% * 3.008 + 7.35,AFR,0,FPID,1,AFR,%f,6,%AFRWideband%');
-    Lines.Add('21,AD1,,N0 * 0.0196,V,0,FFFF,1,AD1,%f,7,%AD1%');
-    Lines.Add('22,Bad,,N0,x,1,ZZZZ,1,B,,1,');
-    C.LoadFromCsvLines(Lines);
+    C.LoadFromJsonText(
+      '{"version":1,"pids":[' +
+      '{"id":1,"name":"ENGINE SPEED","shortName":"RPM","kind":"vehicle","category":"engine","pid":"000C","bytes":2,"formula":"((N1 << 8) +N2) *0.25","units":"RPM","mci":"RPM"},' +
+      '{"id":3,"name":"ECT","kind":"vehicle","category":"engine","pid":"5","bytes":1,"formula":"N0-40","mci":"%ECT%"},' +
+      '{"id":20,"name":"AFR (LC-1)","kind":"calculated","category":"calculated","formula":"%AD1% * 3.008 + 7.35","format":"%f","mci":"AFRWideband"},' +
+      '{"id":21,"name":"AD1","kind":"analog","category":"analog","analogChannel":1,"formula":"N0 * 0.0196","mci":"AD1"}]}');
     Assert.AreEqual(4, C.Count);
-    Assert.AreEqual(1, C.Warnings.Count);
+    Assert.AreEqual(0, C.Warnings.Count, C.Warnings.Text);
     Assert.AreEqual(Integer(pkVehicle), Integer(C[0].Kind));
     Assert.AreEqual(Integer($000C), Integer(C[0].PidNumber));
     Assert.AreEqual(Integer($0005), Integer(C[1].PidNumber));
+    Assert.AreEqual('ECT', C[1].Mci);
     Assert.AreEqual(Integer(pkCalculated), Integer(C[2].Kind));
     Assert.AreEqual(Integer(pkAnalog), Integer(C[3].Kind));
     Assert.AreEqual(1, C[3].AnalogChannel);
+    Assert.AreEqual('FFFF', C[3].PidCode);
     Assert.AreEqual('AFRWIDEBAND', C[2].Mci);
     Assert.IsNotNull(C.FindByMci('rpm'));
   finally
     C.Free;
-    Lines.Free;
   end;
 end;
 
@@ -426,6 +424,40 @@ begin
     Assert.IsTrue(C.Count > 50);
     Assert.AreEqual('', C.Warnings.Text, 'pids.json warnings');
     Assert.AreEqual(#$B0'C', C.FindByMci('ECT').Units);
+  finally
+    C.Free;
+  end;
+end;
+
+function FindShippedFile(const Name: string): string;
+var
+  Dir: string;
+  I: Integer;
+begin
+  Dir := ExtractFilePath(ParamStr(0));
+  for I := 0 to 5 do
+  begin
+    Result := Dir + 'data\' + Name;
+    if FileExists(Result) then
+      Exit;
+    Dir := ExtractFilePath(ExcludeTrailingPathDelimiter(Dir));
+  end;
+  Result := '';
+end;
+
+procedure TPidCatalogTests.ShippedDtcFileLoadsCleanly;
+var
+  F: string;
+  C: TDtcCatalog;
+begin
+  F := FindShippedFile('dtcs.json');
+  Assert.IsTrue(F <> '', 'data\dtcs.json not found');
+  C := TDtcCatalog.Create;
+  try
+    C.LoadFromFile(F);
+    Assert.AreEqual('', C.Warnings.Text);
+    Assert.IsTrue(C.Count > 1000);
+    Assert.IsTrue(Pos('Misfire', C.Describe('p0300')) > 0, C.Describe('P0300'));
   finally
     C.Free;
   end;

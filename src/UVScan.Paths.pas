@@ -1,6 +1,6 @@
 unit UVScan.Paths;
 
-{ Where UVScan keeps its data: C:\ProgramData\UVScan (pids.json, dtcs.csv,
+{ Where UVScan keeps its data: C:\ProgramData\UVScan (pids.json, dtcs.json,
   settings.json). The program itself can live anywhere (e.g. Program Files);
   the installer seeds this folder from the repo's data\ directory. }
 
@@ -10,10 +10,6 @@ function DataDir: string;
 function PidsFile: string;
 function DtcsFile: string;
 function SettingsFile: string;
-
-{ Earlier formats, imported once when the JSON file does not exist yet. }
-function LegacyPidsCsvFile: string;
-function LegacySettingsIniFile: string;
 
 implementation
 
@@ -37,22 +33,12 @@ end;
 
 function DtcsFile: string;
 begin
-  Result := TPath.Combine(DataDir, 'dtcs.csv');
+  Result := TPath.Combine(DataDir, 'dtcs.json');
 end;
 
 function SettingsFile: string;
 begin
   Result := TPath.Combine(DataDir, 'settings.json');
-end;
-
-function LegacyPidsCsvFile: string;
-begin
-  Result := TPath.Combine(DataDir, 'pids.csv');
-end;
-
-function LegacySettingsIniFile: string;
-begin
-  Result := TPath.Combine(DataDir, 'settings.ini');
 end;
 
 end.

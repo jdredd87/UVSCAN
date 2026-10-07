@@ -265,21 +265,13 @@ var
   F: string;
 begin
   F := PidsFile;
+  if not FileExists(F) then
+  begin
+    ShowNotice('PID definitions not found: ' + F, True);
+    Exit;
+  end;
   try
-    if FileExists(F) then
-      FCatalog.LoadFromFile(F)
-    else if FileExists(LegacyPidsCsvFile) then
-    begin
-      // One-time upgrade from the CSV layout.
-      FCatalog.LoadFromFile(LegacyPidsCsvFile);
-      FCatalog.SaveToJsonFile(F);
-      AddMessage(Format('Converted %s to %s', [LegacyPidsCsvFile, F]));
-    end
-    else
-    begin
-      ShowNotice('PID definitions not found: ' + F, True);
-      Exit;
-    end;
+    FCatalog.LoadFromFile(F);
   except
     on E: Exception do
     begin
@@ -294,10 +286,17 @@ begin
   if FCatalog.Warnings.Count > 0 then
     ShowNotice(Format('%d problem(s) in the PID definitions - see Messages', [FCatalog.Warnings.Count]), False);
   F := DtcsFile;
-  if FileExists(F) then
-    FDtcs.LoadFromFile(F)
+  if not FileExists(F) then
+    AddMessage('Trouble code descriptions not found: ' + F)
   else
-    AddMessage('Trouble code descriptions not found: ' + F);
+    try
+      FDtcs.LoadFromFile(F);
+      for F in FDtcs.Warnings do
+        AddMessage('Trouble code descriptions: ' + F);
+    except
+      on E: Exception do
+        AddMessage('Could not load trouble code descriptions: ' + E.Message);
+    end;
 end;
 
 procedure TMainForm.LoadSettings;
@@ -305,20 +304,11 @@ var
   Problem: string;
   N: Integer;
 begin
-  if not FileExists(SettingsFile) and FileExists(LegacySettingsIniFile) then
+  FSettings.LoadFromFile(SettingsFile, Problem);
+  if Problem <> '' then
   begin
-    // One-time upgrade from the INI layout.
-    FSettings.ImportIni(LegacySettingsIniFile);
-    AddMessage(Format('Imported settings from %s', [LegacySettingsIniFile]));
-  end
-  else
-  begin
-    FSettings.LoadFromFile(SettingsFile, Problem);
-    if Problem <> '' then
-    begin
-      AddMessage('Settings: ' + Problem);
-      ShowNotice('Settings could not be read - defaults used (see Messages)', False);
-    end;
+    AddMessage('Settings: ' + Problem);
+    ShowNotice('Settings could not be read - defaults used (see Messages)', False);
   end;
 
   FillPorts(FSettings.Port);

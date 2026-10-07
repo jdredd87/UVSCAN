@@ -44,8 +44,6 @@ type
       the reason is returned in Problem. }
     procedure LoadFromFile(const FileName: string; out Problem: string);
     procedure SaveToFile(const FileName: string);
-    { One-time import of the INI file written by earlier builds. }
-    procedure ImportIni(const FileName: string);
   end;
 
 const
@@ -58,7 +56,7 @@ function StreamSpeedNibble(Speed: TStreamSpeed): Byte;
 implementation
 
 uses
-  Winapi.Windows, System.IOUtils, System.IniFiles, System.Math, System.Generics.Collections,
+  Winapi.Windows, System.IOUtils, System.Generics.Collections,
   UVScan.JsonFile, UVScan.Class2;
 
 function StreamSpeedNibble(Speed: TStreamSpeed): Byte;
@@ -219,38 +217,6 @@ begin
     WriteJsonFile(FileName, Root);
   finally
     Root.Free;
-  end;
-end;
-
-procedure TAppSettings.ImportIni(const FileName: string);
-var
-  Ini: TMemIniFile;
-  Id: string;
-  N: Integer;
-begin
-  ResetToDefaults;
-  Ini := TMemIniFile.Create(FileName);
-  try
-    Port := Ini.ReadString('Connection', 'Port', Port);
-    Baud := StrToIntDef(Ini.ReadString('Connection', 'Baud', ''), Baud);
-    LogFolder := Ini.ReadString('Logging', 'Folder', LogFolder);
-    Trace := Ini.ReadBool('Advanced', 'Trace', Trace);
-    StreamSpeed := TStreamSpeed(EnsureRange(Ini.ReadInteger('Advanced', 'StreamRate', 0), 0, Ord(High(TStreamSpeed))));
-    for Id in Ini.ReadString('Scan', 'Selected', '').Split([',']) do
-      if TryStrToInt(Id, N) then
-        SelectedPids := SelectedPids + [N];
-    if Ini.ValueExists('Window', 'Width') then
-    begin
-      Window.Left := Ini.ReadInteger('Window', 'Left', 0);
-      Window.Top := Ini.ReadInteger('Window', 'Top', 0);
-      Window.Width := Ini.ReadInteger('Window', 'Width', 0);
-      Window.Height := Ini.ReadInteger('Window', 'Height', 0);
-      Window.Maximized := Ini.ReadBool('Window', 'Maximized', False);
-      Window.PidPanelWidth := Ini.ReadInteger('Window', 'PidPanel', 0);
-      Window.Saved := (Window.Width > 0) and (Window.Height > 0);
-    end;
-  finally
-    Ini.Free;
   end;
 end;
 

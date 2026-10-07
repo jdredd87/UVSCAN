@@ -4,15 +4,22 @@ interface
 
 uses
   System.SysUtils, System.Classes, System.IOUtils, System.JSON, DUnitX.TestFramework,
-  UVScan.Pids, UVScan.Settings, UVScan.JsonFile;
+  UVScan.Pids, UVScan.Dtc, UVScan.Settings, UVScan.JsonFile;
 
 type
   [TestFixture]
   TPidJsonTests = class
   public
-    [Test] procedure CsvToJsonRoundTrip;
+    [Test] procedure RoundTrip;
     [Test] procedure ReportsBadEntries;
     [Test] procedure SkipsDisabledEntries;
+  end;
+
+  [TestFixture]
+  TDtcJsonTests = class
+  public
+    [Test] procedure LoadsAndDescribes;
+    [Test] procedure RoundTrip;
   end;
 
   [TestFixture]
@@ -27,66 +34,67 @@ type
     [Test] procedure MissingFileGivesDefaults;
     [Test] procedure CorruptFileIsSetAside;
     [Test] procedure PartialFileKeepsDefaults;
-    [Test] procedure ImportsIni;
   end;
 
 implementation
 
 { TPidJsonTests }
 
-procedure TPidJsonTests.CsvToJsonRoundTrip;
+procedure TPidJsonTests.RoundTrip;
+const
+  Source =
+    '{"version":1,"pids":[' +
+    '{"id":1,"name":"ENGINE SPEED","shortName":"RPM","kind":"vehicle","category":"engine","pid":"000C","bytes":2,"formula":"((N1 << 8) +N2) *0.25","units":"RPM","mci":"RPM"},' +
+    '{"id":3,"name":"ECT, coolant","description":"Engine coolant \"hot\"","kind":"vehicle","category":"engine","pid":"0005","bytes":1,"formula":"N0-40","units":"\u00B0C","mci":"ECT"},' +
+    '{"id":39,"name":"Inj Duty Cycle","shortName":"Inj DC","kind":"calculated","category":"calculated","formula":"(%IPW% / (1 / ((%RPM% / 60 ) / 2) * 1000)) * 100","units":"%","format":"%f","mci":"InjDutyCycle"},' +
+    '{"id":17,"name":"AD2","kind":"analog","category":"analog","analogChannel":2,"formula":"N0 * 0.0196","units":"Volts","format":"%f","mci":"AD2"}]}';
 var
-  Lines: TStringList;
-  Csv, Json: TPidCatalog;
+  A, B: TPidCatalog;
   Root: TJSONObject;
   Text: string;
   I: Integer;
 begin
-  Lines := TStringList.Create;
-  Csv := TPidCatalog.Create;
-  Json := TPidCatalog.Create;
+  A := TPidCatalog.Create;
+  B := TPidCatalog.Create;
   try
-    Lines.Add('Counter,Long Name,Desc,Formula,Units,Datalength,PID,group,shortname,Results,PidCat,txtMCI');
-    Lines.Add('1,ENGINE SPEED,,((N1 << 8) +N2) *0.25,RPM,2,000C,1,RPM,,1,%RPM%');
-    Lines.Add('3,"ECT, coolant",Engine coolant,N0-40,' + #$B0 + 'C,1,5,1,ECT,,1,%ECT%');
-    Lines.Add('39,Inj Duty Cycle,,(%IPW% / (1 / ((%RPM% / 60 ) / 2) * 1000)) * 100,%,0,FPID,1,Inj DC,%f,6,%InjDutyCycle%');
-    Lines.Add('17,AD2,,N0 * 0.0196,Volts,0,FFFE,1,AD2,%f,7,%AD2%');
-    Csv.LoadFromCsvLines(Lines);
-    Assert.AreEqual(4, Csv.Count);
+    A.LoadFromJsonText(Source);
+    Assert.AreEqual(4, A.Count);
+    Assert.AreEqual(0, A.Warnings.Count, A.Warnings.Text);
+    Assert.AreEqual(#$B0'C', A.FindById(3).Units);
+    Assert.AreEqual('Engine coolant "hot"', A.FindById(3).Description);
 
-    Root := Csv.ToJson;
+    Root := A.ToJson;
     try
       Text := JsonText(Root);
     finally
       Root.Free;
     end;
-    Json.LoadFromJsonText(Text);
-    Assert.AreEqual('', Json.Warnings.Text);
-    Assert.AreEqual(Csv.Count, Json.Count);
-    for I := 0 to Csv.Count - 1 do
+    B.LoadFromJsonText(Text);
+    Assert.AreEqual('', B.Warnings.Text);
+    Assert.AreEqual(A.Count, B.Count);
+    for I := 0 to A.Count - 1 do
     begin
-      Assert.AreEqual(Csv[I].Id, Json[I].Id);
-      Assert.AreEqual(Csv[I].LongName, Json[I].LongName);
-      Assert.AreEqual(Csv[I].ShortName, Json[I].ShortName);
-      Assert.AreEqual(Csv[I].Description, Json[I].Description);
-      Assert.AreEqual(Ord(Csv[I].Kind), Ord(Json[I].Kind));
-      Assert.AreEqual(Ord(Csv[I].Category), Ord(Json[I].Category));
-      Assert.AreEqual(Integer(Csv[I].PidNumber), Integer(Json[I].PidNumber));
-      Assert.AreEqual(Csv[I].DataLength, Json[I].DataLength);
-      Assert.AreEqual(Csv[I].AnalogChannel, Json[I].AnalogChannel);
-      Assert.AreEqual(Csv[I].FormulaText, Json[I].FormulaText);
-      Assert.AreEqual(Csv[I].Units, Json[I].Units);
-      Assert.AreEqual(Csv[I].ResultFormat, Json[I].ResultFormat);
-      Assert.AreEqual(Csv[I].Mci, Json[I].Mci);
-      Assert.AreEqual(Csv[I].PidCode, Json[I].PidCode);
+      Assert.AreEqual(A[I].Id, B[I].Id);
+      Assert.AreEqual(A[I].LongName, B[I].LongName);
+      Assert.AreEqual(A[I].ShortName, B[I].ShortName);
+      Assert.AreEqual(A[I].Description, B[I].Description);
+      Assert.AreEqual(Ord(A[I].Kind), Ord(B[I].Kind));
+      Assert.AreEqual(Ord(A[I].Category), Ord(B[I].Category));
+      Assert.AreEqual(Integer(A[I].PidNumber), Integer(B[I].PidNumber));
+      Assert.AreEqual(A[I].DataLength, B[I].DataLength);
+      Assert.AreEqual(A[I].AnalogChannel, B[I].AnalogChannel);
+      Assert.AreEqual(A[I].FormulaText, B[I].FormulaText);
+      Assert.AreEqual(A[I].Units, B[I].Units);
+      Assert.AreEqual(A[I].ResultFormat, B[I].ResultFormat);
+      Assert.AreEqual(A[I].Mci, B[I].Mci);
+      Assert.AreEqual(A[I].PidCode, B[I].PidCode);
     end;
-    Assert.AreEqual(Double(800), Json.FindById(1).Formula.Evaluate([$0C, $80], []), 1e-9);
+    Assert.AreEqual(Double(800), B.FindById(1).Formula.Evaluate([$0C, $80], []), 1e-9);
     Assert.IsTrue(Pos('"kind": "analog"', Text) > 0);
     Assert.IsTrue(Pos('"pid": "0005"', Text) > 0);
   finally
-    Json.Free;
-    Csv.Free;
-    Lines.Free;
+    A.Free;
+    B.Free;
   end;
 end;
 
@@ -244,31 +252,53 @@ begin
   end;
 end;
 
-procedure TSettingsTests.ImportsIni;
+{ TDtcJsonTests }
+
+procedure TDtcJsonTests.LoadsAndDescribes;
 var
-  S: TAppSettings;
+  C: TDtcCatalog;
 begin
-  TFile.WriteAllText(TempFile('settings.ini'),
-    '[Connection]'#13#10'Port=COM9'#13#10'Baud=115200'#13#10 +
-    '[Scan]'#13#10'Selected=1,2,12'#13#10 +
-    '[Advanced]'#13#10'StreamRate=2'#13#10'Trace=1'#13#10 +
-    '[Window]'#13#10'Left=5'#13#10'Top=6'#13#10'Width=900'#13#10'Height=600'#13#10'PidPanel=350'#13#10);
-  S := TAppSettings.Create;
+  C := TDtcCatalog.Create;
   try
-    S.ImportIni(TempFile('settings.ini'));
-    Assert.AreEqual('COM9', S.Port);
-    Assert.AreEqual(3, Integer(Length(S.SelectedPids)));
-    Assert.AreEqual(Ord(ssSlow), Ord(S.StreamSpeed));
-    Assert.IsTrue(S.Trace);
-    Assert.IsTrue(S.Window.Saved);
-    Assert.AreEqual(350, S.Window.PidPanelWidth);
+    C.LoadFromJsonText('{"version":1,"dtcs":[{"code":"P0300","description":"Random Misfire Detected"},' +
+      '{"code":"p0171","description":"System Too Lean, Bank 1"},{"description":"no code"},"junk"]}');
+    Assert.AreEqual(2, C.Count);
+    Assert.AreEqual(2, C.Warnings.Count, C.Warnings.Text);
+    Assert.AreEqual('System Too Lean, Bank 1', C.Describe('P0171'));
+    Assert.AreEqual('Random Misfire Detected', C.Describe('p0300'));
+    Assert.AreEqual('', C.Describe('P9999'));
   finally
-    S.Free;
+    C.Free;
+  end;
+end;
+
+procedure TDtcJsonTests.RoundTrip;
+var
+  A, B: TDtcCatalog;
+  Root: TJSONObject;
+begin
+  A := TDtcCatalog.Create;
+  B := TDtcCatalog.Create;
+  try
+    A.AddOrSet('P0300', 'Random Misfire Detected');
+    A.AddOrSet('U0100', 'Lost Communication With ECM/PCM "A"');
+    Root := A.ToJson;
+    try
+      B.LoadFromJsonText(JsonText(Root));
+    finally
+      Root.Free;
+    end;
+    Assert.AreEqual(2, B.Count);
+    Assert.AreEqual('Lost Communication With ECM/PCM "A"', B.Describe('U0100'));
+  finally
+    A.Free;
+    B.Free;
   end;
 end;
 
 initialization
   TDUnitX.RegisterTestFixture(TPidJsonTests);
+  TDUnitX.RegisterTestFixture(TDtcJsonTests);
   TDUnitX.RegisterTestFixture(TSettingsTests);
 
 end.

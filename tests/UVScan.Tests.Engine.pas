@@ -47,23 +47,17 @@ const
   IdRuntime = 30;
 
 procedure TEngineTests.Setup;
-var
-  Lines: TStringList;
 begin
-  Lines := TStringList.Create;
-  try
-    Lines.Add('Counter,Long Name,Desc,Formula,Units,Datalength,PID,group,shortname,Results,PidCat,txtMCI');
-    Lines.Add('1,ENGINE SPEED,,((N1 << 8) +N2) *0.25,RPM,2,000C,1,RPM,,1,%RPM%');
-    Lines.Add('2,Injector PW,,(((N1<<8)+N2)/65.535),ms,2,1193,1,Injector PW,%f,1,%IPW%');
-    Lines.Add('3,ECT,,N0-40,C,1,5,1,ECT,,1,%ECT%');
-    Lines.Add('87,Boost Solenoid PWM,,N0,%,1,1108,1,Boost PWM,,2,%BOOST%');
-    Lines.Add('25,Inj Duty Cycle,,(%IPW% / (1 / ((%RPM% / 60 ) / 2) * 1000)) * 100,%,0,FPID,1,Inj DC,%f,6,%InjDutyCycle%');
-    Lines.Add('30,RUNTIME,,,,0,FPID,1,RUNTIME,,6,%RUNTIME%');
-    FCatalog := TPidCatalog.Create;
-    FCatalog.LoadFromCsvLines(Lines);
-  finally
-    Lines.Free;
-  end;
+  FCatalog := TPidCatalog.Create;
+  FCatalog.LoadFromJsonText(
+    '{"pids":[' +
+    '{"id":1,"name":"ENGINE SPEED","shortName":"RPM","kind":"vehicle","pid":"000C","bytes":2,"formula":"((N1 << 8) +N2) *0.25","units":"RPM","mci":"RPM"},' +
+    '{"id":2,"name":"Injector PW","kind":"vehicle","pid":"1193","bytes":2,"formula":"(((N1<<8)+N2)/65.535)","units":"ms","format":"%f","mci":"IPW"},' +
+    '{"id":3,"name":"ECT","shortName":"ECT","kind":"vehicle","pid":"0005","bytes":1,"formula":"N0-40","units":"C","mci":"ECT"},' +
+    '{"id":87,"name":"Boost Solenoid PWM","shortName":"Boost PWM","kind":"vehicle","pid":"1108","bytes":1,"formula":"N0","units":"%","mci":"BOOST"},' +
+    '{"id":25,"name":"Inj Duty Cycle","shortName":"Inj DC","kind":"calculated","formula":"(%IPW% / (1 / ((%RPM% / 60 ) / 2) * 1000)) * 100","units":"%","format":"%f","mci":"InjDutyCycle"},' +
+    '{"id":30,"name":"RUNTIME","kind":"calculated","mci":"RUNTIME"}]}');
+  Assert.AreEqual(0, FCatalog.Warnings.Count, FCatalog.Warnings.Text);
   FEvents := TList<TEngineEvent>.Create;
   FEngine := TScanEngine.Create(FCatalog,
     procedure(const Ev: TEngineEvent)
@@ -224,7 +218,7 @@ begin
     Lines.LoadFromFile(FileName);
     Assert.AreEqual('Time (s),RPM (RPM),ECT (C)', Lines[0]);
     Assert.IsTrue(Lines.Count >= 6);
-    Assert.AreEqual(3, Integer(Length(ParseCsvLine(Lines[1]))));
+    Assert.AreEqual(3, Integer(Length(Lines[1].Split([',']))));
   finally
     Lines.Free;
     TFile.Delete(FileName);
@@ -284,19 +278,20 @@ procedure TEngineTests.SmallScanAfterLargeScanDoesNotReviveOldDpids;
 var
   Cmd: TEngineCommand;
   I: Integer;
-  Lines: TStringList;
+  Json: string;
 begin
   // 5 DPIDs (two schedule slots), then a 1-DPID scan. On the real PCM the
   // second scan would resume the old slot unless the engine clears it.
-  Lines := TStringList.Create;
-  try
-    Lines.Add('Counter,Long Name,Desc,Formula,Units,Datalength,PID,group,shortname,Results,PidCat,txtMCI');
-    for I := 0 to 14 do
-      Lines.Add(Format('%d,P%d,,N0,,2,%.4x,1,P%d,,1,%%P%d%%', [100 + I, I, $2000 + I, I, I]));
-    FCatalog.LoadFromCsvLines(Lines);
-  finally
-    Lines.Free;
+  Json := '{"pids":[';
+  for I := 0 to 14 do
+  begin
+    if I > 0 then
+      Json := Json + ',';
+    Json := Json + Format('{"id":%d,"name":"P%d","kind":"vehicle","pid":"%.4x","bytes":2,"formula":"N0","mci":"P%d"}',
+      [100 + I, I, $2000 + I, I]);
   end;
+  FCatalog.LoadFromJsonText(Json + ']}');
+  Assert.AreEqual(15, FCatalog.Count);
   Connect;
   Cmd := Command(ecStartScan);
   for I := 0 to 14 do

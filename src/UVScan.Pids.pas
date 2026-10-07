@@ -16,12 +16,7 @@ unit UVScan.Pids;
     kind: vehicle | calculated | analog
     category: other | engine | transmission | indicators | body | accessories | calculated | analog
     format: %f (2 decimals), %d (integer), %o (OFF/ON), %y (NO/YES),
-            *c (convert F to C), *f (convert C to F); may be combined, e.g. "*f%d".
-
-  Legacy UVSCAN pids.csv is still read (imported), same validation:
-    Counter,Long Name,Desc,Formula,Units,Datalength,PID,group,shortname,Results,PidCat,txtMCI
-    PID: hex number, FPID (calculated) or FFFF/FFFE/FFFD (analog 1/2/3);
-    only rows with group = 1 are loaded. *)
+            *c (convert F to C), *f (convert C to F); may be combined, e.g. "*f%d". *)
 
 interface
 
@@ -70,9 +65,7 @@ type
   public
     constructor Create;
     destructor Destroy; override;
-    { .json -> LoadFromJson, anything else -> legacy CSV import. }
     procedure LoadFromFile(const FileName: string);
-    procedure LoadFromCsvLines(Lines: TStrings);
     procedure LoadFromJson(Root: TJSONObject);
     procedure LoadFromJsonText(const Text: string);
     function ToJson: TJSONObject;
@@ -96,62 +89,10 @@ const
   CategoryKeys: array[TPidCategory] of string = ('other', 'engine', 'transmission',
     'indicators', 'body', 'accessories', 'calculated', 'analog');
 
-function ParseCsvLine(const Line: string): TArray<string>;
-
 implementation
 
 uses
   System.Math, System.StrUtils, UVScan.JsonFile;
-
-function ParseCsvLine(const Line: string): TArray<string>;
-var
-  Fields: TList<string>;
-  Field: TStringBuilder;
-  I: Integer;
-  InQuotes: Boolean;
-  C: Char;
-begin
-  Fields := TList<string>.Create;
-  Field := TStringBuilder.Create;
-  try
-    InQuotes := False;
-    I := 1;
-    while I <= Length(Line) do
-    begin
-      C := Line[I];
-      if InQuotes then
-      begin
-        if C = '"' then
-        begin
-          if (I < Length(Line)) and (Line[I + 1] = '"') then
-          begin
-            Field.Append('"');
-            Inc(I);
-          end
-          else
-            InQuotes := False;
-        end
-        else
-          Field.Append(C);
-      end
-      else if C = '"' then
-        InQuotes := True
-      else if C = ',' then
-      begin
-        Fields.Add(Field.ToString);
-        Field.Clear;
-      end
-      else
-        Field.Append(C);
-      Inc(I);
-    end;
-    Fields.Add(Field.ToString);
-    Result := Fields.ToArray;
-  finally
-    Field.Free;
-    Fields.Free;
-  end;
-end;
 
 { TPidDef }
 
@@ -282,31 +223,18 @@ end;
 
 procedure TPidCatalog.LoadFromFile(const FileName: string);
 var
-  Lines: TStringList;
   Root: TJSONObject;
 begin
-  if SameText(ExtractFileExt(FileName), '.json') then
-  begin
-    Root := ReadJsonObject(FileName);
-    try
-      LoadFromJson(Root);
-    finally
-      Root.Free;
-    end;
-    Exit;
-  end;
-  Lines := TStringList.Create;
+  Root := ReadJsonObject(FileName);
   try
-    // A BOM selects UTF-8/UTF-16; otherwise the legacy ANSI file is read as ANSI.
-    Lines.LoadFromFile(FileName);
-    LoadFromCsvLines(Lines);
+    LoadFromJson(Root);
   finally
-    Lines.Free;
+    Root.Free;
   end;
 end;
 
-{ Common checks for both formats. Takes ownership of P; returns False (and
-  frees P) when the entry is rejected. }
+{ Final checks for one entry. Takes ownership of P; returns False (and frees
+  P) when the entry is rejected. }
 function TPidCatalog.Accept(P: TPidDef; const Where: string): Boolean;
 begin
   Result := False;
@@ -342,88 +270,6 @@ begin
   finally
     if not Result then
       P.Free;
-  end;
-end;
-
-function ToCategory(const S: string): TPidCategory;
-begin
-  case StrToIntDef(Trim(S), 0) of
-    1: Result := pcEngine;
-    2: Result := pcTransmission;
-    3: Result := pcIndicators;
-    4: Result := pcBody;
-    5: Result := pcAccessories;
-    6: Result := pcCalculated;
-    7: Result := pcAnalog;
-  else
-    Result := pcOther;
-  end;
-end;
-
-procedure TPidCatalog.LoadFromCsvLines(Lines: TStrings);
-var
-  I, PidNum: Integer;
-  F: TArray<string>;
-  P: TPidDef;
-  Code: string;
-begin
-  FItems.Clear;
-  FWarnings.Clear;
-  for I := 1 to Lines.Count - 1 do // line 0 is the header
-  begin
-    if Trim(Lines[I]) = '' then
-      Continue;
-    F := ParseCsvLine(Lines[I]);
-    if Length(F) < 12 then
-    begin
-      FWarnings.Add(Format('Line %d: expected 12 columns, found %d', [I + 1, Length(F)]));
-      Continue;
-    end;
-    if Trim(F[7]) <> '1' then
-      Continue;
-
-    P := TPidDef.Create;
-    try
-      P.Id := StrToIntDef(Trim(F[0]), I);
-      P.LongName := Trim(F[1]);
-      P.Description := Trim(F[2]);
-      P.FormulaText := Trim(F[3]);
-      P.Units := Trim(F[4]);
-      P.DataLength := StrToIntDef(Trim(F[5]), 0);
-      P.PidCode := UpperCase(Trim(F[6]));
-      P.ShortName := Trim(F[8]);
-      P.ResultFormat := Trim(F[9]);
-      P.Category := ToCategory(F[10]);
-      P.Mci := UpperCase(StringReplace(Trim(F[11]), '%', '', [rfReplaceAll]));
-
-      Code := P.PidCode;
-      if (Code = 'FFFF') or (Code = 'FFFE') or (Code = 'FFFD') then
-      begin
-        P.Kind := pkAnalog;
-        P.AnalogChannel := $FFFF - StrToInt('$' + Code) + 1;
-      end
-      else if (Code = 'FPID') or (P.DataLength = 0) then
-      begin
-        P.Kind := pkCalculated;
-        P.PidCode := 'FPID';
-      end
-      else
-      begin
-        P.Kind := pkVehicle;
-        if not TryStrToInt('$' + Code, PidNum) or (PidNum < 0) or (PidNum > $FFFF) then
-        begin
-          FWarnings.Add(Format('Line %d (%s): invalid PID "%s"', [I + 1, P.LongName, Code]));
-          FreeAndNil(P);
-          Continue;
-        end;
-        P.PidNumber := PidNum;
-        P.PidCode := IntToHex(PidNum, 4);
-      end;
-    except
-      P.Free;
-      raise;
-    end;
-    Accept(P, Format('Line %d', [I + 1]));
   end;
 end;
 
