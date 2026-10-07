@@ -1370,7 +1370,7 @@ procedure TScanEngine.DoDiscoverPids(const Ranges: string);
 var
   List: TArray<TPidRange>;
   R: TPidRange;
-  Pid, Done, Total, Found, Timeouts: Integer;
+  Pid, Done, Total, Found, Timeouts, TraceWas: Integer;
   P: Word;
   Msg: TClass2Message;
   Ev: TEngineEvent;
@@ -1399,6 +1399,8 @@ begin
   Done := 0;
   Found := 0;
   Timeouts := 0;
+  // Thousands of requests: no per-frame traffic trace, just progress and results.
+  TraceWas := TInterlocked.Exchange(FTrace, 0);
   try
     Log('Searching %d PIDs (%s)...', [Total, Ranges]);
     for R in List do
@@ -1454,6 +1456,7 @@ begin
       end;
     Log('PID search done: %d of %d answered (%.0f s)', [Found, Total, Clock.Elapsed.TotalSeconds]);
   finally
+    TInterlocked.Exchange(FTrace, TraceWas);
     Ev := Default(TEngineEvent);
     Ev.Kind := eePidSearchDone;
     Ev.Progress := Done;

@@ -148,6 +148,8 @@ type
     FSettings: TAppSettings;
     FLists: TPidLists;
     FDiscovery: TPidDiscoveryForm;
+    FPendingLog: TStringList;   // message lines waiting for the next timer tick
+    procedure FlushMessages;
     procedure ReloadCatalog;
     procedure FillLists(const Select: string);
     procedure SaveLists;
@@ -201,6 +203,7 @@ begin
   FCatalog := TPidCatalog.Create;
   FDtcs := TDtcCatalog.Create;
   FSettings := TAppSettings.Create;
+  FPendingLog := TStringList.Create;
   FLists := TPidLists.Create;
   Caption := 'UVScan';
   pnlNotice.Visible := False;
@@ -249,6 +252,7 @@ begin
   FEngine.Free; // stops the scan, closes the port, waits for the thread
   FCatalog.Free;
   FSettings.Free;
+  FPendingLog.Free;
   FLists.Free;
   FDtcs.Free;
   FSelected.Free;
@@ -1012,6 +1016,7 @@ var
   I: Integer;
   V: Double;
 begin
+  FlushMessages;
   if FState <> esScanning then
     Exit;
   FLive := FEngine.GetSnapshot;
@@ -1227,15 +1232,45 @@ end;
 
 { Messages }
 
+const
+  MaxMessageLines = 5000;
+
+{ Messages are queued and written to the memo in one go by the refresh timer.
+  Adding them one by one (thousands per minute with traffic tracing on) kept
+  the UI thread so busy that windows stopped repainting. }
 procedure TMainForm.AddMessage(const Text: string);
 begin
-  if memLog.Lines.Count > 5000 then
-    memLog.Lines.Delete(0);
-  memLog.Lines.Add(FormatDateTime('hh:nn:ss.zzz', Now) + '  ' + Text);
+  FPendingLog.Add(FormatDateTime('hh:nn:ss.zzz', Now) + '  ' + Text);
+  if FPendingLog.Count > MaxMessageLines then
+    FPendingLog.Delete(0);
+end;
+
+procedure TMainForm.FlushMessages;
+var
+  Cut: Integer;
+begin
+  if FPendingLog.Count = 0 then
+    Exit;
+  // Append the batch at the end (one EM_REPLACESEL) ...
+  memLog.SelStart := memLog.GetTextLen;
+  memLog.SelLength := 0;
+  memLog.SelText := string.Join(sLineBreak, FPendingLog.ToStringArray) + sLineBreak;
+  FPendingLog.Clear;
+  // ... and drop old lines in one cut once there are clearly too many.
+  if memLog.Lines.Count > MaxMessageLines + 500 then
+  begin
+    Cut := memLog.Perform(EM_LINEINDEX, memLog.Lines.Count - MaxMessageLines, 0);
+    memLog.SelStart := 0;
+    memLog.SelLength := Cut;
+    memLog.SelText := '';
+  end;
+  memLog.SelStart := memLog.GetTextLen;
+  memLog.Perform(EM_SCROLLCARET, 0, 0);
 end;
 
 procedure TMainForm.btnClearMessagesClick(Sender: TObject);
 begin
+  FPendingLog.Clear;
   memLog.Clear;
 end;
 
