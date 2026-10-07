@@ -1,0 +1,3 @@
+// Delphi FMX style for the Android dark theme (see UVScan.UI.Theme.pas);
+// the light theme is the platform default style.
+UVSCAN_STYLE_DARK RCDATA "res\\styles\\AndroidDark.fsf"

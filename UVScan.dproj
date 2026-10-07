@@ -332,6 +332,7 @@
         <DCCReference Include="src\UVScan.LogData.pas"/>
         <DCCReference Include="src\UVScan.LogViews.pas"/>
         <DCCReference Include="src\UVScan.UI.Common.pas"/>
+        <DCCReference Include="src\UVScan.UI.Theme.pas"/>
         <DCCReference Include="src\UVScan.UI.DataGrid.pas"/>
         <DCCReference Include="src\UVScan.Gauge.pas"/>
         <DCCReference Include="src\UVScan.LogChart.pas"/>
@@ -365,6 +366,12 @@
         </DCCReference>
         <RcCompile Include="UVScan.Defaults.rc">
             <Form>UVScan.Defaults.res</Form>
+        </RcCompile>
+        <RcCompile Include="UVScan.StylesWin.rc">
+            <Form>UVScan.StylesWin.res</Form>
+        </RcCompile>
+        <RcCompile Include="UVScan.StylesAndroid.rc">
+            <Form>UVScan.StylesAndroid.res</Form>
         </RcCompile>
         <BuildConfiguration Include="Base">
             <Key>Base</Key>

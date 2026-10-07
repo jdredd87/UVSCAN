@@ -15,7 +15,7 @@ unit UVScan.UI.DataGrid;
 interface
 
 uses
-  System.SysUtils, System.Classes, System.Types, System.UITypes, System.Math,
+  System.SysUtils, System.Classes, System.Types, System.UITypes, System.Math, System.Messaging,
   FMX.Types, FMX.Controls, FMX.Graphics, FMX.StdCtrls, FMX.TextLayout;
 
 type
@@ -63,6 +63,8 @@ type
     FLayout: TTextLayout;
     FUpdatingScroll: Boolean;
     // colours
+    FCheckColor: TAlphaColor;
+    FThemeSub: TMessageSubscriptionId;
     FBackColor, FAltColor, FTextColor, FHeaderColor, FHeaderTextColor, FLineColor,
     FSelColor, FSelTextColor, FSelInactiveColor, FGroupColor, FGroupTextColor, FDimTextColor: TAlphaColor;
     // mouse
@@ -95,6 +97,8 @@ type
     function GetColumn(Index: Integer): TGridColumn;
     function GetColumnCount: Integer;
     procedure ScrollChange(Sender: TObject);
+    procedure LoadPalette;
+    procedure ThemeChanged(const Sender: TObject; const M: TMessage);
     procedure UpdateScrollBar;
     function DataTop: Single;
     function DataBottom: Single;
@@ -193,6 +197,9 @@ type
 
 implementation
 
+uses
+  UVScan.UI.Common, UVScan.UI.Theme;
+
 const
   DragThreshold = 6;
   ResizeGrip = 4;
@@ -217,18 +224,8 @@ begin
   FGridLines := True;
   FCellPadding := 6;
   FResizeCol := -1;
-  FBackColor := TAlphaColors.White;
-  FAltColor := $FFF0F3F7;
-  FTextColor := $FF1E1E1E;
-  FDimTextColor := $FF808080;
-  FHeaderColor := $FFE9ECF0;
-  FHeaderTextColor := $FF202020;
-  FLineColor := $FFDADDE2;
-  FSelColor := $FF0078D7;
-  FSelTextColor := TAlphaColors.White;
-  FSelInactiveColor := $FFCCE4F7;
-  FGroupColor := $FFDDE6F0;
-  FGroupTextColor := $FF1F3F66;
+  LoadPalette;
+  FThemeSub := TMessageManager.DefaultManager.SubscribeToMessage(TThemeChangedMessage, ThemeChanged);
   FLayout := TTextLayoutManager.DefaultTextLayout.Create;
   FScrollBar := TScrollBar.Create(Self);
   FScrollBar.Parent := Self;
@@ -245,8 +242,36 @@ end;
 
 destructor TDataGrid.Destroy;
 begin
+  TMessageManager.DefaultManager.Unsubscribe(TThemeChangedMessage, FThemeSub);
   FLayout.Free;
   inherited;
+end;
+
+{ Colours of the active theme (UVScan.UI.Theme). }
+procedure TDataGrid.LoadPalette;
+var
+  P: TPalette;
+begin
+  P := Palette;
+  FBackColor := P.GridBack;
+  FAltColor := P.GridAlt;
+  FTextColor := P.GridText;
+  FDimTextColor := P.GridDimText;
+  FHeaderColor := P.GridHeader;
+  FHeaderTextColor := P.GridHeaderText;
+  FLineColor := P.GridLine;
+  FSelColor := P.GridSel;
+  FSelTextColor := P.GridSelText;
+  FSelInactiveColor := P.GridSelInactive;
+  FGroupColor := P.GridGroup;
+  FGroupTextColor := P.GridGroupText;
+  FCheckColor := P.GridCheck;
+end;
+
+procedure TDataGrid.ThemeChanged(const Sender: TObject; const M: TMessage);
+begin
+  LoadPalette;
+  Repaint;
 end;
 
 function TDataGrid.AddColumn(const Caption: string; Width: Single; Align: TGridAlign; Stretch: Boolean): Integer;
@@ -671,13 +696,13 @@ var
   P: TPathData;
 begin
   Canvas.Fill.Kind := TBrushKind.Solid;
-  Canvas.Fill.Color := TAlphaColors.White;
+  Canvas.Fill.Color := FBackColor;
   Canvas.FillRect(R, 3, 3, AllCorners, 1);
   Canvas.Stroke.Kind := TBrushKind.Solid;
   Canvas.Stroke.Thickness := 1.2;
   if Checked then
   begin
-    Canvas.Fill.Color := FSelColor;
+    Canvas.Fill.Color := FCheckColor;
     Canvas.FillRect(R, 3, 3, AllCorners, 1);
     P := TPathData.Create;
     try
@@ -776,6 +801,8 @@ begin
             Fore := FSelTextColor
           else if St.Fore <> 0 then
             Fore := St.Fore
+          else if St.Back <> 0 then
+            Fore := ContrastColor(St.Back) // a coloured cell keeps readable text in either theme
           else
             Fore := FTextColor;
           if (Col = 0) and FCheckboxes then
@@ -827,7 +854,7 @@ begin
         Canvas.Stroke.Color := FLineColor;
         Canvas.DrawLine(TPointF.Create(X - 0.5, 4), TPointF.Create(X - 0.5, FHeaderHeight - 4), 1);
       end;
-      Canvas.Stroke.Color := $FFB8BEC6;
+      Canvas.Stroke.Color := FLineColor;
       Canvas.DrawLine(TPointF.Create(0, FHeaderHeight - 0.5), TPointF.Create(Width, FHeaderHeight - 0.5), 1);
     end;
 

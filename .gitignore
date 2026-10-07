@@ -37,6 +37,8 @@ Desktop.ini
 /UVScan.res
 /tests/UVScanTests.res
 UVScan.Defaults.res
+UVScan.StylesWin.res
+UVScan.StylesAndroid.res
 
 # Android build output
 /Android/

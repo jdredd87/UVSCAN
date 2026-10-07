@@ -549,7 +549,10 @@ var
   P: TPointF;
 begin
   P := btnPresets.LocalToScreen(TPointF.Create(0, btnPresets.Height));
-  pmPresets.Popup(P.X, P.Y);
+  if IsMobile then
+    ShowMenuAsActions(Self, pmPresets, ScreenToClient(P)) // FMX popup menus do not show on Android
+  else
+    pmPresets.Popup(P.X, P.Y);
 end;
 
 procedure TDisplayEditorForm.miHighIsBadClick(Sender: TObject);

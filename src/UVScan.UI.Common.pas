@@ -12,7 +12,7 @@ interface
 
 uses
   System.SysUtils, System.Classes, System.UITypes, System.Types,
-  FMX.Types, FMX.Controls, FMX.Forms, FMX.Graphics, FMX.ListBox, FMX.StdCtrls;
+  FMX.Types, FMX.Controls, FMX.Forms, FMX.Graphics, FMX.ListBox, FMX.StdCtrls, FMX.Menus;
 
 type
   TNamedColor = record
@@ -77,6 +77,26 @@ function Luminance(C: TAlphaColor): Single;
 function Blend(A, B: TAlphaColor; T: Single): TAlphaColor;
 function WithAlpha(C: TAlphaColor; Alpha: Byte): TAlphaColor;
 
+type
+  TActionItem = record
+    Text: string;           // '-' = separator
+    Enabled: Boolean;
+    Checked: Boolean;
+    OnClick: TNotifyEvent;
+    Sender: TObject;        // passed to OnClick
+  end;
+
+{ A touch-friendly menu at At (form coordinates), kept on the form. FMX popup
+  menus do not show on Android; this looks and works the same everywhere.
+  Tapping outside closes it. }
+procedure ShowActionMenu(Form: TCustomForm; const Items: TArray<TActionItem>; const At: TPointF);
+{ ShowActionMenu with the visible items of a TPopupMenu. }
+procedure ShowMenuAsActions(Form: TCustomForm; Menu: TPopupMenu; const At: TPointF);
+
+{ Widens a button, check box or label so its text fits in the active style's
+  font (styles differ: Win10Modern's text is bigger than the default's). }
+procedure FitTextWidth(C: TControl; MinWidth: Single = 0);
+
 { True on phones and tablets: windows are full screen, no mouse hover. }
 function IsMobile: Boolean;
 
@@ -87,7 +107,8 @@ procedure KeepInSafeArea(Form: TCommonCustomForm);
 implementation
 
 uses
-  System.Math, FMX.DialogService, FMX.Dialogs, FMX.Platform;
+  System.Math, FMX.DialogService, FMX.Dialogs, FMX.Platform, FMX.TextLayout, FMX.Controls.Presentation,
+  FMX.Objects, FMX.Effects, UVScan.UI.Theme;
 
 function IsMobile: Boolean;
 begin
@@ -118,6 +139,213 @@ begin
   Form.OnSafeAreaChanged := TSafeArea.Changed;
   if TPlatformServices.Current.SupportsPlatformService(IFMXWindowSafeAreaService, Svc) then
     TSafeArea.Changed(Form, Svc.GetSafeAreaInsets(Form));
+end;
+
+{ Action menu }
+
+type
+  TActionMenu = class(TComponent)
+  private
+    FOverlay: TRectangle;
+    FItems: TArray<TActionItem>;
+    procedure OverlayClick(Sender: TObject);
+    procedure ItemClick(Sender: TObject);
+    procedure Close;
+  end;
+
+procedure TActionMenu.Close;
+begin
+  FOverlay.Visible := False;
+  TThread.ForceQueue(nil,
+    procedure
+    begin
+      Free;
+    end);
+end;
+
+procedure TActionMenu.OverlayClick(Sender: TObject);
+begin
+  Close;
+end;
+
+procedure TActionMenu.ItemClick(Sender: TObject);
+var
+  Item: TActionItem;
+begin
+  Item := FItems[TControl(Sender).Tag];
+  Close;
+  if Assigned(Item.OnClick) then
+    TThread.ForceQueue(nil,
+      procedure
+      begin
+        Item.OnClick(Item.Sender);
+      end);
+end;
+
+procedure ShowActionMenu(Form: TCustomForm; const Items: TArray<TActionItem>; const At: TPointF);
+const
+  MenuWidth = 270;
+var
+  M: TActionMenu;
+  P: TPalette;
+  Panel, Row, Line: TRectangle;
+  L: TLabel;
+  Check: TPath;
+  Shadow: TShadowEffect;
+  I: Integer;
+  RowH, Y: Single;
+begin
+  if Length(Items) = 0 then
+    Exit;
+  P := Palette;
+  M := TActionMenu.Create(Form);
+  M.FItems := Items;
+  M.FOverlay := TRectangle.Create(M);
+  M.FOverlay.Parent := Form;
+  M.FOverlay.Align := TAlignLayout.Contents;
+  M.FOverlay.Fill.Color := $30000000;
+  M.FOverlay.Stroke.Kind := TBrushKind.None;
+  M.FOverlay.HitTest := True;
+  M.FOverlay.OnClick := M.OverlayClick;
+  M.FOverlay.BringToFront;
+
+  Panel := TRectangle.Create(M);
+  Panel.Parent := M.FOverlay;
+  Panel.HitTest := True; // taps between rows do not close the menu
+  Panel.Fill.Color := P.Bar;
+  Panel.Stroke.Color := P.BarLine;
+  Panel.XRadius := 8;
+  Panel.YRadius := 8;
+  Shadow := TShadowEffect.Create(M);
+  Shadow.Parent := Panel;
+  Shadow.Opacity := 0.4;
+  Shadow.Distance := 2;
+  Shadow.Softness := 0.3;
+
+  if IsMobile then
+    RowH := 52
+  else
+    RowH := 36;
+  Y := 6;
+  for I := 0 to High(Items) do
+  begin
+    if Items[I].Text = '-' then
+    begin
+      Line := TRectangle.Create(M);
+      Line.Parent := Panel;
+      Line.HitTest := False;
+      Line.Stroke.Kind := TBrushKind.None;
+      Line.Fill.Color := P.BarLine;
+      Line.SetBounds(12, Y + 4, MenuWidth - 24, 1);
+      Y := Y + 9;
+      Continue;
+    end;
+    Row := TRectangle.Create(M);
+    Row.Parent := Panel;
+    Row.SetBounds(4, Y, MenuWidth - 8, RowH);
+    Row.Fill.Color := TAlphaColors.Null;
+    Row.Stroke.Kind := TBrushKind.None;
+    Row.XRadius := 6;
+    Row.YRadius := 6;
+    Row.HitTest := Items[I].Enabled;
+    Row.Cursor := crHandPoint;
+    Row.Tag := I;
+    Row.OnClick := M.ItemClick;
+    L := TLabel.Create(M);
+    L.Parent := Row;
+    L.Align := TAlignLayout.Client;
+    L.Margins.Left := 14;
+    L.HitTest := False;
+    L.StyledSettings := L.StyledSettings - [TStyledSetting.FontColor, TStyledSetting.Size];
+    if Items[I].Enabled then
+      L.TextSettings.FontColor := P.Text
+    else
+      L.TextSettings.FontColor := P.Muted;
+    if IsMobile then
+      L.TextSettings.Font.Size := 16
+    else
+      L.TextSettings.Font.Size := 13;
+    L.TextSettings.WordWrap := False;
+    L.Text := Items[I].Text;
+    if Items[I].Checked then
+    begin
+      Check := TPath.Create(M);
+      Check.Parent := Row;
+      Check.Align := TAlignLayout.Right;
+      Check.Width := 20;
+      Check.Margins.Right := 14;
+      Check.Margins.Top := (RowH - 20) / 2;
+      Check.Margins.Bottom := (RowH - 20) / 2;
+      Check.HitTest := False;
+      Check.WrapMode := TPathWrapMode.Fit;
+      Check.Data.Data := 'M4 12 L9 17 L20 6';
+      Check.Fill.Kind := TBrushKind.None;
+      Check.Stroke.Color := P.Accent;
+      Check.Stroke.Thickness := 2.2;
+    end;
+    Y := Y + RowH;
+  end;
+  Panel.Width := MenuWidth;
+  Panel.Height := Y + 6;
+  Panel.Position.X := EnsureRange(At.X, 8, Max(8, Form.ClientWidth - MenuWidth - 8));
+  Panel.Position.Y := EnsureRange(At.Y, 8, Max(8, Form.ClientHeight - Panel.Height - 8));
+end;
+
+procedure ShowMenuAsActions(Form: TCustomForm; Menu: TPopupMenu; const At: TPointF);
+var
+  Items: TArray<TActionItem>;
+  It: TActionItem;
+  I: Integer;
+  M: TMenuItem;
+begin
+  Items := nil;
+  for I := 0 to Menu.ItemsCount - 1 do
+  begin
+    M := Menu.Items[I];
+    if not M.Visible then
+      Continue;
+    It.Text := M.Text.Replace('&&', '&');
+    It.Enabled := M.Enabled;
+    It.Checked := M.IsChecked;
+    It.OnClick := M.OnClick;
+    It.Sender := M;
+    Items := Items + [It];
+  end;
+  ShowActionMenu(Form, Items, At);
+end;
+
+procedure FitTextWidth(C: TControl; MinWidth: Single);
+var
+  T: TPresentedTextControl;
+  Layout: TTextLayout;
+  W, Extra: Single;
+begin
+  if not (C is TPresentedTextControl) then
+    Exit;
+  T := TPresentedTextControl(C);
+  T.ApplyStyleLookup;
+  Layout := TTextLayoutManager.DefaultTextLayout.Create;
+  try
+    Layout.BeginUpdate;
+    try
+      Layout.Font := T.ResultingTextSettings.Font;
+      Layout.WordWrap := False;
+      Layout.MaxSize := TPointF.Create(10000, 1000);
+      Layout.Text := T.Text;
+    finally
+      Layout.EndUpdate;
+    end;
+    W := Layout.TextWidth;
+  finally
+    Layout.Free;
+  end;
+  if C is TCheckBox then
+    Extra := 34 // the box and the gap
+  else if C is TButton then
+    Extra := 28
+  else
+    Extra := 6;
+  C.Width := Max(MinWidth, Ceil(W + Extra));
 end;
 
 procedure MessageBox(const Msg: string; DlgType: TMsgDlgType; const OnClose: TProc);

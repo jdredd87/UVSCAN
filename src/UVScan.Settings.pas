@@ -6,7 +6,9 @@ unit UVScan.Settings;
     "connection": { "port": "COM9", "baud": 115200 },
     "scan":       { "selectedPids": [1, 3, 12], "activeList": "Misfires", "streamSpeed": "fast" },
     "logging":    { "folder": "C:\\Users\\me\\Documents\\UVScan Logs" },
-    "advanced":   { "trace": false },
+    "advanced":   { "trace": false, "alertSounds": true },
+    "liveGrid":   { "zoom": 100, "showMinMax": true },
+    "appearance": { "theme": "system" },
     "window":     { "left": 100, "top": 80, "width": 1180, "height": 720,
                     "maximized": false, "pidPanelWidth": 400 } }
 
@@ -39,6 +41,7 @@ type
     AlertSounds: Boolean;   // play the sounds of the PID alert levels
     LiveZoom: Integer;      // live data grid zoom, percent
     ShowMinMax: Boolean;    // live data grid min / max columns
+    Theme: string;          // 'system', 'light' or 'dark'
     Window: TWindowSettings;
     constructor Create;
     procedure ResetToDefaults;
@@ -106,6 +109,7 @@ begin
   AlertSounds := True;
   LiveZoom := 100;
   ShowMinMax := True;
+  Theme := 'system';
   Window := Default(TWindowSettings);
 end;
 
@@ -145,6 +149,10 @@ begin
   Sec.AddPair('zoom', TJSONNumber.Create(LiveZoom));
   Sec.AddPair('showMinMax', TJSONBool.Create(ShowMinMax));
   Result.AddPair('liveGrid', Sec);
+
+  Sec := TJSONObject.Create;
+  Sec.AddPair('theme', Theme);
+  Result.AddPair('appearance', Sec);
 
   if Window.Saved then
   begin
@@ -206,6 +214,10 @@ begin
     LiveZoom := EnsureRange(JInt(Sec, 'zoom', LiveZoom), 50, 300);
     ShowMinMax := JBool(Sec, 'showMinMax', ShowMinMax);
   end;
+
+  Sec := JObj(Root, 'appearance');
+  if Sec <> nil then
+    Theme := LowerCase(JStr(Sec, 'theme', Theme));
 
   Sec := JObj(Root, 'window');
   if Sec <> nil then

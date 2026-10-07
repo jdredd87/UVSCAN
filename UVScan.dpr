@@ -29,6 +29,7 @@ uses
   UVScan.LogData in 'src\UVScan.LogData.pas',
   UVScan.LogViews in 'src\UVScan.LogViews.pas',
   UVScan.UI.Common in 'src\UVScan.UI.Common.pas',
+  UVScan.UI.Theme in 'src\UVScan.UI.Theme.pas',
   UVScan.UI.DataGrid in 'src\UVScan.UI.DataGrid.pas',
   UVScan.Gauge in 'src\UVScan.Gauge.pas',
   UVScan.LogChart in 'src\UVScan.LogChart.pas',
@@ -52,6 +53,12 @@ end;
 
 {$R *.res}
 {$R 'UVScan.Defaults.res' 'UVScan.Defaults.rc'}
+{$IFDEF MSWINDOWS}
+{$R 'UVScan.StylesWin.res' 'UVScan.StylesWin.rc'}
+{$ENDIF}
+{$IFDEF ANDROID}
+{$R 'UVScan.StylesAndroid.res' 'UVScan.StylesAndroid.rc'}
+{$ENDIF}
 
 begin
   {$IFDEF DEBUG}

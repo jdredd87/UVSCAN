@@ -29,34 +29,40 @@ All screenshots were taken with the built‑in **Simulator**, so the values are 
 
 ![Main window while scanning](images/live-data.png)
 
+Windows and Android share one layout:
+
 | Area | What it is |
 |---|---|
-| Top bar | Port, baud, **Connect / Disconnect**, **Start / Stop scan**, **Start log (F8)**, **Pause (F9)**, **Alert sounds** (mutes every alert sound). The bar turns green while scanning and brighter green while logging. |
-| Left | The PID list: tick what you want to scan. Above it the **Scan list** row, below it how many bytes the selection needs (the PCM streams at most 48) and **Test PIDs / Clear selection / Edit PIDs…**. |
-| Right | Tabs: **Live data**, **Dashboard**, **Real‑time controls**, **Vehicle & codes**, **Tools**, **Messages**. A coloured notice line appears above them when something needs your attention (click it to dismiss). |
-| Status bar | Connection state, port, VIN, OS ID, update rate, logging status. |
+| Top bar | The page's title, one main button that follows the connection (**Connect** → **Start scan** → **Stop**), and **⋮** with the page's other actions. Pages under *More* get a back arrow (the Android back key does the same). |
+| Pages | **Connect** (adapter, scan, logging, vehicle info), **PIDs** (the PID list with the **Scan list** row, the byte count — the PCM streams at most 48 — and **Test PIDs / Clear selection / Edit PIDs…**), **Live** (live data grid), **Gauges** (dashboard) and **More**: *Real‑time controls*, *Trouble codes*, *Log viewer*, *Tools*, *Settings*, *Messages*. A coloured notice line appears at the top when something needs your attention (tap or click it to dismiss). |
+| Status strip | A dot — grey idle, blue connected, green scanning, red logging, amber paused — then state, port, VIN, OS ID, update rate and logging. Tap it to go to *Connect*. |
+| Tab bar | **Connect · PIDs · Live · Gauges · More** at the bottom. |
+
+On a wide Windows window (about 1000 pixels and up) the PID list stays docked on the left beside the pages (drag the splitter to size it) and the *Live* and *Gauges* pages show their buttons in a bar; on a phone or a narrow window those buttons are in the **⋮** menu.
+
+**Themes** (*More → Settings → Theme*): **System default** follows the light / dark setting of Windows or the phone; or pick **Light** or **Dark**. They are Delphi's own styles (Win10Modern on Windows, the Android styles on a phone).
 
 ## Connecting
 
 1. Plug the AVT into the PC and the vehicle (key on).
-2. Pick its COM port (**Refresh** re‑reads the list) and the baud rate (115200 for the AVT‑841). Choose **Simulator** to try UVScan without hardware.
-3. Press **Connect**. UVScan initialises the AVT, reads its firmware version, the VIN and the PCM operating system ID (shown in the status bar and on *Vehicle & codes*).
+2. On the *Connect* page pick its COM port, or on Android its USB adapter (**Refresh** re‑reads the list), and the baud rate (115200 for the AVT‑841). Choose **Simulator** to try UVScan without hardware.
+3. Press **Connect** (on the page or in the top bar). UVScan initialises the AVT, reads its firmware version, the VIN and the PCM operating system ID (shown in the status strip and under *Vehicle* on the *Connect* page).
 
 Everything that talks to the AVT runs on a background thread, so the window stays responsive while the PCM is busy.
 
 ## Choosing PIDs and scan lists
 
-Tick PIDs in the list on the left (type in **Search PIDs…** to filter). The footer shows how many are ticked and how many of the PCM's 48 streaming bytes they use; it turns red when there are too many.
+Tick PIDs on the *PIDs* page, or in the list on the left of a wide window (type in **Search PIDs…** to filter). The footer shows how many are ticked and how many of the PCM's 48 streaming bytes they use; it turns red when there are too many.
 
 - **Test PIDs** asks the PCM about each ticked PID (or all of them) and shows *yes / no* in the *Test* column.
 - **Scan list** holds named selections such as *Misfires* or *Transmission*. Pick one to tick its PIDs, **Save as…** to store the current ticks under a name, **Delete** to remove a list. Lists only remember which PIDs, so fixing a PID's formula fixes it in every list.
-- Right‑click a PID → **Display & alerts…** or **Add to dashboard…**.
+- Right‑click a PID (long‑press on a phone) → **Display & alerts…** or **Add to dashboard…**.
 
 ## Live data
 
 Press **Start scan**. Each ticked PID gets a row with its current value, units and the lowest / highest value seen (**Reset min / max** starts those again).
 
-- **Min / max** in the footer hides or shows those two columns.
+- **Min / max** in the footer (or **⋮ → Show min / max**) hides or shows those two columns.
 - **‑ / +** zoom the grid from 75 % to 250 % — text, rows and columns together. Ctrl + mouse wheel over the grid, Ctrl + plus / minus and Ctrl + 0 (back to 100 %) do the same. Click the percentage to reset.
 - Rows take the colours of their [alert levels](#display-and-alerts) and flash when a level says so.
 - With up to 4 DPIDs (about 24 bytes of PIDs) the PCM sends about 10 updates a second, with more about 5 (see [protocol notes](protocol.md)).
@@ -82,7 +88,7 @@ Right‑click a PID in the list or a row in the live grid → **Display & alerts
 | Sound | *Beep* or *Alarm tone* (built into UVScan, so they work even with Windows sounds off), the *Windows alert sound*, or any `.wav` file. **Test** plays it. |
 | Repeat | Play the sound again every few seconds while the value stays in the level. |
 
-A sound plays when a PID **enters** a level, at most once every 3 seconds per PID, so a value hovering on a threshold does not machine‑gun. Each alert is also written to Messages. **Alert sounds** in the top bar mutes all of them.
+A sound plays when a PID **enters** a level, at most once every 3 seconds per PID, so a value hovering on a threshold does not machine‑gun. Each alert is also written to Messages. **Play alert sounds** (*More → Settings*) mutes all of them.
 
 **Presets…** builds green / yellow / red from two numbers: *high values are bad* (knock retard, temperatures) or *low values are bad* (voltage, oil pressure). The red level flashes and sounds the alarm tone.
 
@@ -114,15 +120,15 @@ In the gauge editor, **Auto** suggests a scale from the PID's formula (and widen
 
 ## Test display
 
-**Test display** (on the *Live data* and *Dashboard* tabs, whenever you are not scanning) fills the grid and the gauges with made‑up values that slowly rise and fall through each PID's range — its gauge scale, widened so every alert threshold is crossed. Use it to check colours, flashing, sounds and gauge layouts without a car. A notice says the values are made up; nothing is sent to the PCM and nothing is logged. Press **Stop test** (or start a real scan) to end it.
+**Test display** (on the *Live* and *Gauges* pages or in their **⋮** menu, whenever you are not scanning) fills the grid and the gauges with made‑up values that slowly rise and fall through each PID's range — its gauge scale, widened so every alert threshold is crossed. Use it to check colours, flashing, sounds and gauge layouts without a car. A notice says the values are made up; nothing is sent to the PCM and nothing is logged. Press **Stop test** (or start a real scan) to end it.
 
 ## Logging
 
-While scanning, **Start log (F8)** writes every update to a CSV file named `UVScan_<date>_<time>.csv` in the log folder (default *Documents\UVScan Logs*, change it on the *Tools* tab). **Pause (F9)** stops writing rows without closing the file. The first column is the time since the log started, then one column per PID with its units in the header.
+While scanning, **Start log (F8)** writes every update to a CSV file named `UVScan_<date>_<time>.csv` in the log folder (default *Documents\UVScan Logs*, change it in *More → Settings*). **Pause (F9)** stops writing rows without closing the file. The first column is the time since the log started, then one column per PID with its units in the header.
 
 ## Log viewer
 
-**Log viewer** in the top bar (or **F7**) opens your logs as a chart and a grid that follow one cursor. The first time it opens the newest log in the log folder; **Open log…** picks any file and the list next to it holds the 40 most recent. **Demo drive (made up)** opens a generated 10‑minute drive (cold start, city, highway, a hard pull with knock retard) to try everything without a log.
+**Open logs** on the *Connect* page or *More → Log viewer* (or **F7**) opens your logs as a chart and a grid that follow one cursor. The first time it opens the newest log in the log folder; **Open log…** picks any file and the list next to it holds the 40 most recent. **Demo drive (made up)** opens a generated 10‑minute drive (cold start, city, highway, a hard pull with knock retard) to try everything without a log.
 
 ![Log viewer, overlay](images/log-viewer-overlay.png)
 
@@ -285,8 +291,8 @@ Everything UVScan reads or writes, apart from CSV logs, is in **`C:\ProgramData\
 | Problem | Try |
 |---|---|
 | *Could not open COM…* | Another program (or another UVScan) has the port. Close it, check the port in Device Manager. |
-| Connect works but no data | Key on? The status bar's update rate stays at 0 and a notice says *No data from the PCM*. Check the AVT's vehicle connection. |
+| Connect works but no data | Key on? The status strip's update rate stays at 0 and a notice says *No data from the PCM*. Check the AVT's vehicle connection. |
 | *Selected PIDs need N bytes; the limit is 48* | Untick some PIDs; the PCM cannot stream more than 48 bytes. |
 | A PID shows *rejected* | The PCM refused it in a DPID. Use **Test PIDs**, or remove it. |
 | A real‑time control is *refused* | The reason is in *Last result*. *Request out of range* means this PCM does not have that control; *conditions not correct* usually means the engine is running or the vehicle is moving. |
-| No alert sounds | **Alert sounds** in the top bar must be ticked; check the level's sound with **Test**. |
+| No alert sounds | **Play alert sounds** in *More → Settings* must be ticked; check the level's sound with **Test**. |

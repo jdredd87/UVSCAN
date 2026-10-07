@@ -11,192 +11,102 @@ object MainForm: TMainForm
   OnDestroy = FormDestroy
   OnCloseQuery = FormCloseQuery
   OnKeyDown = FormKeyDown
+  OnKeyUp = FormKeyUp
   OnResize = FormResize
   DesignerMasterStyle = 0
-  object pnlTop: TRectangle
+  object pnlAppBar: TRectangle
     Align = Top
-    Fill.Color = xFFF0F0F0
+    Sides = [Bottom]
     Size.Width = 1180.000000000000000000
-    Size.Height = 46.000000000000000000
+    Size.Height = 52.000000000000000000
     Size.PlatformDefault = False
-    Stroke.Kind = None
-    object flTop: TFlowLayout
-      Align = Client
-      Padding.Left = 8.000000000000000000
-      Padding.Top = 8.000000000000000000
-      Padding.Right = 8.000000000000000000
-      Padding.Bottom = 6.000000000000000000
-      Size.Width = 1180.000000000000000000
-      Size.Height = 46.000000000000000000
+    object btnBack: TSpeedButton
+      Hint = 'Back'
+      Align = Left
+      Size.Width = 48.000000000000000000
+      Size.Height = 52.000000000000000000
       Size.PlatformDefault = False
-      Justify = Left
-      JustifyLastLine = Left
-      FlowDirection = LeftToRight
-      HorizontalGap = 6.000000000000000000
-      VerticalGap = 6.000000000000000000
-      object lblPort: TLabel
-        Size.Width = 30.000000000000000000
-        Size.Height = 30.000000000000000000
-        Size.PlatformDefault = False
-        Text = 'Port'
-      end
-      object cbPort: TComboBox
-        Size.Width = 150.000000000000000000
-        Size.Height = 30.000000000000000000
-        Size.PlatformDefault = False
-        TabOrder = 0
-      end
-      object btnRefreshPorts: TButton
-        Size.Width = 70.000000000000000000
-        Size.Height = 30.000000000000000000
-        Size.PlatformDefault = False
-        TabOrder = 1
-        Text = 'Refresh'
-        OnClick = btnRefreshPortsClick
-      end
-      object cbBaud: TComboBox
-        Items.Strings = (
-          '115200'
-          '57600')
-        ItemIndex = 0
-        Size.Width = 86.000000000000000000
-        Size.Height = 30.000000000000000000
-        Size.PlatformDefault = False
-        TabOrder = 2
-      end
-      object btnConnect: TButton
-        Size.Width = 90.000000000000000000
-        Size.Height = 30.000000000000000000
-        Size.PlatformDefault = False
-        TabOrder = 3
-        Text = 'Connect'
-        OnClick = btnConnectClick
-      end
-      object btnDisconnect: TButton
-        Size.Width = 90.000000000000000000
-        Size.Height = 30.000000000000000000
-        Size.PlatformDefault = False
-        TabOrder = 4
-        Text = 'Disconnect'
-        OnClick = btnDisconnectClick
-      end
-      object sep1: TLine
-        LineType = Left
-        Size.Width = 6.000000000000000000
-        Size.Height = 30.000000000000000000
-        Size.PlatformDefault = False
-        Stroke.Color = xFFB0B0B0
-      end
-      object btnStartScan: TButton
-        Size.Width = 100.000000000000000000
-        Size.Height = 30.000000000000000000
-        Size.PlatformDefault = False
-        TabOrder = 5
-        Text = 'Start scan'
-        OnClick = btnStartScanClick
-      end
-      object btnStopScan: TButton
-        Size.Width = 90.000000000000000000
-        Size.Height = 30.000000000000000000
-        Size.PlatformDefault = False
-        TabOrder = 6
-        Text = 'Stop scan'
-        OnClick = btnStopScanClick
-      end
-      object sep2: TLine
-        LineType = Left
-        Size.Width = 6.000000000000000000
-        Size.Height = 30.000000000000000000
-        Size.PlatformDefault = False
-        Stroke.Color = xFFB0B0B0
-      end
-      object btnLog: TButton
-        Size.Width = 110.000000000000000000
-        Size.Height = 30.000000000000000000
-        Size.PlatformDefault = False
-        TabOrder = 7
-        Text = 'Start log (F8)'
-        OnClick = btnLogClick
-      end
-      object btnPause: TButton
-        Size.Width = 96.000000000000000000
-        Size.Height = 30.000000000000000000
-        Size.PlatformDefault = False
-        TabOrder = 8
-        Text = 'Pause (F9)'
-        OnClick = btnPauseClick
-      end
-      object btnLogViewer: TButton
-        Hint = 'Open logs as a chart and grid, with playback (F7)'
-        Size.Width = 96.000000000000000000
-        Size.Height = 30.000000000000000000
-        Size.PlatformDefault = False
-        TabOrder = 9
-        Text = 'Log viewer'
-        ShowHint = True
-        OnClick = btnLogViewerClick
-      end
-      object chkSound: TCheckBox
-        Hint = 'Play the sounds of the PID alert levels'
-        IsChecked = True
-        Size.Width = 104.000000000000000000
-        Size.Height = 30.000000000000000000
-        Size.PlatformDefault = False
-        TabOrder = 10
-        Text = 'Alert sounds'
-        ShowHint = True
-        OnChange = chkSoundChange
-      end
+      ShowHint = True
+      Visible = False
+      OnClick = btnBackClick
+    end
+    object lblTitle: TLabel
+      Align = Client
+      StyledSettings = [Family, FontColor]
+      Margins.Left = 14.000000000000000000
+      Position.X = 62.000000000000000000
+      Size.Width = 900.000000000000000000
+      Size.Height = 52.000000000000000000
+      Size.PlatformDefault = False
+      TextSettings.Font.Size = 19.000000000000000000
+      TextSettings.WordWrap = False
+      TextSettings.Trimming = Character
+      Text = 'Live data'
+    end
+    object btnAction: TButton
+      Align = Right
+      Margins.Left = 6.000000000000000000
+      Margins.Top = 8.000000000000000000
+      Margins.Right = 4.000000000000000000
+      Margins.Bottom = 8.000000000000000000
+      Position.X = 1000.000000000000000000
+      Size.Width = 128.000000000000000000
+      Size.Height = 36.000000000000000000
+      Size.PlatformDefault = False
+      TabOrder = 0
+      Text = 'Connect'
+      OnClick = btnActionClick
+    end
+    object btnMenu: TSpeedButton
+      Hint = 'More actions'
+      Align = Right
+      Position.X = 1136.000000000000000000
+      Size.Width = 44.000000000000000000
+      Size.Height = 52.000000000000000000
+      Size.PlatformDefault = False
+      ShowHint = True
+      OnClick = btnMenuClick
     end
   end
-  object sbMain: TStatusBar
-    Position.Y = 698.000000000000000000
-    ShowSizeGrip = True
+  object pnlNav: TRectangle
+    Align = Bottom
+    Sides = [Top]
+    Position.Y = 664.000000000000000000
     Size.Width = 1180.000000000000000000
-    Size.Height = 22.000000000000000000
+    Size.Height = 56.000000000000000000
     Size.PlatformDefault = False
-    TabOrder = 1
-    object lblStatState: TLabel
+  end
+  object pnlStatus: TRectangle
+    Align = Bottom
+    Sides = [Top]
+    HitTest = True
+    Position.Y = 636.000000000000000000
+    Size.Width = 1180.000000000000000000
+    Size.Height = 28.000000000000000000
+    Size.PlatformDefault = False
+    OnClick = pnlStatusClick
+    object shpStatus: TCircle
       Align = Left
-      Margins.Left = 6.000000000000000000
-      Size.Width = 110.000000000000000000
-      Size.Height = 22.000000000000000000
+      HitTest = False
+      Margins.Left = 12.000000000000000000
+      Margins.Top = 9.000000000000000000
+      Margins.Right = 8.000000000000000000
+      Margins.Bottom = 9.000000000000000000
+      Size.Width = 10.000000000000000000
+      Size.Height = 10.000000000000000000
       Size.PlatformDefault = False
-      Text = 'Disconnected'
+      Stroke.Kind = None
     end
-    object lblStatPort: TLabel
-      Align = Left
-      Position.X = 116.000000000000000000
-      Size.Width = 110.000000000000000000
-      Size.Height = 22.000000000000000000
-      Size.PlatformDefault = False
-    end
-    object lblStatVin: TLabel
-      Align = Left
-      Position.X = 226.000000000000000000
-      Size.Width = 190.000000000000000000
-      Size.Height = 22.000000000000000000
-      Size.PlatformDefault = False
-    end
-    object lblStatOsid: TLabel
-      Align = Left
-      Position.X = 416.000000000000000000
-      Size.Width = 130.000000000000000000
-      Size.Height = 22.000000000000000000
-      Size.PlatformDefault = False
-    end
-    object lblStatRate: TLabel
-      Align = Left
-      Position.X = 546.000000000000000000
-      Size.Width = 120.000000000000000000
-      Size.Height = 22.000000000000000000
-      Size.PlatformDefault = False
-    end
-    object lblStatLog: TLabel
+    object lblStatus: TLabel
       Align = Client
-      Size.Width = 514.000000000000000000
-      Size.Height = 22.000000000000000000
+      HitTest = False
+      Margins.Right = 8.000000000000000000
+      Size.Width = 1100.000000000000000000
+      Size.Height = 28.000000000000000000
       Size.PlatformDefault = False
+      TextSettings.WordWrap = False
+      TextSettings.Trimming = Character
+      Text = 'Disconnected'
     end
   end
   object pnlPids: TLayout
@@ -205,7 +115,7 @@ object MainForm: TMainForm
     Padding.Top = 4.000000000000000000
     Padding.Right = 2.000000000000000000
     Padding.Bottom = 4.000000000000000000
-    Position.Y = 46.000000000000000000
+    Position.Y = 52.000000000000000000
     Size.Width = 400.000000000000000000
     Size.Height = 652.000000000000000000
     Size.PlatformDefault = False
@@ -343,7 +253,7 @@ object MainForm: TMainForm
     Cursor = crHSplit
     MinSize = 200.000000000000000000
     Position.X = 400.000000000000000000
-    Position.Y = 46.000000000000000000
+    Position.Y = 52.000000000000000000
     Size.Width = 5.000000000000000000
     Size.Height = 652.000000000000000000
     Size.PlatformDefault = False
@@ -384,16 +294,280 @@ object MainForm: TMainForm
       Size.Width = 771.000000000000000000
       Size.Height = 616.000000000000000000
       Size.PlatformDefault = False
-      TabIndex = 0
+      TabIndex = 2
       TabOrder = 0
-      TabPosition = PlatformDefault
+      TabPosition = None
+      object tiConnect: TTabItem
+        IsSelected = False
+        Size.Width = 70.000000000000000000
+        Size.Height = 26.000000000000000000
+        Size.PlatformDefault = False
+        StyleLookup = ''
+        TabOrder = 0
+        Text = 'Connect'
+        object sbConnect: TVertScrollBox
+          Align = Client
+          Size.Width = 771.000000000000000000
+          Size.Height = 590.000000000000000000
+          Size.PlatformDefault = False
+          TabOrder = 0
+          object gbAdapter: TGroupBox
+            Align = Top
+            Margins.Left = 8.000000000000000000
+            Margins.Top = 8.000000000000000000
+            Margins.Right = 8.000000000000000000
+            Padding.Left = 10.000000000000000000
+            Padding.Top = 28.000000000000000000
+            Padding.Right = 10.000000000000000000
+            Padding.Bottom = 8.000000000000000000
+            Position.Y = 0.000000000000000000
+            Size.Width = 600.000000000000000000
+            Size.Height = 128.000000000000000000
+            Size.PlatformDefault = False
+            Text = 'Adapter'
+            TabOrder = 0
+            object flAdapter: TFlowLayout
+              Align = Client
+              Size.Width = 600.000000000000000000
+              Size.Height = 60.000000000000000000
+              Size.PlatformDefault = False
+              Justify = Left
+              JustifyLastLine = Left
+              FlowDirection = LeftToRight
+              HorizontalGap = 8.000000000000000000
+              VerticalGap = 8.000000000000000000
+              object cbPort: TComboBox
+                TabOrder = 0
+                Size.Width = 250.000000000000000000
+                Size.Height = 40.000000000000000000
+                Size.PlatformDefault = False
+              end
+              object btnRefreshPorts: TButton
+                TabOrder = 1
+                Text = 'Refresh'
+                OnClick = btnRefreshPortsClick
+                Size.Width = 100.000000000000000000
+                Size.Height = 40.000000000000000000
+                Size.PlatformDefault = False
+              end
+              object cbBaud: TComboBox
+                Items.Strings = (
+                  '115200'
+                  '57600')
+                ItemIndex = 0
+                TabOrder = 2
+                Size.Width = 110.000000000000000000
+                Size.Height = 40.000000000000000000
+                Size.PlatformDefault = False
+              end
+              object btnConnect: TButton
+                TabOrder = 3
+                Text = 'Connect'
+                OnClick = btnConnectClick
+                Size.Width = 130.000000000000000000
+                Size.Height = 40.000000000000000000
+                Size.PlatformDefault = False
+              end
+              object btnDisconnect: TButton
+                TabOrder = 4
+                Text = 'Disconnect'
+                OnClick = btnDisconnectClick
+                Size.Width = 130.000000000000000000
+                Size.Height = 40.000000000000000000
+                Size.PlatformDefault = False
+              end
+            end
+          end
+          object gbScan: TGroupBox
+            Align = Top
+            Margins.Left = 8.000000000000000000
+            Margins.Top = 8.000000000000000000
+            Margins.Right = 8.000000000000000000
+            Padding.Left = 10.000000000000000000
+            Padding.Top = 28.000000000000000000
+            Padding.Right = 10.000000000000000000
+            Padding.Bottom = 8.000000000000000000
+            Position.Y = 136.000000000000000000
+            Size.Width = 600.000000000000000000
+            Size.Height = 84.000000000000000000
+            Size.PlatformDefault = False
+            Text = 'Scan'
+            TabOrder = 1
+            object flScan: TFlowLayout
+              Align = Client
+              Size.Width = 600.000000000000000000
+              Size.Height = 60.000000000000000000
+              Size.PlatformDefault = False
+              Justify = Left
+              JustifyLastLine = Left
+              FlowDirection = LeftToRight
+              HorizontalGap = 8.000000000000000000
+              VerticalGap = 8.000000000000000000
+              object btnStartScan: TButton
+                TabOrder = 5
+                Text = 'Start scan'
+                OnClick = btnStartScanClick
+                Size.Width = 150.000000000000000000
+                Size.Height = 40.000000000000000000
+                Size.PlatformDefault = False
+              end
+              object btnStopScan: TButton
+                TabOrder = 6
+                Text = 'Stop scan'
+                OnClick = btnStopScanClick
+                Size.Width = 150.000000000000000000
+                Size.Height = 40.000000000000000000
+                Size.PlatformDefault = False
+              end
+            end
+          end
+          object gbLogRec: TGroupBox
+            Align = Top
+            Margins.Left = 8.000000000000000000
+            Margins.Top = 8.000000000000000000
+            Margins.Right = 8.000000000000000000
+            Padding.Left = 10.000000000000000000
+            Padding.Top = 28.000000000000000000
+            Padding.Right = 10.000000000000000000
+            Padding.Bottom = 8.000000000000000000
+            Position.Y = 228.000000000000000000
+            Size.Width = 600.000000000000000000
+            Size.Height = 84.000000000000000000
+            Size.PlatformDefault = False
+            Text = 'Logging'
+            TabOrder = 2
+            object flLogRec: TFlowLayout
+              Align = Client
+              Size.Width = 600.000000000000000000
+              Size.Height = 60.000000000000000000
+              Size.PlatformDefault = False
+              Justify = Left
+              JustifyLastLine = Left
+              FlowDirection = LeftToRight
+              HorizontalGap = 8.000000000000000000
+              VerticalGap = 8.000000000000000000
+              object btnLog: TButton
+                TabOrder = 7
+                Text = 'Start log (F8)'
+                OnClick = btnLogClick
+                Size.Width = 150.000000000000000000
+                Size.Height = 40.000000000000000000
+                Size.PlatformDefault = False
+              end
+              object btnPause: TButton
+                TabOrder = 8
+                Text = 'Pause (F9)'
+                OnClick = btnPauseClick
+                Size.Width = 130.000000000000000000
+                Size.Height = 40.000000000000000000
+                Size.PlatformDefault = False
+              end
+              object btnLogViewer: TButton
+                Hint = 'Open logs as a chart and grid, with playback (F7)'
+                TabOrder = 9
+                Text = 'Open logs'
+                ShowHint = True
+                OnClick = btnLogViewerClick
+                Size.Width = 150.000000000000000000
+                Size.Height = 40.000000000000000000
+                Size.PlatformDefault = False
+              end
+            end
+          end
+          object gbVehicle: TGroupBox
+            Align = Top
+            Margins.Left = 8.000000000000000000
+            Margins.Top = 8.000000000000000000
+            Margins.Right = 8.000000000000000000
+            Size.Width = 759.000000000000000000
+            Size.Height = 140.000000000000000000
+            Size.PlatformDefault = False
+            Text = 'Vehicle'
+            TabOrder = 0
+            Position.Y = 320.000000000000000000
+            object lblVinCaption: TLabel
+              Position.X = 12.000000000000000000
+              Position.Y = 26.000000000000000000
+              Size.Width = 100.000000000000000000
+              Size.Height = 22.000000000000000000
+              Size.PlatformDefault = False
+              Text = 'VIN'
+            end
+            object lblVin: TLabel
+              StyledSettings = [Family, FontColor]
+              Position.X = 120.000000000000000000
+              Position.Y = 26.000000000000000000
+              Size.Width = 320.000000000000000000
+              Size.Height = 22.000000000000000000
+              Size.PlatformDefault = False
+              TextSettings.Font.Size = 13.000000000000000000
+              Text = '-'
+            end
+            object lblOsidCaption: TLabel
+              Position.X = 12.000000000000000000
+              Position.Y = 50.000000000000000000
+              Size.Width = 100.000000000000000000
+              Size.Height = 22.000000000000000000
+              Size.PlatformDefault = False
+              Text = 'PCM OS ID'
+            end
+            object lblOsid: TLabel
+              StyledSettings = [Family, FontColor]
+              Position.X = 120.000000000000000000
+              Position.Y = 50.000000000000000000
+              Size.Width = 320.000000000000000000
+              Size.Height = 22.000000000000000000
+              Size.PlatformDefault = False
+              TextSettings.Font.Size = 13.000000000000000000
+              Text = '-'
+            end
+            object lblFirmwareCaption: TLabel
+              Position.X = 12.000000000000000000
+              Position.Y = 74.000000000000000000
+              Size.Width = 100.000000000000000000
+              Size.Height = 22.000000000000000000
+              Size.PlatformDefault = False
+              Text = 'AVT firmware'
+            end
+            object lblFirmware: TLabel
+              StyledSettings = [Family, FontColor]
+              Position.X = 120.000000000000000000
+              Position.Y = 74.000000000000000000
+              Size.Width = 320.000000000000000000
+              Size.Height = 22.000000000000000000
+              Size.PlatformDefault = False
+              TextSettings.Font.Size = 13.000000000000000000
+              Text = '-'
+            end
+            object btnReadInfo: TButton
+              TabOrder = 0
+              Text = 'Read vehicle info'
+              OnClick = btnReadInfoClick
+              Size.Width = 170.000000000000000000
+              Size.Height = 40.000000000000000000
+              Size.PlatformDefault = False
+              Position.X = 12.000000000000000000
+              Position.Y = 98.000000000000000000
+            end
+          end
+        end
+      end
+      object tiPids: TTabItem
+        IsSelected = False
+        Size.Width = 70.000000000000000000
+        Size.Height = 26.000000000000000000
+        Size.PlatformDefault = False
+        StyleLookup = ''
+        TabOrder = 1
+        Text = 'PIDs'
+      end
       object tiLive: TTabItem
         IsSelected = True
         Size.Width = 70.000000000000000000
         Size.Height = 26.000000000000000000
         Size.PlatformDefault = False
         StyleLookup = ''
-        TabOrder = 0
+        TabOrder = 2
         Text = 'Live data'
         object pnlLiveFooter: TFlowLayout
           Align = Bottom
@@ -491,8 +665,8 @@ object MainForm: TMainForm
         Size.Height = 26.000000000000000000
         Size.PlatformDefault = False
         StyleLookup = ''
-        TabOrder = 1
-        Text = 'Dashboard'
+        TabOrder = 3
+        Text = 'Gauges'
         object pnlDashBar: TFlowLayout
           Align = Top
           Padding.Left = 6.000000000000000000
@@ -556,596 +730,646 @@ object MainForm: TMainForm
           Viewport.Height = 548.000000000000000000
         end
       end
-      object tiControls: TTabItem
-        IsSelected = False
-        Size.Width = 120.000000000000000000
-        Size.Height = 26.000000000000000000
-        Size.PlatformDefault = False
-        StyleLookup = ''
-        TabOrder = 2
-        Text = 'Real-time controls'
-        object pnlCtlWarn: TRectangle
-          Align = Top
-          Fill.Color = xFFFFF4D6
-          Size.Width = 771.000000000000000000
-          Size.Height = 48.000000000000000000
-          Size.PlatformDefault = False
-          Stroke.Kind = None
-          object lblCtlWarn: TLabel
-            Align = Client
-            Margins.Left = 8.000000000000000000
-            Margins.Top = 4.000000000000000000
-            Margins.Right = 8.000000000000000000
-            Margins.Bottom = 4.000000000000000000
-            Size.Width = 755.000000000000000000
-            Size.Height = 40.000000000000000000
-            Size.PlatformDefault = False
-            TextSettings.WordWrap = True
-            Text =
-              'These commands make a module switch outputs, hold a value or res' +
-              'et what it has learned. Use only ones you understand, ideally wi' +
-              'th the engine off. Anything still active is released by Release' +
-              ' all, Disconnect or closing UVScan.'
-          end
-        end
-        object pnlCtlBar: TFlowLayout
-          Align = Top
-          Padding.Left = 6.000000000000000000
-          Padding.Top = 6.000000000000000000
-          Padding.Right = 6.000000000000000000
-          Padding.Bottom = 4.000000000000000000
-          Position.Y = 48.000000000000000000
-          Size.Width = 771.000000000000000000
-          Size.Height = 42.000000000000000000
-          Size.PlatformDefault = False
-          Justify = Left
-          JustifyLastLine = Left
-          FlowDirection = LeftToRight
-          HorizontalGap = 6.000000000000000000
-          VerticalGap = 6.000000000000000000
-          object btnCtlAdd: TButton
-            Size.Width = 80.000000000000000000
-            Size.Height = 30.000000000000000000
-            Size.PlatformDefault = False
-            TabOrder = 0
-            Text = 'Add...'
-            OnClick = btnCtlAddClick
-          end
-          object btnCtlEdit: TButton
-            Size.Width = 80.000000000000000000
-            Size.Height = 30.000000000000000000
-            Size.PlatformDefault = False
-            TabOrder = 1
-            Text = 'Edit...'
-            OnClick = btnCtlEditClick
-          end
-          object btnCtlDup: TButton
-            Size.Width = 80.000000000000000000
-            Size.Height = 30.000000000000000000
-            Size.PlatformDefault = False
-            TabOrder = 2
-            Text = 'Duplicate'
-            OnClick = btnCtlDupClick
-          end
-          object btnCtlDelete: TButton
-            Size.Width = 80.000000000000000000
-            Size.Height = 30.000000000000000000
-            Size.PlatformDefault = False
-            TabOrder = 3
-            Text = 'Delete'
-            OnClick = btnCtlDeleteClick
-          end
-          object btnCtlRestore: TButton
-            Hint = 'Add back any built-in control that was deleted'
-            Size.Width = 120.000000000000000000
-            Size.Height = 30.000000000000000000
-            Size.PlatformDefault = False
-            TabOrder = 4
-            Text = 'Restore built-ins'
-            ShowHint = True
-            OnClick = btnCtlRestoreClick
-          end
-          object btnReleaseAll: TButton
-            Hint = 'Return every module to normal operation'
-            Size.Width = 110.000000000000000000
-            Size.Height = 30.000000000000000000
-            Size.PlatformDefault = False
-            TabOrder = 5
-            Text = 'Release all'
-            ShowHint = True
-            OnClick = btnReleaseAllClick
-          end
-        end
-        object pnlCtlRun: TRectangle
-          Align = Bottom
-          Fill.Color = xFFF4F6F8
-          Padding.Left = 8.000000000000000000
-          Padding.Top = 6.000000000000000000
-          Padding.Right = 8.000000000000000000
-          Padding.Bottom = 6.000000000000000000
-          Size.Width = 771.000000000000000000
-          Size.Height = 112.000000000000000000
-          Size.PlatformDefault = False
-          Stroke.Kind = None
-          object lblCtlName: TLabel
-            Align = Top
-            StyledSettings = [Family, FontColor]
-            Size.Width = 755.000000000000000000
-            Size.Height = 22.000000000000000000
-            Size.PlatformDefault = False
-            TextSettings.Font.Size = 14.000000000000000000
-            Text = 'Select a control'
-          end
-          object lblCtlNotes: TLabel
-            Align = Top
-            Position.Y = 22.000000000000000000
-            Size.Width = 755.000000000000000000
-            Size.Height = 36.000000000000000000
-            Size.PlatformDefault = False
-            TextSettings.FontColor = xFF505050
-            TextSettings.VertAlign = Leading
-            TextSettings.WordWrap = True
-          end
-          object flCtlRun: TFlowLayout
-            Align = Client
-            Size.Width = 755.000000000000000000
-            Size.Height = 42.000000000000000000
-            Size.PlatformDefault = False
-            Justify = Left
-            JustifyLastLine = Left
-            FlowDirection = LeftToRight
-            HorizontalGap = 6.000000000000000000
-            VerticalGap = 6.000000000000000000
-            object btnCtlSend: TButton
-              Size.Width = 110.000000000000000000
-              Size.Height = 34.000000000000000000
-              Size.PlatformDefault = False
-              TabOrder = 0
-              Text = 'Send'
-              OnClick = btnCtlSendClick
-            end
-            object btnCtlOn: TButton
-              Size.Width = 90.000000000000000000
-              Size.Height = 34.000000000000000000
-              Size.PlatformDefault = False
-              TabOrder = 1
-              Text = 'On'
-              OnClick = btnCtlOnClick
-            end
-            object btnCtlHold: TButton
-              Size.Width = 180.000000000000000000
-              Size.Height = 34.000000000000000000
-              Size.PlatformDefault = False
-              TabOrder = 2
-              Text = 'Hold to run'
-              OnMouseDown = btnCtlHoldMouseDown
-              OnMouseUp = btnCtlHoldMouseUp
-              OnMouseLeave = btnCtlHoldMouseLeave
-            end
-            object tbCtlValue: TTrackBar
-              CanParentFocus = True
-              Orientation = Horizontal
-              Size.Width = 260.000000000000000000
-              Size.Height = 34.000000000000000000
-              Size.PlatformDefault = False
-              TabOrder = 3
-              OnChange = tbCtlValueChange
-            end
-            object edtCtlValue: TEdit
-              Touch.InteractiveGestures = [LongTap, DoubleTap]
-              TabOrder = 4
-              Size.Width = 80.000000000000000000
-              Size.Height = 34.000000000000000000
-              Size.PlatformDefault = False
-            end
-            object lblCtlUnits: TLabel
-              Size.Width = 50.000000000000000000
-              Size.Height = 34.000000000000000000
-              Size.PlatformDefault = False
-            end
-            object btnCtlApply: TButton
-              Size.Width = 80.000000000000000000
-              Size.Height = 34.000000000000000000
-              Size.PlatformDefault = False
-              TabOrder = 5
-              Text = 'Apply'
-              OnClick = btnCtlApplyClick
-            end
-            object btnCtlOff: TButton
-              Size.Width = 90.000000000000000000
-              Size.Height = 34.000000000000000000
-              Size.PlatformDefault = False
-              TabOrder = 6
-              Text = 'Off'
-              OnClick = btnCtlOffClick
-            end
-          end
-        end
-        object lyControls: TLayout
-          Align = Client
-          Size.Width = 771.000000000000000000
-          Size.Height = 394.000000000000000000
-          Size.PlatformDefault = False
-          TabOrder = 3
-        end
-      end
-      object tiVehicle: TTabItem
-        IsSelected = False
-        Size.Width = 110.000000000000000000
-        Size.Height = 26.000000000000000000
-        Size.PlatformDefault = False
-        StyleLookup = ''
-        TabOrder = 3
-        Text = 'Vehicle && codes'
-        object gbVehicle: TGroupBox
-          Align = Top
-          Margins.Left = 6.000000000000000000
-          Margins.Top = 6.000000000000000000
-          Margins.Right = 6.000000000000000000
-          Size.Width = 759.000000000000000000
-          Size.Height = 128.000000000000000000
-          Size.PlatformDefault = False
-          Text = 'Vehicle'
-          TabOrder = 0
-          object lblVinCaption: TLabel
-            Position.X = 12.000000000000000000
-            Position.Y = 26.000000000000000000
-            Size.Width = 100.000000000000000000
-            Size.Height = 22.000000000000000000
-            Size.PlatformDefault = False
-            Text = 'VIN'
-          end
-          object lblVin: TLabel
-            StyledSettings = [Family, FontColor]
-            Position.X = 120.000000000000000000
-            Position.Y = 26.000000000000000000
-            Size.Width = 320.000000000000000000
-            Size.Height = 22.000000000000000000
-            Size.PlatformDefault = False
-            TextSettings.Font.Size = 13.000000000000000000
-            Text = '-'
-          end
-          object lblOsidCaption: TLabel
-            Position.X = 12.000000000000000000
-            Position.Y = 50.000000000000000000
-            Size.Width = 100.000000000000000000
-            Size.Height = 22.000000000000000000
-            Size.PlatformDefault = False
-            Text = 'PCM OS ID'
-          end
-          object lblOsid: TLabel
-            StyledSettings = [Family, FontColor]
-            Position.X = 120.000000000000000000
-            Position.Y = 50.000000000000000000
-            Size.Width = 320.000000000000000000
-            Size.Height = 22.000000000000000000
-            Size.PlatformDefault = False
-            TextSettings.Font.Size = 13.000000000000000000
-            Text = '-'
-          end
-          object lblFirmwareCaption: TLabel
-            Position.X = 12.000000000000000000
-            Position.Y = 74.000000000000000000
-            Size.Width = 100.000000000000000000
-            Size.Height = 22.000000000000000000
-            Size.PlatformDefault = False
-            Text = 'AVT firmware'
-          end
-          object lblFirmware: TLabel
-            StyledSettings = [Family, FontColor]
-            Position.X = 120.000000000000000000
-            Position.Y = 74.000000000000000000
-            Size.Width = 320.000000000000000000
-            Size.Height = 22.000000000000000000
-            Size.PlatformDefault = False
-            TextSettings.Font.Size = 13.000000000000000000
-            Text = '-'
-          end
-          object btnReadInfo: TButton
-            Position.X = 12.000000000000000000
-            Position.Y = 98.000000000000000000
-            Size.Width = 140.000000000000000000
-            Size.Height = 26.000000000000000000
-            Size.PlatformDefault = False
-            TabOrder = 0
-            Text = 'Read vehicle info'
-            OnClick = btnReadInfoClick
-          end
-        end
-        object gbDtcs: TGroupBox
-          Align = Client
-          Margins.Left = 6.000000000000000000
-          Margins.Top = 6.000000000000000000
-          Margins.Right = 6.000000000000000000
-          Margins.Bottom = 6.000000000000000000
-          Padding.Left = 6.000000000000000000
-          Padding.Top = 22.000000000000000000
-          Padding.Right = 6.000000000000000000
-          Padding.Bottom = 6.000000000000000000
-          Size.Width = 759.000000000000000000
-          Size.Height = 446.000000000000000000
-          Size.PlatformDefault = False
-          Text = 'Trouble codes'
-          TabOrder = 1
-          object pnlDtcButtons: TLayout
-            Align = Bottom
-            Size.Width = 747.000000000000000000
-            Size.Height = 42.000000000000000000
-            Size.PlatformDefault = False
-            TabOrder = 0
-            object btnReadDtcs: TButton
-              Align = Left
-              Margins.Top = 6.000000000000000000
-              Margins.Right = 8.000000000000000000
-              Margins.Bottom = 6.000000000000000000
-              Size.Width = 120.000000000000000000
-              Size.Height = 30.000000000000000000
-              Size.PlatformDefault = False
-              TabOrder = 0
-              Text = 'Read codes'
-              OnClick = btnReadDtcsClick
-            end
-            object btnClearDtcs: TButton
-              Align = Left
-              Margins.Top = 6.000000000000000000
-              Margins.Bottom = 6.000000000000000000
-              Position.X = 128.000000000000000000
-              Size.Width = 120.000000000000000000
-              Size.Height = 30.000000000000000000
-              Size.PlatformDefault = False
-              TabOrder = 1
-              Text = 'Clear codes'
-              OnClick = btnClearDtcsClick
-            end
-          end
-          object lyDtcs: TLayout
-            Align = Client
-            Size.Width = 747.000000000000000000
-            Size.Height = 376.000000000000000000
-            Size.PlatformDefault = False
-            TabOrder = 1
-          end
-        end
-      end
-      object tiTools: TTabItem
-        IsSelected = False
-        Size.Width = 50.000000000000000000
-        Size.Height = 26.000000000000000000
-        Size.PlatformDefault = False
-        StyleLookup = ''
-        TabOrder = 4
-        Text = 'Tools'
-        object sbTools: TVertScrollBox
-          Align = Client
-          Size.Width = 771.000000000000000000
-          Size.Height = 590.000000000000000000
-          Size.PlatformDefault = False
-          TabOrder = 0
-          Viewport.Width = 771.000000000000000000
-          Viewport.Height = 590.000000000000000000
-          object gbWriteVin: TGroupBox
-            Align = Top
-            Margins.Left = 8.000000000000000000
-            Margins.Top = 8.000000000000000000
-            Margins.Right = 8.000000000000000000
-            Size.Width = 755.000000000000000000
-            Size.Height = 70.000000000000000000
-            Size.PlatformDefault = False
-            Text = 'Write VIN'
-            TabOrder = 0
-            object edtNewVin: TEdit
-              Touch.InteractiveGestures = [LongTap, DoubleTap]
-              TabOrder = 0
-              MaxLength = 17
-              Position.X = 12.000000000000000000
-              Position.Y = 28.000000000000000000
-              Size.Width = 240.000000000000000000
-              Size.Height = 30.000000000000000000
-              Size.PlatformDefault = False
-              TextPrompt = '17-character VIN'
-              CharCase = ecUpperCase
-            end
-            object btnWriteVin: TButton
-              Position.X = 260.000000000000000000
-              Position.Y = 28.000000000000000000
-              Size.Width = 100.000000000000000000
-              Size.Height = 30.000000000000000000
-              Size.PlatformDefault = False
-              TabOrder = 1
-              Text = 'Write VIN'
-              OnClick = btnWriteVinClick
-            end
-          end
-          object gbLogging: TGroupBox
-            Align = Top
-            Margins.Left = 8.000000000000000000
-            Margins.Top = 8.000000000000000000
-            Margins.Right = 8.000000000000000000
-            Position.Y = 78.000000000000000000
-            Size.Width = 755.000000000000000000
-            Size.Height = 70.000000000000000000
-            Size.PlatformDefault = False
-            Text = 'Logging'
-            TabOrder = 1
-            object lblLogFolderCaption: TLabel
-              Position.X = 12.000000000000000000
-              Position.Y = 32.000000000000000000
-              Size.Width = 70.000000000000000000
-              Size.Height = 22.000000000000000000
-              Size.PlatformDefault = False
-              Text = 'Log folder'
-            end
-            object edtLogFolder: TEdit
-              Touch.InteractiveGestures = [LongTap, DoubleTap]
-              TabOrder = 0
-              Position.X = 86.000000000000000000
-              Position.Y = 28.000000000000000000
-              Size.Width = 380.000000000000000000
-              Size.Height = 30.000000000000000000
-              Size.PlatformDefault = False
-            end
-            object btnBrowseLogFolder: TButton
-              Position.X = 474.000000000000000000
-              Position.Y = 28.000000000000000000
-              Size.Width = 90.000000000000000000
-              Size.Height = 30.000000000000000000
-              Size.PlatformDefault = False
-              TabOrder = 1
-              Text = 'Browse...'
-              OnClick = btnBrowseLogFolderClick
-            end
-          end
-          object gbAdvanced: TGroupBox
-            Align = Top
-            Margins.Left = 8.000000000000000000
-            Margins.Top = 8.000000000000000000
-            Margins.Right = 8.000000000000000000
-            Position.Y = 156.000000000000000000
-            Size.Width = 755.000000000000000000
-            Size.Height = 140.000000000000000000
-            Size.PlatformDefault = False
-            Text = 'Advanced'
-            TabOrder = 2
-            object lblRaw: TLabel
-              Position.X = 12.000000000000000000
-              Position.Y = 24.000000000000000000
-              Size.Width = 360.000000000000000000
-              Size.Height = 20.000000000000000000
-              Size.PlatformDefault = False
-              Text = 'Raw AVT frame (hex, including header byte)'
-            end
-            object edtRaw: TEdit
-              Touch.InteractiveGestures = [LongTap, DoubleTap]
-              TabOrder = 0
-              Position.X = 12.000000000000000000
-              Position.Y = 46.000000000000000000
-              Size.Width = 368.000000000000000000
-              Size.Height = 30.000000000000000000
-              Size.PlatformDefault = False
-              TextPrompt = 'e.g. 05 6C 10 F1 3C 01'
-            end
-            object btnSendRaw: TButton
-              Position.X = 388.000000000000000000
-              Position.Y = 46.000000000000000000
-              Size.Width = 80.000000000000000000
-              Size.Height = 30.000000000000000000
-              Size.PlatformDefault = False
-              TabOrder = 1
-              Text = 'Send'
-              OnClick = btnSendRawClick
-            end
-            object chkTrace: TCheckBox
-              Position.X = 12.000000000000000000
-              Position.Y = 80.000000000000000000
-              Size.Width = 360.000000000000000000
-              Size.Height = 22.000000000000000000
-              Size.PlatformDefault = False
-              TabOrder = 2
-              Text = 'Show raw traffic in Messages (not stream data)'
-              OnChange = chkTraceChange
-            end
-            object lblRate: TLabel
-              Position.X = 12.000000000000000000
-              Position.Y = 108.000000000000000000
-              Size.Width = 120.000000000000000000
-              Size.Height = 22.000000000000000000
-              Size.PlatformDefault = False
-              Text = 'Stream speed'
-            end
-            object cbRate: TComboBox
-              Items.Strings = (
-                'Fast (~10/s up to 24 bytes, ~5/s above)'
-                'Medium'
-                'Slow')
-              ItemIndex = 0
-              Position.X = 140.000000000000000000
-              Position.Y = 104.000000000000000000
-              Size.Width = 280.000000000000000000
-              Size.Height = 30.000000000000000000
-              Size.PlatformDefault = False
-              TabOrder = 3
-              OnChange = cbRateChange
-            end
-          end
-          object gbDiscover: TGroupBox
-            Align = Top
-            Margins.Left = 8.000000000000000000
-            Margins.Top = 8.000000000000000000
-            Margins.Right = 8.000000000000000000
-            Position.Y = 304.000000000000000000
-            Size.Width = 755.000000000000000000
-            Size.Height = 92.000000000000000000
-            Size.PlatformDefault = False
-            Text = 'PID discovery'
-            TabOrder = 3
-            object btnDiscoverPids: TButton
-              Position.X = 12.000000000000000000
-              Position.Y = 28.000000000000000000
-              Size.Width = 230.000000000000000000
-              Size.Height = 30.000000000000000000
-              Size.PlatformDefault = False
-              TabOrder = 0
-              Text = 'Search PCM for supported PIDs...'
-              OnClick = btnDiscoverPidsClick
-            end
-            object lblDiscoverHelp: TLabel
-              Position.X = 12.000000000000000000
-              Position.Y = 62.000000000000000000
-              Size.Width = 600.000000000000000000
-              Size.Height = 22.000000000000000000
-              Size.PlatformDefault = False
-              TextSettings.FontColor = xFF707070
-              Text = 'Find PIDs this PCM answers and add them to define'
-            end
-          end
-        end
-      end
-      object tiMessages: TTabItem
+      object tiMore: TTabItem
         IsSelected = False
         Size.Width = 70.000000000000000000
         Size.Height = 26.000000000000000000
         Size.PlatformDefault = False
         StyleLookup = ''
-        TabOrder = 5
-        Text = 'Messages'
-        object pnlLogFooter: TLayout
-          Align = Bottom
-          Padding.Left = 6.000000000000000000
-          Padding.Top = 6.000000000000000000
-          Padding.Bottom = 6.000000000000000000
-          Size.Width = 771.000000000000000000
-          Size.Height = 42.000000000000000000
-          Size.PlatformDefault = False
-          TabOrder = 0
-          object btnClearMessages: TButton
-            Align = Left
-            Margins.Right = 6.000000000000000000
-            Size.Width = 80.000000000000000000
-            Size.Height = 30.000000000000000000
-            Size.PlatformDefault = False
-            TabOrder = 0
-            Text = 'Clear'
-            OnClick = btnClearMessagesClick
-          end
-          object btnCopyMessages: TButton
-            Hint = 'Copy all messages to the clipboard'
-            Align = Left
-            Position.X = 86.000000000000000000
-            Size.Width = 80.000000000000000000
-            Size.Height = 30.000000000000000000
-            Size.PlatformDefault = False
-            TabOrder = 1
-            Text = 'Copy'
-            ShowHint = True
-            OnClick = btnCopyMessagesClick
-          end
-        end
-        object lyMessages: TLayout
+        TabOrder = 4
+        Text = 'More'
+        object tcMore: TTabControl
           Align = Client
           Size.Width = 771.000000000000000000
-          Size.Height = 548.000000000000000000
+          Size.Height = 616.000000000000000000
           Size.PlatformDefault = False
-          TabOrder = 1
+          TabIndex = 0
+          TabOrder = 0
+          TabPosition = None
+          object tiMoreMenu: TTabItem
+            IsSelected = True
+            Size.Width = 70.000000000000000000
+            Size.Height = 26.000000000000000000
+            Size.PlatformDefault = False
+            StyleLookup = ''
+            TabOrder = 0
+            Text = 'More'
+            object lbMore: TListBox
+              Align = Client
+              Size.Width = 771.000000000000000000
+              Size.Height = 616.000000000000000000
+              Size.PlatformDefault = False
+              TabOrder = 0
+              DisableFocusEffect = True
+              OnItemClick = lbMoreItemClick
+              Viewport.Width = 771.000000000000000000
+              Viewport.Height = 616.000000000000000000
+            end
+          end
+          object tiControls: TTabItem
+            IsSelected = False
+            Size.Width = 120.000000000000000000
+            Size.Height = 26.000000000000000000
+            Size.PlatformDefault = False
+            StyleLookup = ''
+            TabOrder = 1
+            Text = 'Real-time controls'
+            object pnlCtlWarn: TRectangle
+              Align = Top
+              Fill.Color = xFFFFF4D6
+              Size.Width = 771.000000000000000000
+              Size.Height = 48.000000000000000000
+              Size.PlatformDefault = False
+              Stroke.Kind = None
+              object lblCtlWarn: TLabel
+                Align = Client
+                Margins.Left = 8.000000000000000000
+                Margins.Top = 4.000000000000000000
+                Margins.Right = 8.000000000000000000
+                Margins.Bottom = 4.000000000000000000
+                Size.Width = 755.000000000000000000
+                Size.Height = 40.000000000000000000
+                Size.PlatformDefault = False
+                TextSettings.WordWrap = True
+                Text =
+                  'These commands make a module switch outputs, hold a value or res' +
+                  'et what it has learned. Use only ones you understand, ideally wi' +
+                  'th the engine off. Anything still active is released by Release' +
+                  ' all, Disconnect or closing UVScan.'
+              end
+            end
+            object pnlCtlBar: TFlowLayout
+              Align = Top
+              Padding.Left = 6.000000000000000000
+              Padding.Top = 6.000000000000000000
+              Padding.Right = 6.000000000000000000
+              Padding.Bottom = 4.000000000000000000
+              Position.Y = 48.000000000000000000
+              Size.Width = 771.000000000000000000
+              Size.Height = 42.000000000000000000
+              Size.PlatformDefault = False
+              Justify = Left
+              JustifyLastLine = Left
+              FlowDirection = LeftToRight
+              HorizontalGap = 6.000000000000000000
+              VerticalGap = 6.000000000000000000
+              object btnCtlAdd: TButton
+                Size.Width = 80.000000000000000000
+                Size.Height = 30.000000000000000000
+                Size.PlatformDefault = False
+                TabOrder = 0
+                Text = 'Add...'
+                OnClick = btnCtlAddClick
+              end
+              object btnCtlEdit: TButton
+                Size.Width = 80.000000000000000000
+                Size.Height = 30.000000000000000000
+                Size.PlatformDefault = False
+                TabOrder = 1
+                Text = 'Edit...'
+                OnClick = btnCtlEditClick
+              end
+              object btnCtlDup: TButton
+                Size.Width = 80.000000000000000000
+                Size.Height = 30.000000000000000000
+                Size.PlatformDefault = False
+                TabOrder = 2
+                Text = 'Duplicate'
+                OnClick = btnCtlDupClick
+              end
+              object btnCtlDelete: TButton
+                Size.Width = 80.000000000000000000
+                Size.Height = 30.000000000000000000
+                Size.PlatformDefault = False
+                TabOrder = 3
+                Text = 'Delete'
+                OnClick = btnCtlDeleteClick
+              end
+              object btnCtlRestore: TButton
+                Hint = 'Add back any built-in control that was deleted'
+                Size.Width = 120.000000000000000000
+                Size.Height = 30.000000000000000000
+                Size.PlatformDefault = False
+                TabOrder = 4
+                Text = 'Restore built-ins'
+                ShowHint = True
+                OnClick = btnCtlRestoreClick
+              end
+              object btnReleaseAll: TButton
+                Hint = 'Return every module to normal operation'
+                Size.Width = 110.000000000000000000
+                Size.Height = 30.000000000000000000
+                Size.PlatformDefault = False
+                TabOrder = 5
+                Text = 'Release all'
+                ShowHint = True
+                OnClick = btnReleaseAllClick
+              end
+            end
+            object pnlCtlRun: TRectangle
+              Align = Bottom
+              Fill.Color = xFFF4F6F8
+              Padding.Left = 8.000000000000000000
+              Padding.Top = 6.000000000000000000
+              Padding.Right = 8.000000000000000000
+              Padding.Bottom = 6.000000000000000000
+              Size.Width = 771.000000000000000000
+              Size.Height = 112.000000000000000000
+              Size.PlatformDefault = False
+              Stroke.Kind = None
+              object lblCtlName: TLabel
+                Align = Top
+                StyledSettings = [Family, FontColor]
+                Size.Width = 755.000000000000000000
+                Size.Height = 22.000000000000000000
+                Size.PlatformDefault = False
+                TextSettings.Font.Size = 14.000000000000000000
+                Text = 'Select a control'
+              end
+              object lblCtlNotes: TLabel
+                Align = Top
+                Position.Y = 22.000000000000000000
+                Size.Width = 755.000000000000000000
+                Size.Height = 36.000000000000000000
+                Size.PlatformDefault = False
+                TextSettings.FontColor = xFF505050
+                TextSettings.VertAlign = Leading
+                TextSettings.WordWrap = True
+              end
+              object flCtlRun: TFlowLayout
+                Align = Client
+                Size.Width = 755.000000000000000000
+                Size.Height = 42.000000000000000000
+                Size.PlatformDefault = False
+                Justify = Left
+                JustifyLastLine = Left
+                FlowDirection = LeftToRight
+                HorizontalGap = 6.000000000000000000
+                VerticalGap = 6.000000000000000000
+                object btnCtlSend: TButton
+                  Size.Width = 110.000000000000000000
+                  Size.Height = 34.000000000000000000
+                  Size.PlatformDefault = False
+                  TabOrder = 0
+                  Text = 'Send'
+                  OnClick = btnCtlSendClick
+                end
+                object btnCtlOn: TButton
+                  Size.Width = 90.000000000000000000
+                  Size.Height = 34.000000000000000000
+                  Size.PlatformDefault = False
+                  TabOrder = 1
+                  Text = 'On'
+                  OnClick = btnCtlOnClick
+                end
+                object btnCtlHold: TButton
+                  Size.Width = 180.000000000000000000
+                  Size.Height = 34.000000000000000000
+                  Size.PlatformDefault = False
+                  TabOrder = 2
+                  Text = 'Hold to run'
+                  OnMouseDown = btnCtlHoldMouseDown
+                  OnMouseUp = btnCtlHoldMouseUp
+                  OnMouseLeave = btnCtlHoldMouseLeave
+                end
+                object tbCtlValue: TTrackBar
+                  CanParentFocus = True
+                  Orientation = Horizontal
+                  Size.Width = 260.000000000000000000
+                  Size.Height = 34.000000000000000000
+                  Size.PlatformDefault = False
+                  TabOrder = 3
+                  OnChange = tbCtlValueChange
+                end
+                object edtCtlValue: TEdit
+                  Touch.InteractiveGestures = [LongTap, DoubleTap]
+                  TabOrder = 4
+                  Size.Width = 80.000000000000000000
+                  Size.Height = 34.000000000000000000
+                  Size.PlatformDefault = False
+                end
+                object lblCtlUnits: TLabel
+                  Size.Width = 50.000000000000000000
+                  Size.Height = 34.000000000000000000
+                  Size.PlatformDefault = False
+                end
+                object btnCtlApply: TButton
+                  Size.Width = 80.000000000000000000
+                  Size.Height = 34.000000000000000000
+                  Size.PlatformDefault = False
+                  TabOrder = 5
+                  Text = 'Apply'
+                  OnClick = btnCtlApplyClick
+                end
+                object btnCtlOff: TButton
+                  Size.Width = 90.000000000000000000
+                  Size.Height = 34.000000000000000000
+                  Size.PlatformDefault = False
+                  TabOrder = 6
+                  Text = 'Off'
+                  OnClick = btnCtlOffClick
+                end
+              end
+            end
+            object lyControls: TLayout
+              Align = Client
+              Size.Width = 771.000000000000000000
+              Size.Height = 394.000000000000000000
+              Size.PlatformDefault = False
+              TabOrder = 3
+            end
+          end
+          object tiVehicle: TTabItem
+            IsSelected = False
+            Size.Width = 110.000000000000000000
+            Size.Height = 26.000000000000000000
+            Size.PlatformDefault = False
+            StyleLookup = ''
+            TabOrder = 2
+            Text = 'Trouble codes'
+            object gbDtcs: TGroupBox
+              Align = Client
+              Margins.Left = 6.000000000000000000
+              Margins.Top = 6.000000000000000000
+              Margins.Right = 6.000000000000000000
+              Margins.Bottom = 6.000000000000000000
+              Padding.Left = 6.000000000000000000
+              Padding.Top = 22.000000000000000000
+              Padding.Right = 6.000000000000000000
+              Padding.Bottom = 6.000000000000000000
+              Size.Width = 759.000000000000000000
+              Size.Height = 446.000000000000000000
+              Size.PlatformDefault = False
+              Text = 'Trouble codes'
+              TabOrder = 1
+              object pnlDtcButtons: TLayout
+                Align = Bottom
+                Size.Width = 747.000000000000000000
+                Size.Height = 42.000000000000000000
+                Size.PlatformDefault = False
+                TabOrder = 0
+                object btnReadDtcs: TButton
+                  Align = Left
+                  Margins.Top = 6.000000000000000000
+                  Margins.Right = 8.000000000000000000
+                  Margins.Bottom = 6.000000000000000000
+                  Size.Width = 120.000000000000000000
+                  Size.Height = 30.000000000000000000
+                  Size.PlatformDefault = False
+                  TabOrder = 0
+                  Text = 'Read codes'
+                  OnClick = btnReadDtcsClick
+                end
+                object btnClearDtcs: TButton
+                  Align = Left
+                  Margins.Top = 6.000000000000000000
+                  Margins.Bottom = 6.000000000000000000
+                  Position.X = 128.000000000000000000
+                  Size.Width = 120.000000000000000000
+                  Size.Height = 30.000000000000000000
+                  Size.PlatformDefault = False
+                  TabOrder = 1
+                  Text = 'Clear codes'
+                  OnClick = btnClearDtcsClick
+                end
+              end
+              object lyDtcs: TLayout
+                Align = Client
+                Size.Width = 747.000000000000000000
+                Size.Height = 376.000000000000000000
+                Size.PlatformDefault = False
+                TabOrder = 1
+              end
+            end
+          end
+          object tiTools: TTabItem
+            IsSelected = False
+            Size.Width = 50.000000000000000000
+            Size.Height = 26.000000000000000000
+            Size.PlatformDefault = False
+            StyleLookup = ''
+            TabOrder = 3
+            Text = 'Tools'
+            object sbTools: TVertScrollBox
+              Align = Client
+              Size.Width = 771.000000000000000000
+              Size.Height = 590.000000000000000000
+              Size.PlatformDefault = False
+              TabOrder = 0
+              Viewport.Width = 771.000000000000000000
+              Viewport.Height = 590.000000000000000000
+              object gbWriteVin: TGroupBox
+                Align = Top
+                Margins.Left = 8.000000000000000000
+                Margins.Top = 8.000000000000000000
+                Margins.Right = 8.000000000000000000
+                Size.Width = 755.000000000000000000
+                Size.Height = 70.000000000000000000
+                Size.PlatformDefault = False
+                Text = 'Write VIN'
+                TabOrder = 0
+                Position.Y = 0.000000000000000000
+                object edtNewVin: TEdit
+                  Touch.InteractiveGestures = [LongTap, DoubleTap]
+                  TabOrder = 0
+                  MaxLength = 17
+                  Position.X = 12.000000000000000000
+                  Position.Y = 28.000000000000000000
+                  Size.Width = 240.000000000000000000
+                  Size.Height = 30.000000000000000000
+                  Size.PlatformDefault = False
+                  TextPrompt = '17-character VIN'
+                  CharCase = ecUpperCase
+                end
+                object btnWriteVin: TButton
+                  Position.X = 260.000000000000000000
+                  Position.Y = 28.000000000000000000
+                  Size.Width = 100.000000000000000000
+                  Size.Height = 30.000000000000000000
+                  Size.PlatformDefault = False
+                  TabOrder = 1
+                  Text = 'Write VIN'
+                  OnClick = btnWriteVinClick
+                end
+              end
+              object gbAdvanced: TGroupBox
+                Align = Top
+                Margins.Left = 8.000000000000000000
+                Margins.Top = 8.000000000000000000
+                Margins.Right = 8.000000000000000000
+                Position.Y = 78.000000000000000000
+                Size.Width = 755.000000000000000000
+                Size.Height = 110.000000000000000000
+                Size.PlatformDefault = False
+                Text = 'Advanced'
+                TabOrder = 1
+                object lblRaw: TLabel
+                  Position.X = 12.000000000000000000
+                  Position.Y = 24.000000000000000000
+                  Size.Width = 360.000000000000000000
+                  Size.Height = 20.000000000000000000
+                  Size.PlatformDefault = False
+                  Text = 'Raw AVT frame (hex, including header byte)'
+                end
+                object edtRaw: TEdit
+                  Touch.InteractiveGestures = [LongTap, DoubleTap]
+                  TabOrder = 0
+                  Position.X = 12.000000000000000000
+                  Position.Y = 46.000000000000000000
+                  Size.Width = 368.000000000000000000
+                  Size.Height = 30.000000000000000000
+                  Size.PlatformDefault = False
+                  TextPrompt = 'e.g. 05 6C 10 F1 3C 01'
+                end
+                object btnSendRaw: TButton
+                  Position.X = 388.000000000000000000
+                  Position.Y = 46.000000000000000000
+                  Size.Width = 80.000000000000000000
+                  Size.Height = 30.000000000000000000
+                  Size.PlatformDefault = False
+                  TabOrder = 1
+                  Text = 'Send'
+                  OnClick = btnSendRawClick
+                end
+                object chkTrace: TCheckBox
+                  Position.X = 12.000000000000000000
+                  Position.Y = 80.000000000000000000
+                  Size.Width = 360.000000000000000000
+                  Size.Height = 22.000000000000000000
+                  Size.PlatformDefault = False
+                  TabOrder = 2
+                  Text = 'Show raw traffic in Messages'
+                  OnChange = chkTraceChange
+                end
+              end
+              object gbDiscover: TGroupBox
+                Align = Top
+                Margins.Left = 8.000000000000000000
+                Margins.Top = 8.000000000000000000
+                Margins.Right = 8.000000000000000000
+                Position.Y = 196.000000000000000000
+                Size.Width = 755.000000000000000000
+                Size.Height = 92.000000000000000000
+                Size.PlatformDefault = False
+                Text = 'PID discovery'
+                TabOrder = 2
+                object btnDiscoverPids: TButton
+                  Position.X = 12.000000000000000000
+                  Position.Y = 28.000000000000000000
+                  Size.Width = 230.000000000000000000
+                  Size.Height = 30.000000000000000000
+                  Size.PlatformDefault = False
+                  TabOrder = 0
+                  Text = 'Search PCM for supported PIDs...'
+                  OnClick = btnDiscoverPidsClick
+                end
+                object lblDiscoverHelp: TLabel
+                  Position.X = 12.000000000000000000
+                  Position.Y = 62.000000000000000000
+                  Size.Width = 600.000000000000000000
+                  Size.Height = 22.000000000000000000
+                  Size.PlatformDefault = False
+                  TextSettings.FontColor = xFF707070
+                  Text = 'Find PIDs this PCM answers and add them to define'
+                end
+              end
+            end
+          end
+          object tiSettings: TTabItem
+            IsSelected = False
+            Size.Width = 70.000000000000000000
+            Size.Height = 26.000000000000000000
+            Size.PlatformDefault = False
+            StyleLookup = ''
+            TabOrder = 4
+            Text = 'Settings'
+            object sbSettings: TVertScrollBox
+              Align = Client
+              Size.Width = 771.000000000000000000
+              Size.Height = 590.000000000000000000
+              Size.PlatformDefault = False
+              TabOrder = 0
+              object gbAppearance: TGroupBox
+                Align = Top
+                Margins.Left = 8.000000000000000000
+                Margins.Top = 8.000000000000000000
+                Margins.Right = 8.000000000000000000
+                Size.Width = 755.000000000000000000
+                Size.Height = 80.000000000000000000
+                Size.PlatformDefault = False
+                Text = 'Appearance'
+                TabOrder = 0
+                object lblTheme: TLabel
+                  Position.X = 12.000000000000000000
+                  Position.Y = 38.000000000000000000
+                  Size.Width = 90.000000000000000000
+                  Size.Height = 22.000000000000000000
+                  Size.PlatformDefault = False
+                  Text = 'Theme'
+                end
+                object cbTheme: TComboBox
+                  Items.Strings = (
+                    'System default'
+                    'Light'
+                    'Dark')
+                  ItemIndex = 0
+                  Position.X = 110.000000000000000000
+                  Position.Y = 32.000000000000000000
+                  Size.Width = 220.000000000000000000
+                  Size.Height = 36.000000000000000000
+                  Size.PlatformDefault = False
+                  TabOrder = 0
+                  OnChange = cbThemeChange
+                end
+              end
+              object gbAlerts: TGroupBox
+                Align = Top
+                Margins.Left = 8.000000000000000000
+                Margins.Top = 8.000000000000000000
+                Margins.Right = 8.000000000000000000
+                Position.Y = 88.000000000000000000
+                Size.Width = 755.000000000000000000
+                Size.Height = 72.000000000000000000
+                Size.PlatformDefault = False
+                Text = 'Alerts'
+                TabOrder = 1
+                object chkSound: TCheckBox
+                  Hint = 'Play the sounds of the PID alert levels'
+                  IsChecked = True
+                  TabOrder = 10
+                  Text = 'Play alert sounds'
+                  ShowHint = True
+                  OnChange = chkSoundChange
+                  Size.Width = 320.000000000000000000
+                  Size.Height = 30.000000000000000000
+                  Size.PlatformDefault = False
+                  Position.X = 12.000000000000000000
+                  Position.Y = 30.000000000000000000
+                end
+              end
+              object gbLogging: TGroupBox
+                Align = Top
+                Margins.Left = 8.000000000000000000
+                Margins.Top = 8.000000000000000000
+                Margins.Right = 8.000000000000000000
+                Position.Y = 168.000000000000000000
+                Size.Width = 755.000000000000000000
+                Size.Height = 70.000000000000000000
+                Size.PlatformDefault = False
+                Text = 'Logging'
+                TabOrder = 2
+                object lblLogFolderCaption: TLabel
+                  Position.X = 12.000000000000000000
+                  Position.Y = 32.000000000000000000
+                  Size.Width = 70.000000000000000000
+                  Size.Height = 22.000000000000000000
+                  Size.PlatformDefault = False
+                  Text = 'Log folder'
+                end
+                object edtLogFolder: TEdit
+                  Touch.InteractiveGestures = [LongTap, DoubleTap]
+                  TabOrder = 0
+                  Position.X = 86.000000000000000000
+                  Position.Y = 28.000000000000000000
+                  Size.Width = 380.000000000000000000
+                  Size.Height = 30.000000000000000000
+                  Size.PlatformDefault = False
+                end
+                object btnBrowseLogFolder: TButton
+                  Position.X = 474.000000000000000000
+                  Position.Y = 28.000000000000000000
+                  Size.Width = 90.000000000000000000
+                  Size.Height = 30.000000000000000000
+                  Size.PlatformDefault = False
+                  TabOrder = 1
+                  Text = 'Browse...'
+                  OnClick = btnBrowseLogFolderClick
+                end
+              end
+              object gbStream: TGroupBox
+                Align = Top
+                Margins.Left = 8.000000000000000000
+                Margins.Top = 8.000000000000000000
+                Margins.Right = 8.000000000000000000
+                Position.Y = 246.000000000000000000
+                Size.Width = 755.000000000000000000
+                Size.Height = 80.000000000000000000
+                Size.PlatformDefault = False
+                Text = 'Streaming'
+                TabOrder = 3
+                object lblRate: TLabel
+                  Position.X = 12.000000000000000000
+                  Position.Y = 38.000000000000000000
+                  Size.Width = 120.000000000000000000
+                  Size.Height = 22.000000000000000000
+                  Size.PlatformDefault = False
+                  Text = 'Stream speed'
+                end
+                object cbRate: TComboBox
+                  Items.Strings = (
+                    'Fast (~10/s up to 24 bytes, ~5/s above)'
+                    'Medium'
+                    'Slow')
+                  ItemIndex = 0
+                  Position.X = 140.000000000000000000
+                  Position.Y = 32.000000000000000000
+                  Size.Width = 280.000000000000000000
+                  Size.Height = 36.000000000000000000
+                  Size.PlatformDefault = False
+                  TabOrder = 3
+                  OnChange = cbRateChange
+                end
+              end
+            end
+          end
+          object tiMessages: TTabItem
+            IsSelected = False
+            Size.Width = 70.000000000000000000
+            Size.Height = 26.000000000000000000
+            Size.PlatformDefault = False
+            StyleLookup = ''
+            TabOrder = 5
+            Text = 'Messages'
+            object pnlLogFooter: TLayout
+              Align = Bottom
+              Padding.Left = 6.000000000000000000
+              Padding.Top = 6.000000000000000000
+              Padding.Bottom = 6.000000000000000000
+              Size.Width = 771.000000000000000000
+              Size.Height = 42.000000000000000000
+              Size.PlatformDefault = False
+              TabOrder = 0
+              object btnClearMessages: TButton
+                Align = Left
+                Margins.Right = 6.000000000000000000
+                Size.Width = 80.000000000000000000
+                Size.Height = 30.000000000000000000
+                Size.PlatformDefault = False
+                TabOrder = 0
+                Text = 'Clear'
+                OnClick = btnClearMessagesClick
+              end
+              object btnCopyMessages: TButton
+                Hint = 'Copy all messages to the clipboard'
+                Align = Left
+                Position.X = 86.000000000000000000
+                Size.Width = 80.000000000000000000
+                Size.Height = 30.000000000000000000
+                Size.PlatformDefault = False
+                TabOrder = 1
+                Text = 'Copy'
+                ShowHint = True
+                OnClick = btnCopyMessagesClick
+              end
+            end
+            object lyMessages: TLayout
+              Align = Client
+              Size.Width = 771.000000000000000000
+              Size.Height = 548.000000000000000000
+              Size.PlatformDefault = False
+              TabOrder = 1
+            end
+          end
         end
       end
     end

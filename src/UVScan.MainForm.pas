@@ -14,36 +14,56 @@ uses
   System.StrUtils, System.IOUtils, System.Generics.Collections,
   FMX.Types, FMX.Controls, FMX.Forms, FMX.Graphics, FMX.Dialogs, FMX.StdCtrls, FMX.Edit,
   FMX.ListBox, FMX.Layouts, FMX.Objects, FMX.TabControl, FMX.Menus, FMX.Controls.Presentation,
-  FMX.Platform,
+  FMX.Platform, System.Messaging,
   UVScan.Serial, UVScan.Simulator, UVScan.Pids, UVScan.Dpid, UVScan.Dtc, UVScan.Engine,
   UVScan.Class2, UVScan.Paths, UVScan.Settings, UVScan.PidLists, UVScan.Defaults,
   UVScan.Display, UVScan.Alerts, UVScan.Controls, UVScan.Gauge, UVScan.UI.DataGrid;
 
 type
+  { Parts of the one-line status strip. }
+  TStatusPart = (spState, spPort, spVin, spOsid, spRate, spLog);
+
   TMainForm = class(TForm)
-    pnlTop: TRectangle;
-    flTop: TFlowLayout;
-    lblPort: TLabel;
+    pnlAppBar: TRectangle;
+    btnBack: TSpeedButton;
+    lblTitle: TLabel;
+    btnAction: TButton;
+    btnMenu: TSpeedButton;
+    pnlNav: TRectangle;
+    pnlStatus: TRectangle;
+    shpStatus: TCircle;
+    lblStatus: TLabel;
+    tiConnect: TTabItem;
+    sbConnect: TVertScrollBox;
+    gbAdapter: TGroupBox;
+    flAdapter: TFlowLayout;
     cbPort: TComboBox;
     btnRefreshPorts: TButton;
     cbBaud: TComboBox;
     btnConnect: TButton;
     btnDisconnect: TButton;
-    sep1: TLine;
+    gbScan: TGroupBox;
+    flScan: TFlowLayout;
     btnStartScan: TButton;
     btnStopScan: TButton;
-    sep2: TLine;
+    gbLogRec: TGroupBox;
+    flLogRec: TFlowLayout;
     btnLog: TButton;
     btnPause: TButton;
     btnLogViewer: TButton;
+    tiPids: TTabItem;
+    tiMore: TTabItem;
+    tcMore: TTabControl;
+    tiMoreMenu: TTabItem;
+    lbMore: TListBox;
+    tiSettings: TTabItem;
+    sbSettings: TVertScrollBox;
+    gbAppearance: TGroupBox;
+    lblTheme: TLabel;
+    cbTheme: TComboBox;
+    gbAlerts: TGroupBox;
     chkSound: TCheckBox;
-    sbMain: TStatusBar;
-    lblStatState: TLabel;
-    lblStatPort: TLabel;
-    lblStatVin: TLabel;
-    lblStatOsid: TLabel;
-    lblStatRate: TLabel;
-    lblStatLog: TLabel;
+    gbStream: TGroupBox;
     pnlPids: TLayout;
     pnlListBar: TLayout;
     lblList: TLabel;
@@ -158,6 +178,13 @@ type
     procedure FormCloseQuery(Sender: TObject; var CanClose: Boolean);
     procedure FormKeyDown(Sender: TObject; var Key: Word; var KeyChar: WideChar; Shift: TShiftState);
     procedure FormResize(Sender: TObject);
+    procedure FormKeyUp(Sender: TObject; var Key: Word; var KeyChar: WideChar; Shift: TShiftState);
+    procedure btnBackClick(Sender: TObject);
+    procedure btnMenuClick(Sender: TObject);
+    procedure btnActionClick(Sender: TObject);
+    procedure pnlStatusClick(Sender: TObject);
+    procedure lbMoreItemClick(const Sender: TCustomListBox; const Item: TListBoxItem);
+    procedure cbThemeChange(Sender: TObject);
     procedure btnRefreshPortsClick(Sender: TObject);
     procedure btnConnectClick(Sender: TObject);
     procedure btnDisconnectClick(Sender: TObject);
@@ -269,9 +296,32 @@ type
     FViewerLog: string;              // the log last handed to the viewer
     FZoom: Integer;                  // live grid zoom, percent
     FNormalBounds: TRect;            // window bounds when not maximized
+    FStatus: array[TStatusPart] of string;
+    FNavButtons: array[0..4] of TRectangle;
+    FNavPages: array[0..4] of TTabItem;
+    FMorePages: TArray<TTabItem>;    // lbMore row -> page (nil = log viewer)
+    FPageMenu: TPopupMenu;
+    FPidsDocked: Boolean;            // wide window: the PID list sits beside the pages
+    FChromeReady: Boolean;
+    FThemeSub: TMessageSubscriptionId;
     procedure CreateGrids;
-    procedure AdaptToPhone;
+    procedure BuildChrome;
+    procedure ArrangeLayout;
     procedure FitFlowHeights;
+    procedure FitVehicleColumns;
+    procedure FitFormRows;
+    // navigation
+    procedure ShowPage(Page: TTabItem);
+    function CurrentPage: TTabItem;
+    procedure UpdateAppBar;
+    procedure NavClick(Sender: TObject);
+    procedure NavPaint(Sender: TObject; Canvas: TCanvas; const ARect: TRectF);
+    procedure AddPageMenuItem(const Text: string; Handler: TNotifyEvent; Enabled: Boolean = True;
+      Checked: Boolean = False);
+    procedure ToggleMinMaxClick(Sender: TObject);
+    // theme
+    procedure ApplyPalette;
+    procedure ThemeChanged(const Sender: TObject; const M: TMessage);
     // grid events
     procedure PidsGetText(Sender: TObject; Col, Row: Integer; var Text: string);
     procedure PidsGetStyle(Sender: TObject; Col, Row: Integer; var Style: TCellStyle);
@@ -357,7 +407,7 @@ type
     procedure Post(const Cmd: TEngineCommand); overload;
     function LogFolder: string;
     function PidName(Id: Integer): string;
-    procedure SetStatus(Lbl: TLabel; const Text: string);
+    procedure SetStatus(Part: TStatusPart; const Text: string);
     procedure OpenPidEditor(const Filter: string);
   end;
 
@@ -369,7 +419,7 @@ implementation
 {$R *.fmx}
 
 uses
-  System.JSON, UVScan.JsonFile, UVScan.UI.Common, UVScan.Sound, UVScan.PidEditor,
+  System.JSON, UVScan.JsonFile, UVScan.UI.Common, UVScan.UI.Theme, UVScan.Sound, UVScan.PidEditor,
   UVScan.PidDiscovery, UVScan.DisplayEditor, UVScan.GaugeEditor, UVScan.ControlEditor, UVScan.LogViewer;
 
 const
@@ -383,7 +433,6 @@ const
   ZoomSteps: array[0..8] of Integer = (75, 90, 100, 110, 125, 150, 175, 200, 250);
   NoListCaption = '(none)';
   MaxMessageLines = 5000;
-  TopBarColor = $FFF0F0F0;
 
 function ComboText(Combo: TComboBox): string;
 begin
@@ -425,10 +474,12 @@ begin
   lblCtlName.TextSettings.Font.Style := [TFontStyle.fsBold];
   pnlNotice.Visible := False;
   CreateGrids;
-  if IsMobile then
-    AdaptToPhone;
+  BuildChrome;
   LoadData;
   LoadSettings;
+  ApplyTheme(ThemeModeFromKey(FSettings.Theme));
+  FThemeSub := TMessageManager.DefaultManager.SubscribeToMessage(TThemeChangedMessage, ThemeChanged);
+  ApplyPalette;
   FillPidList;
   FEngine := TScanEngine.Create(FCatalog, HandleEvent);
   cbRateChange(nil);
@@ -436,8 +487,10 @@ begin
   SetZoom(FSettings.LiveZoom);
   BuildDashboard;
   FState := esDisconnected;
+  FChromeReady := True;
+  ArrangeLayout;
   UpdateControls;
-  tcMain.ActiveTab := tiLive;
+  ShowPage(tiLive);
   // Android ends an app without closing its form (swiped away, or killed in
   // the background), so save whenever the app leaves the screen.
   if TPlatformServices.Current.SupportsPlatformService(IFMXApplicationEventService, Events) then
@@ -527,49 +580,554 @@ begin
 end;
 
 { Phone: the PID list becomes the first tab; the bars wrap. }
-procedure TMainForm.AdaptToPhone;
+{ Window layout: top bar (title, back, main action, page menu), pages, status
+  strip and tab bar - the same on Windows and Android. On a wide Windows
+  window the PID list sits beside the pages instead of on its own tab, and
+  the pages show their tool bars instead of keeping them in the menu. }
+
+const
+  NavCaptions: array[0..4] of string = ('Connect', 'PIDs', 'Live', 'Gauges', 'More');
+  // Tab bar icons on a 24 x 24 grid, drawn as 2 px lines (More: three dots).
+  NavIcons: array[0..4] of string = (
+    'M9 3 L9 8 M15 3 L15 8 M6 8 L18 8 L18 11 C18 14.3 15.3 17 12 17 C8.7 17 6 14.3 6 11 Z M12 17 L12 21',
+    'M3.5 6 L5.5 8 L8.5 4.5 M12 6.5 L21 6.5 M3.5 12.5 L5.5 14.5 L8.5 11 M12 13 L21 13 ' +
+      'M4 17.5 L8 17.5 L8 21.5 L4 21.5 Z M12 19.5 L21 19.5',
+    'M2 12 L6 12 L9 5 L14 19 L17 12 L22 12',
+    'M3 18 C3 11.4 7 6 12 6 C17 6 21 11.4 21 18 M12 18 L16.5 11 M12 8.5 L12 10 M6.4 11 L7.5 12.1 ' +
+      'M17.6 11 L16.5 12.1',
+    '');
+  WideLayoutWidth = 980; // Windows: from this client width the PID list sits beside the pages
+
+procedure TMainForm.BuildChrome;
+
+  procedure AddMore(const Text, Detail: string; Page: TTabItem);
+  var
+    Item: TListBoxItem;
+  begin
+    Item := TListBoxItem.Create(lbMore);
+    Item.StyleLookup := 'listboxitembottomdetail';
+    Item.Text := Text;
+    Item.ItemData.Detail := Detail;
+    Item.ItemData.Accessory := TListBoxItemData.TAccessory.aMore;
+    Item.Height := 64;
+    lbMore.AddObject(Item);
+    FMorePages := FMorePages + [Page];
+  end;
+
+  function AddIcon(Button: TControl): TPath;
+  begin
+    Result := TPath.Create(Self);
+    Result.Parent := Button;
+    Result.Stored := False;
+    Result.Align := TAlignLayout.Center;
+    Result.Width := 22;
+    Result.Height := 22;
+    Result.HitTest := False;
+    Result.WrapMode := TPathWrapMode.Fit;
+    Result.Stroke.Thickness := 2.2;
+    Result.Stroke.Cap := TStrokeCap.Round;
+    Result.Stroke.Join := TStrokeJoin.Round;
+  end;
+
 var
-  Tab: TTabItem;
-  Item: TTabItem;
+  I: Integer;
+  Btn: TRectangle;
+  Icon: TPath;
+begin
+  FNavPages[0] := tiConnect;
+  FNavPages[1] := tiPids;
+  FNavPages[2] := tiLive;
+  FNavPages[3] := tiDashboard;
+  FNavPages[4] := tiMore;
+  for I := 0 to 4 do
+  begin
+    Btn := TRectangle.Create(Self);
+    Btn.Parent := pnlNav;
+    Btn.Stored := False;
+    Btn.Align := TAlignLayout.Left;
+    Btn.Position.X := I * 100;
+    Btn.Width := 100;
+    Btn.Fill.Color := TAlphaColors.Null;
+    Btn.Stroke.Kind := TBrushKind.None;
+    Btn.HitTest := True;
+    Btn.Cursor := crHandPoint;
+    Btn.Tag := I;
+    Btn.OnClick := NavClick;
+    Btn.OnPaint := NavPaint;
+    FNavButtons[I] := Btn;
+  end;
+
+  btnBack.Text := '';
+  Icon := AddIcon(btnBack);
+  Icon.Data.Data := 'M15 4 L7 12 L15 20';
+  Icon.Fill.Kind := TBrushKind.None;
+  btnMenu.Text := '';
+  Icon := AddIcon(btnMenu);
+  for I := 0 to 2 do
+    Icon.Data.AddEllipse(TRectF.Create(10, 3 + I * 7, 14, 7 + I * 7));
+  Icon.Stroke.Kind := TBrushKind.None;
+
+  AddMore('Real-time controls', 'Switch outputs, hold values, reset learned values', tiControls);
+  AddMore('Trouble codes', 'Read and clear stored codes', tiVehicle);
+  AddMore('Log viewer', 'Open recorded logs as a chart and table', nil);
+  AddMore('Tools', 'Write VIN, raw AVT frames, PID discovery', tiTools);
+  AddMore('Settings', 'Theme, alert sounds, log folder, stream speed', tiSettings);
+  AddMore('Messages', 'Connection log and raw traffic', tiMessages);
+
+  FPageMenu := TPopupMenu.Create(Self);
+  FPageMenu.Parent := Self;
+  tiConnect.Text := 'Connection';
+
+  if IsMobile then
+  begin
+    btnBrowseLogFolder.Visible := False; // no folder picker on a phone
+    lblDashHint.Text := 'Long-press a gauge to change, move or remove it.';
+    WindowState := TWindowState.wsMaximized;
+    KeepInSafeArea(Self);
+  end;
+end;
+
+procedure TMainForm.ArrangeLayout;
+var
+  Wide: Boolean;
+  I, N: Integer;
+  W, X: Single;
+begin
+  if not FChromeReady then
+    Exit;
+  Wide := (not IsMobile) and (ClientWidth >= WideLayoutWidth);
+  if Wide and (pnlPids.Parent <> Self) then
+  begin
+    pnlPids.Parent := Self;
+    pnlPids.Align := TAlignLayout.Left;
+    pnlPids.Position.X := 0;
+    if FSettings.Window.PidPanelWidth > 0 then
+      pnlPids.Width := FSettings.Window.PidPanelWidth
+    else
+      pnlPids.Width := 400;
+    splLeft.Visible := True;
+    splLeft.Position.X := pnlPids.Width + 1;
+  end
+  else if not Wide and (pnlPids.Parent <> tiPids) then
+  begin
+    if FPidsDocked then
+      FSettings.Window.PidPanelWidth := Round(pnlPids.Width);
+    pnlPids.Parent := tiPids;
+    pnlPids.Align := TAlignLayout.Client;
+    splLeft.Visible := False;
+  end;
+  FPidsDocked := Wide;
+  FNavButtons[1].Visible := not Wide;
+  if Wide and (tcMain.ActiveTab = tiPids) then
+    ShowPage(tiLive);
+  // Wide windows show the page tool bars; otherwise their buttons are in the menu.
+  pnlLiveFooter.Visible := Wide;
+  pnlDashBar.Visible := Wide;
+  // The tab bar buttons share the width.
+  N := 0;
+  for I := 0 to 4 do
+    if FNavButtons[I].Visible then
+      Inc(N);
+  W := ClientWidth / Max(1, N);
+  X := 0;
+  for I := 0 to 4 do
+    if FNavButtons[I].Visible then
+    begin
+      FNavButtons[I].Position.X := X;
+      FNavButtons[I].Width := W;
+      X := X + W;
+    end;
+end;
+
+{ Navigation }
+
+function TMainForm.CurrentPage: TTabItem;
+begin
+  if tcMain.ActiveTab = tiMore then
+    Result := tcMore.ActiveTab
+  else
+    Result := tcMain.ActiveTab;
+  if Result = nil then
+    Result := tiLive;
+end;
+
+procedure TMainForm.ShowPage(Page: TTabItem);
+begin
+  if Page = nil then
+    Exit;
+  if (Page = tiPids) and FPidsDocked then
+    Page := tiLive;
+  if Page.TabControl = tcMore then
+  begin
+    tcMain.ActiveTab := tiMore;
+    tcMore.ActiveTab := Page;
+  end
+  else
+  begin
+    tcMain.ActiveTab := Page;
+    if Page = tiMore then
+      tcMore.ActiveTab := tiMoreMenu; // the More tab always opens on its list
+  end;
+  UpdateAppBar;
+  TThread.ForceQueue(nil, FitFlowHeights); // a page has no layout until it is shown
+end;
+
+procedure TMainForm.UpdateAppBar;
+var
+  P: TTabItem;
   I: Integer;
 begin
-  Tab := TTabItem.Create(tcMain);
-  Tab.Text := 'PIDs';
-  tcMain.InsertObject(0, Tab);
-  pnlPids.Parent := Tab;
-  pnlPids.Align := TAlignLayout.Client;
-  splLeft.Visible := False;
-  // Short tab names so all seven fit across a phone.
-  tiLive.Text := 'Live';
-  tiDashboard.Text := 'Gauges';
-  tiControls.Text := 'Control';
-  tiVehicle.Text := 'Codes';
-  tiTools.Text := 'Tools';
-  tiMessages.Text := 'Log';
-  for I := 0 to tcMain.TabCount - 1 do
+  if not FChromeReady then
+    Exit;
+  P := CurrentPage;
+  lblTitle.Text := P.Text;
+  btnBack.Visible := (tcMain.ActiveTab = tiMore) and (P <> tiMoreMenu);
+  btnMenu.Visible := (P = tiLive) or (P = tiDashboard) or (P = tiPids) or (P = tiMessages) or (P = tiConnect);
+  for I := 0 to 4 do
+    FNavButtons[I].Repaint;
+end;
+
+procedure TMainForm.NavClick(Sender: TObject);
+begin
+  ShowPage(FNavPages[TControl(Sender).Tag]);
+end;
+
+procedure TMainForm.NavPaint(Sender: TObject; Canvas: TCanvas; const ARect: TRectF);
+var
+  I: Integer;
+  P: TPalette;
+  Color: TAlphaColor;
+  Path: TPathData;
+  Cx: Single;
+  D: Integer;
+begin
+  I := TControl(Sender).Tag;
+  P := Palette;
+  Cx := (ARect.Left + ARect.Right) / 2;
+  if FNavPages[I] = tcMain.ActiveTab then
   begin
-    Item := tcMain.Tabs[I];
-    Item.StyledSettings := Item.StyledSettings - [TStyledSetting.Size];
-    Item.TextSettings.Font.Size := 11;
+    Color := P.Accent;
+    Canvas.Fill.Kind := TBrushKind.Solid;
+    Canvas.Fill.Color := WithAlpha(P.Accent, $30);
+    Canvas.FillRect(TRectF.Create(Cx - 28, 4, Cx + 28, 32), 14, 14, AllCorners, 1);
+  end
+  else
+    Color := P.Muted;
+  Path := TPathData.Create;
+  try
+    if NavIcons[I] = '' then
+      for D := -1 to 1 do
+        Path.AddEllipse(TRectF.Create(12 + D * 6 - 2, 10, 12 + D * 6 + 2, 14))
+    else
+      Path.Data := NavIcons[I];
+    Path.Translate(Cx - 12, 6);
+    Canvas.Stroke.Kind := TBrushKind.Solid;
+    Canvas.Stroke.Color := Color;
+    Canvas.Stroke.Thickness := 2;
+    Canvas.Stroke.Cap := TStrokeCap.Round;
+    Canvas.Stroke.Join := TStrokeJoin.Round;
+    Canvas.Fill.Kind := TBrushKind.Solid;
+    Canvas.Fill.Color := Color;
+    if NavIcons[I] = '' then
+      Canvas.FillPath(Path, 1)
+    else
+      Canvas.DrawPath(Path, 1);
+  finally
+    Path.Free;
   end;
-  // A compact top bar: no labels, separators or keyboard hints.
-  lblPort.Visible := False;
-  sep1.Visible := False;
-  sep2.Visible := False;
-  cbBaud.Visible := False; // USB adapters take the baud rate from the port settings
-  btnPause.Visible := False;
-  chkSound.Visible := False;
-  btnRefreshPorts.Text := 'Ports';
-  btnLogViewer.Text := 'Logs';
-  lblLiveHint.Visible := False;
-  btnBrowseLogFolder.Visible := False;
-  lblDashHint.Text := 'Long-press a gauge to change, move or remove it.';
-  WindowState := TWindowState.wsMaximized;
-  KeepInSafeArea(Self);
+  Canvas.Font.Size := 12;
+  Canvas.FillText(TRectF.Create(ARect.Left, 33, ARect.Right, ARect.Bottom - 2), NavCaptions[I], False, 1, [],
+    TTextAlign.Center, TTextAlign.Center);
+end;
+
+procedure TMainForm.btnBackClick(Sender: TObject);
+begin
+  ShowPage(tiMoreMenu);
+end;
+
+procedure TMainForm.FormKeyUp(Sender: TObject; var Key: Word; var KeyChar: WideChar; Shift: TShiftState);
+begin
+  if Key <> vkHardwareBack then
+    Exit;
+  // Android back: out of a More page, then back to Live; from Live, leave the app.
+  if btnBack.Visible then
+  begin
+    btnBackClick(nil);
+    Key := 0;
+  end
+  else if CurrentPage <> tiLive then
+  begin
+    ShowPage(tiLive);
+    Key := 0;
+  end;
+end;
+
+procedure TMainForm.pnlStatusClick(Sender: TObject);
+begin
+  ShowPage(tiConnect);
+end;
+
+procedure TMainForm.lbMoreItemClick(const Sender: TCustomListBox; const Item: TListBoxItem);
+var
+  Page: TTabItem;
+begin
+  if (Item = nil) or (Item.Index > High(FMorePages)) then
+    Exit;
+  Page := FMorePages[Item.Index];
+  TThread.ForceQueue(nil,
+    procedure
+    begin
+      lbMore.ItemIndex := -1;
+      if Page = nil then
+        btnLogViewerClick(nil)
+      else
+        ShowPage(Page);
+    end);
+end;
+
+procedure TMainForm.btnActionClick(Sender: TObject);
+begin
+  case FState of
+    esDisconnected: btnConnectClick(nil);
+    esConnected: btnStartScanClick(nil);
+  else
+    btnStopScanClick(nil);
+  end;
+end;
+
+procedure TMainForm.AddPageMenuItem(const Text: string; Handler: TNotifyEvent; Enabled: Boolean;
+  Checked: Boolean);
+var
+  M: TMenuItem;
+begin
+  M := TMenuItem.Create(FPageMenu);
+  M.Text := Text;
+  M.OnClick := Handler;
+  M.Enabled := Enabled;
+  M.IsChecked := Checked;
+  FPageMenu.AddObject(M);
+end;
+
+procedure TMainForm.ToggleMinMaxClick(Sender: TObject);
+begin
+  chkMinMax.IsChecked := not chkMinMax.IsChecked;
+end;
+
+{ The page's actions (on narrow windows and phones its tool bar is hidden). }
+procedure TMainForm.btnMenuClick(Sender: TObject);
+var
+  P: TTabItem;
+  Pt: TPointF;
+begin
+  while FPageMenu.ItemsCount > 0 do
+    FPageMenu.Items[0].Free;
+  P := CurrentPage;
+  if P = tiLive then
+  begin
+    AddPageMenuItem('Reset min / max', btnResetMinMaxClick);
+    AddPageMenuItem(btnLiveTest.Text, btnTestDisplayClick, btnLiveTest.Enabled);
+    AddPageMenuItem('Show min / max', ToggleMinMaxClick, True, chkMinMax.IsChecked);
+    AddPageMenuItem('-', nil);
+    AddPageMenuItem('Bigger text', btnZoomInClick);
+    AddPageMenuItem('Smaller text', btnZoomOutClick);
+    AddPageMenuItem(Format('Normal size (now %d%%)', [FZoom]), lblZoomClick);
+  end
+  else if P = tiDashboard then
+  begin
+    AddPageMenuItem('Add gauge...', btnAddGaugeClick);
+    AddPageMenuItem('Tick these PIDs', btnTickDashPidsClick);
+    AddPageMenuItem(btnDashTest.Text, btnTestDisplayClick, btnDashTest.Enabled);
+  end
+  else if P = tiPids then
+  begin
+    AddPageMenuItem('Test PIDs', btnTestPidsClick, btnTestPids.Enabled);
+    AddPageMenuItem('Clear selection', btnClearSelectionClick);
+    AddPageMenuItem('Edit PIDs...', btnEditPidsClick, btnEditPids.Enabled);
+  end
+  else if P = tiMessages then
+  begin
+    AddPageMenuItem('Copy all', btnCopyMessagesClick);
+    AddPageMenuItem('Clear', btnClearMessagesClick);
+  end
+  else if P = tiConnect then
+    AddPageMenuItem('Refresh ports', btnRefreshPortsClick, btnRefreshPorts.Enabled);
+  if FPageMenu.ItemsCount = 0 then
+    Exit;
+  // Right-aligned under the button (the menu keeps itself on the form).
+  Pt := btnMenu.LocalToAbsolute(TPointF.Create(0, btnMenu.Height));
+  ShowMenuAsActions(Self, FPageMenu, TPointF.Create(ClientWidth, Pt.Y));
+end;
+
+{ Theme }
+
+procedure TMainForm.cbThemeChange(Sender: TObject);
+begin
+  if not FChromeReady then
+    Exit;
+  ApplyTheme(TThemeMode(Max(0, cbTheme.ItemIndex)));
+  SaveSettings;
+end;
+
+procedure TMainForm.ThemeChanged(const Sender: TObject; const M: TMessage);
+begin
+  ApplyPalette;
+end;
+
+procedure TMainForm.ApplyPalette;
+var
+  P: TPalette;
+
+  procedure Bar(R: TRectangle);
+  begin
+    R.Fill.Kind := TBrushKind.Solid;
+    R.Fill.Color := P.Bar;
+    R.Stroke.Kind := TBrushKind.Solid;
+    R.Stroke.Color := P.BarLine;
+    R.Stroke.Thickness := 1;
+  end;
+
+  procedure Muted(L: TLabel);
+  begin
+    L.StyledSettings := L.StyledSettings - [TStyledSetting.FontColor];
+    L.TextSettings.FontColor := P.Muted;
+  end;
+
+  procedure Icon(Button: TControl);
+  var
+    I: Integer;
+  begin
+    for I := 0 to Button.ControlsCount - 1 do
+      if Button.Controls[I] is TPath then
+      begin
+        TPath(Button.Controls[I]).Stroke.Color := P.Text;
+        TPath(Button.Controls[I]).Fill.Color := P.Text;
+      end;
+  end;
+
+var
+  I: Integer;
+begin
+  P := Palette;
+  Bar(pnlAppBar);
+  Bar(pnlNav);
+  Bar(pnlStatus);
+  Icon(btnBack);
+  Icon(btnMenu);
+  pnlCtlWarn.Fill.Color := P.PanelWarn;
+  pnlCtlRun.Fill.Color := P.Panel;
+  Muted(lblLiveHint);
+  Muted(lblDashHint);
+  Muted(lblDiscoverHelp);
+  Muted(lblCtlNotes);
+  lblNotice.StyledSettings := lblNotice.StyledSettings - [TStyledSetting.FontColor];
+  lblNotice.TextSettings.FontColor := P.NoticeText;
+  if pnlNotice.Tag = 1 then
+    pnlNotice.Fill.Color := P.NoticeError
+  else
+    pnlNotice.Fill.Color := P.NoticeWarn;
+  if FEngine <> nil then
+    UpdateBudget;
+  if FChromeReady then
+    TThread.ForceQueue(nil, FitFlowHeights);
+  for I := 0 to 4 do
+    if FNavButtons[I] <> nil then
+      FNavButtons[I].Repaint;
 end;
 
 { Flow layouts wrap their buttons on narrow windows; grow their bars to fit. }
+{ Vehicle box: the values start after the widest caption (fonts differ by style). }
+procedure TMainForm.FitVehicleColumns;
+var
+  Caps: array[0..2] of TLabel;
+  Vals: array[0..2] of TLabel;
+  I: Integer;
+  W: Single;
+begin
+  Caps[0] := lblVinCaption;
+  Caps[1] := lblOsidCaption;
+  Caps[2] := lblFirmwareCaption;
+  Vals[0] := lblVin;
+  Vals[1] := lblOsid;
+  Vals[2] := lblFirmware;
+  W := 0;
+  for I := 0 to 2 do
+  begin
+    Caps[I].WordWrap := False;
+    FitTextWidth(Caps[I]);
+    W := Max(W, Caps[I].Width);
+  end;
+  for I := 0 to 2 do
+  begin
+    Caps[I].Height := 30;
+    Vals[I].Height := 30;
+    Caps[I].Position.Y := 30 + I * 32;
+    Vals[I].Position.Y := Caps[I].Position.Y;
+    Vals[I].Position.X := Caps[I].Position.X + W + 12;
+    Vals[I].Width := Max(120, gbVehicle.Width - Vals[I].Position.X - 12);
+  end;
+  btnReadInfo.Position.Y := 30 + 3 * 32 + 4;
+  gbVehicle.Height := btnReadInfo.Position.Y + btnReadInfo.Height + 12;
+end;
+
+{ Settings and Tools rows: caption, a field filling the rest of the box, and a
+  button at the right end, so they fit a phone as well as a wide window. }
+procedure TMainForm.FitFormRows;
+
+  procedure Row(Cap: TLabel; Field, Btn: TControl; Box: TControl);
+  var
+    X, R: Single;
+  begin
+    if Box.Width < 50 then
+      Exit; // not laid out yet
+    X := 12;
+    if Cap <> nil then
+    begin
+      Cap.WordWrap := False;
+      FitTextWidth(Cap);
+      Cap.Position.X := 12;
+      X := 12 + Cap.Width + 12;
+    end;
+    R := Box.Width - 12;
+    if (Btn <> nil) and Btn.Visible then
+    begin
+      FitTextWidth(Btn, 80);
+      Btn.Position.X := R - Btn.Width;
+      R := Btn.Position.X - 8;
+    end;
+    Field.Position.X := X;
+    Field.Width := Max(80, R - X);
+  end;
+
+  procedure Wide(C: TControl; Box: TControl);
+  begin
+    if Box.Width >= 50 then
+      C.Width := Box.Width - C.Position.X - 12;
+  end;
+
+begin
+  Row(lblTheme, cbTheme, nil, gbAppearance);
+  Row(lblLogFolderCaption, edtLogFolder, btnBrowseLogFolder, gbLogging);
+  Row(lblRate, cbRate, nil, gbStream);
+  Row(nil, edtNewVin, btnWriteVin, gbWriteVin);
+  Row(nil, edtRaw, btnSendRaw, gbAdvanced);
+  Wide(lblRaw, gbAdvanced);
+  Wide(chkTrace, gbAdvanced);
+  Wide(chkSound, gbAlerts);
+  Wide(lblDiscoverHelp, gbDiscover);
+  lblDiscoverHelp.WordWrap := True;
+end;
+
 procedure TMainForm.FitFlowHeights;
+
+  // Buttons and check boxes as wide as their text (the style sets the font).
+  procedure FitWidths(Flow: TControl; MinWidth: Single);
+  var
+    I: Integer;
+  begin
+    for I := 0 to Flow.ControlsCount - 1 do
+      if (Flow.Controls[I] is TButton) or (Flow.Controls[I] is TCheckBox) then
+        FitTextWidth(Flow.Controls[I], MinWidth);
+  end;
 
   procedure Fit(Flow: TFlowLayout; Bar: TControl; Extra: Single);
   var
@@ -594,7 +1152,21 @@ procedure TMainForm.FitFlowHeights;
 begin
   if FClosing then
     Exit;
-  Fit(flTop, pnlTop, 0);
+  FitWidths(pnlLiveFooter, 0);
+  FitWidths(pnlDashBar, 0);
+  FitWidths(pnlCtlBar, 70);
+  FitWidths(flPidButtons, 90);
+  FitWidths(flCtlRun, 70);
+  FitWidths(flAdapter, 120);
+  FitWidths(flScan, 150);
+  FitWidths(flLogRec, 140);
+  FitTextWidth(lblList);
+  FitVehicleColumns;
+  FitFormRows;
+  // Connect page: group boxes around flow layouts (title + padding = 36).
+  Fit(flAdapter, gbAdapter, 36);
+  Fit(flScan, gbScan, 36);
+  Fit(flLogRec, gbLogRec, 36);
   Fit(pnlLiveFooter, pnlLiveFooter, 0);
   Fit(pnlDashBar, pnlDashBar, 0);
   Fit(pnlCtlBar, pnlCtlBar, 0);
@@ -627,6 +1199,7 @@ end;
 procedure TMainForm.FormDestroy(Sender: TObject);
 begin
   FClosing := True;
+  TMessageManager.DefaultManager.Unsubscribe(TThemeChangedMessage, FThemeSub);
   tmrRefresh.Enabled := False;
   FEngine.Free; // stops the scan, closes the port, waits for the thread
   FCatalog.Free;
@@ -702,8 +1275,9 @@ begin
     Exit; // the form is still loading
   if WindowState = TWindowState.wsNormal then
     FNormalBounds := TRect.Create(Left, Top, Left + Width, Top + Height);
-  if pnlPids.Align = TAlignLayout.Left then
-    pnlPids.Width := Min(pnlPids.Width, Max(200, ClientWidth - 300));
+  ArrangeLayout;
+  if FPidsDocked then
+    pnlPids.Width := Min(pnlPids.Width, Max(200, ClientWidth - 400));
   TThread.ForceQueue(nil, FitFlowHeights);
 end;
 
@@ -784,6 +1358,7 @@ begin
   chkTrace.IsChecked := FSettings.Trace;
   chkSound.IsChecked := FSettings.AlertSounds;
   chkMinMax.IsChecked := FSettings.ShowMinMax;
+  cbTheme.ItemIndex := Ord(ThemeModeFromKey(FSettings.Theme));
   for N in FSettings.SelectedPids do
     if (FCatalog.FindById(N) <> nil) and FCatalog.FindById(N).Enabled and not FSelected.Contains(N) then
       FSelected.Add(N);
@@ -815,6 +1390,7 @@ begin
   FSettings.AlertSounds := chkSound.IsChecked;
   FSettings.LiveZoom := FZoom;
   FSettings.ShowMinMax := chkMinMax.IsChecked;
+  FSettings.Theme := ThemeKeys[TThemeMode(Max(0, cbTheme.ItemIndex))];
   FSettings.SelectedPids := FSelected.ToArray;
   if cbLists.ItemIndex > 0 then
     FSettings.ActiveList := ComboText(cbLists)
@@ -831,7 +1407,8 @@ begin
       FSettings.Window.Saved := True;
     end;
     FSettings.Window.Maximized := WindowState = TWindowState.wsMaximized;
-    FSettings.Window.PidPanelWidth := Round(pnlPids.Width);
+    if FPidsDocked then
+      FSettings.Window.PidPanelWidth := Round(pnlPids.Width);
   end;
   try
     FSettings.SaveToFile(SettingsFile);
@@ -960,9 +1537,9 @@ begin
   if (Col <> 3) or (Row > High(FPidRows)) or (FPidRows[Row] < 0) then
     Exit;
   if FRejected.Contains(FPidRows[Row]) or (FSupport.TryGetValue(FPidRows[Row], Supported) and not Supported) then
-    Style.Fore := $FFC03030
+    Style.Fore := Palette.Bad
   else if FSupport.TryGetValue(FPidRows[Row], Supported) then
-    Style.Fore := $FF208020;
+    Style.Fore := Palette.Good;
 end;
 
 procedure TMainForm.PidsGetChecked(Sender: TObject; Row: Integer; var Checked: Boolean);
@@ -1228,12 +1805,12 @@ begin
   lblBudget.StyledSettings := lblBudget.StyledSettings - [TStyledSetting.FontColor];
   try
     Dpids := Format('%d DPID(s)', [Length(PlanDpids(Reqs).Dpids)]);
-    lblBudget.TextSettings.FontColor := TAlphaColors.Black;
+    lblBudget.TextSettings.FontColor := Palette.Text;
   except
     on E: EDpidPlanError do
     begin
       Dpids := 'too many!';
-      lblBudget.TextSettings.FontColor := TAlphaColors.Red;
+      lblBudget.TextSettings.FontColor := Palette.Bad;
     end;
   end;
   lblBudget.Text := Format('%d selected  -  %d / %d bytes  -  %s',
@@ -1259,7 +1836,7 @@ begin
     begin
       FSupport.Clear;
       Post(Cmd);
-      tcMain.ActiveTab := tiMessages;
+      ShowPage(tiMessages);
     end;
   if Length(Cmd.PidIds) = 0 then
     Confirm('No vehicle PIDs are selected. Test every PID in the list?', Run)
@@ -1306,7 +1883,7 @@ begin
       begin
         Result := CreateSerialPort(PortName, Baud, fcRtsCts);
       end;
-  SetStatus(lblStatPort, PortName);
+  SetStatus(spPort, PortName);
   Post(Cmd);
 end;
 
@@ -1394,7 +1971,7 @@ begin
     eeState:
       begin
         FState := Ev.State;
-        SetStatus(lblStatState, StateNames[FState]);
+        SetStatus(spState, StateNames[FState]);
         if FState <> esScanning then
         begin
           grdLive.Refresh;
@@ -1412,7 +1989,7 @@ begin
           FControlActive.Clear; // the engine released everything
           FillControls('');
           FLogging := False;
-          SetStatus(lblStatRate, '');
+          SetStatus(spRate, '');
         end;
         UpdateControls;
       end;
@@ -1421,8 +1998,8 @@ begin
         lblFirmware.Text := IfThen(Ev.Vehicle.Firmware = '', '-', Ev.Vehicle.Firmware);
         lblVin.Text := IfThen(Ev.Vehicle.Vin = '', '-', Ev.Vehicle.Vin);
         lblOsid.Text := IfThen(Ev.Vehicle.Osid = '', '-', Ev.Vehicle.Osid);
-        SetStatus(lblStatVin, 'VIN ' + lblVin.Text);
-        SetStatus(lblStatOsid, 'OSID ' + lblOsid.Text);
+        SetStatus(spVin, 'VIN ' + lblVin.Text);
+        SetStatus(spOsid, 'OSID ' + lblOsid.Text);
       end;
     eeScanStarted:
       begin
@@ -1460,14 +2037,14 @@ begin
           FDtcRows := [TArray<string>.Create('None', '', 'No trouble codes reported', '')];
         grdDtcs.RowCount := Length(FDtcRows);
         grdDtcs.Refresh;
-        tcMain.ActiveTab := tiVehicle;
+        ShowPage(tiVehicle);
       end;
     eeLogStarted:
       begin
         FLastLogFile := Ev.Text;
         FLogging := True;
         FLogPaused := False;
-        SetStatus(lblStatLog, 'Logging to ' + ExtractFileName(Ev.Text));
+        SetStatus(spLog, 'Logging to ' + ExtractFileName(Ev.Text));
         UpdateControls;
       end;
     eeControl:
@@ -1484,7 +2061,7 @@ begin
           AddMessage('Log saved: ' + FLastLogFile + '  (F7 opens it in the log viewer)');
         FLogging := False;
         FLogPaused := False;
-        SetStatus(lblStatLog, '');
+        SetStatus(spLog, '');
         UpdateControls;
       end;
   end;
@@ -1508,7 +2085,7 @@ begin
   btnLog.Enabled := FState = esScanning;
   btnLog.Text := IfThen(FLogging, 'Stop log', 'Start log') + IfThen(IsMobile, '', ' (F8)');
   btnPause.Enabled := FLogging;
-  btnPause.Text := IfThen(FLogPaused, 'Resume (F9)', 'Pause (F9)');
+  btnPause.Text := IfThen(FLogPaused, 'Resume', 'Pause') + IfThen(IsMobile, '', ' (F9)');
   btnTestPids.Enabled := Idle;
   btnEditPids.Enabled := FState in [esDisconnected, esConnected];
   btnReadInfo.Enabled := Idle;
@@ -1522,14 +2099,40 @@ begin
   btnLiveTest.Text := IfThen(FTestMode, 'Stop test', 'Test display');
   btnDashTest.Enabled := btnLiveTest.Enabled;
   btnDashTest.Text := btnLiveTest.Text;
+  if FChromeReady then
+    TThread.ForceQueue(nil, FitFlowHeights);
+  // Status dot: grey idle, blue connected, green scanning, red recording, amber paused.
   if FLogging and FLogPaused then
-    pnlTop.Fill.Color := $FFFFE0B0
+    shpStatus.Fill.Color := $FFFFA000
   else if FLogging then
-    pnlTop.Fill.Color := $FF90EE90
+    shpStatus.Fill.Color := $FFE53935
   else if FState = esScanning then
-    pnlTop.Fill.Color := $FFD8F0D8
+    shpStatus.Fill.Color := $FF2EAD4B
+  else if FState in [esConnected, esBusy] then
+    shpStatus.Fill.Color := $FF2D7FF9
   else
-    pnlTop.Fill.Color := TopBarColor;
+    shpStatus.Fill.Color := $FF9E9E9E;
+  // The top bar's main action follows the connection.
+  case FState of
+    esDisconnected:
+      begin
+        btnAction.Text := 'Connect';
+        btnAction.Enabled := cbPort.ItemIndex >= 0;
+      end;
+    esConnected:
+      begin
+        btnAction.Text := 'Start scan';
+        btnAction.Enabled := True;
+      end;
+    esScanning:
+      begin
+        btnAction.Text := 'Stop';
+        btnAction.Enabled := True;
+      end;
+  else
+    btnAction.Text := 'Cancel';
+    btnAction.Enabled := True;
+  end;
 end;
 
 procedure TMainForm.tmrRefreshTimer(Sender: TObject);
@@ -1572,11 +2175,11 @@ begin
     UpdateControls;
   end;
   if FTestMode then
-    SetStatus(lblStatRate, 'Test data')
+    SetStatus(spRate, 'Test data')
   else
-    SetStatus(lblStatRate, Format('%.1f updates/s', [FLive.CyclesPerSecond]));
+    SetStatus(spRate, Format('%.1f updates/s', [FLive.CyclesPerSecond]));
   if FLive.Logging then
-    SetStatus(lblStatLog, Format('Logging: %d rows%s', [FLive.LogRows, IfThen(FLive.LogPaused, ' (paused)', '')]));
+    SetStatus(spLog, Format('Logging: %d rows%s', [FLive.LogRows, IfThen(FLive.LogPaused, ' (paused)', '')]));
   if FLive.Cycles <> FShownCycles then
   begin
     FShownCycles := FLive.Cycles;
@@ -1604,8 +2207,8 @@ begin
   ApplyRowHeights;
   RefreshDashboard;
   lblLiveHint.Visible := False;
-  if tcMain.ActiveTab <> tiDashboard then
-    tcMain.ActiveTab := tiLive;
+  if CurrentPage <> tiDashboard then
+    ShowPage(tiLive);
   grdLive.Refresh;
 end;
 
@@ -1703,7 +2306,7 @@ begin
   FTestMode := False;
   StopAlertSound;
   pnlNotice.Visible := False;
-  SetStatus(lblStatRate, '');
+  SetStatus(spRate, '');
   AddMessage('Test display stopped');
   grdLive.Refresh;
   RefreshDashboard;
@@ -2069,7 +2672,7 @@ begin
   if FMenuPidId < 0 then
     Exit;
   Scr := Grid.LocalToScreen(Local);
-  pmPid.Popup(Scr.X, Scr.Y);
+  ShowMenuAsActions(Self, pmPid, ScreenToClient(Scr)); // long-press: phones
   Handled := True;
 end;
 
@@ -2654,7 +3257,7 @@ begin
   Cmd := Command(ecSendRaw);
   Cmd.Text := edtRaw.Text;
   Post(Cmd);
-  tcMain.ActiveTab := tiMessages;
+  ShowPage(tiMessages);
 end;
 
 procedure TMainForm.chkTraceChange(Sender: TObject);
@@ -2742,9 +3345,10 @@ procedure TMainForm.ShowNotice(const Text: string; IsError: Boolean);
 begin
   lblNotice.Text := Text + IfThen(IsMobile, '   (tap to dismiss)', '   (click to dismiss)');
   if IsError then
-    pnlNotice.Fill.Color := $FFFFC8C8
+    pnlNotice.Fill.Color := Palette.NoticeError
   else
-    pnlNotice.Fill.Color := $FFFFF0C0;
+    pnlNotice.Fill.Color := Palette.NoticeWarn;
+  pnlNotice.Tag := Ord(IsError);
   pnlNotice.Visible := True;
 end;
 
@@ -3033,7 +3637,7 @@ begin
       FDisplay.Gauges.Add(NewGauge);
       SaveDisplay;
       BuildDashboard;
-      tcMain.ActiveTab := tiDashboard;
+      ShowPage(tiDashboard);
     end);
 end;
 
@@ -3116,7 +3720,7 @@ begin
     Exit;
   PrepareGaugeMenu(TGaugeView(Sender).Tag);
   Scr := TControl(Sender).LocalToScreen(TControl(Sender).AbsoluteToLocal(EventInfo.Location));
-  pmGauge.Popup(Scr.X, Scr.Y);
+  ShowMenuAsActions(Self, pmGauge, ScreenToClient(Scr)); // long-press: phones
   Handled := True;
 end;
 
@@ -3162,10 +3766,19 @@ begin
     Result := '#' + IntToStr(Id);
 end;
 
-procedure TMainForm.SetStatus(Lbl: TLabel; const Text: string);
+procedure TMainForm.SetStatus(Part: TStatusPart; const Text: string);
+var
+  P: TStatusPart;
+  S: string;
 begin
-  if Lbl.Text <> Text then // avoid repainting the status bar for nothing
-    Lbl.Text := Text;
+  if FStatus[Part] = Text then
+    Exit; // avoid repainting the status strip for nothing
+  FStatus[Part] := Text;
+  S := '';
+  for P := Low(TStatusPart) to High(TStatusPart) do
+    if FStatus[P] <> '' then
+      S := S + IfThen(S <> '', '  ' + #$00B7 + '  ', '') + FStatus[P];
+  lblStatus.Text := S;
 end;
 
 end.

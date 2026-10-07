@@ -1,0 +1,3 @@
+// Delphi FMX styles for the Windows themes (see UVScan.UI.Theme.pas).
+UVSCAN_STYLE_LIGHT RCDATA "res\\styles\\Win10Modern.Style"
+UVSCAN_STYLE_DARK  RCDATA "res\\styles\\Win10ModernDark.Style"
