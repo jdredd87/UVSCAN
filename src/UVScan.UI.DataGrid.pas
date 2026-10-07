@@ -1071,7 +1071,8 @@ begin
           if St.FontSize > 0 then
             H := St.FontSize;
           DrawText(TRectF.Create(CellR.Left + FCellPadding, CellR.Top, CellR.Right - FCellPadding, CellR.Bottom),
-            Text, FColumns[Col].Align, Fore, H, St.Bold, FColumns[Col].Wrap, FColumns[Col].Shrink);
+            Text, FColumns[Col].Align, Fore, H, St.Bold, FColumns[Col].Wrap,
+            FColumns[Col].Shrink or FColumns[Col].Wrap); // a word too long to wrap: smaller, not broken
           X := X + W[Col];
         end;
       end;
