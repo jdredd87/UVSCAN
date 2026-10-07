@@ -276,6 +276,8 @@ type
     FShownRows: TArray<string>; // what each live row last showed (value|min|max)
     FGridCompact: Boolean;      // live columns share the width (phone, narrow window)
     FGridQueued: Boolean;
+    FFlowQueued: Boolean;
+    FPageGridsSet, FPageGridsCompact: Boolean;
     FShownCycles: Int64;
     FDisplay: TDisplaySettings;      // display.json: PID looks, alert levels, gauges
     FAlerts: TAlertTracker;
@@ -315,6 +317,7 @@ type
     procedure BuildChrome;
     procedure ArrangeLayout;
     procedure FitFlowHeights;
+    procedure FlowBoxResized(Sender: TObject);
     procedure FitVehicleColumns;
     procedure FitFormRows;
     procedure FitWrappedText;
@@ -360,6 +363,7 @@ type
     procedure ZoomStep(Direction: Integer);
     procedure ApplyGridLayout;
     procedure QueueGridLayout;
+    procedure ApplyPageGridColumns;
     function LiveGridCompact: Boolean;
     function Z(N: Single): Single;
     // controls
@@ -500,6 +504,11 @@ begin
   BuildDashboard;
   FState := esDisconnected;
   FChromeReady := True;
+  // A box of wrapping buttons fits its rows again whenever its width changes
+  // (also when a page hidden during a resize is shown and laid out).
+  for var C in TArray<TControl>.Create(gbAdapter, gbScan, gbLogRec, pnlLiveFooter, pnlDashBar, pnlCtlBar,
+    pnlPidFooter, pnlCtlRun) do
+    C.OnResized := FlowBoxResized;
   ArrangeLayout;
   UpdateControls;
   ShowPage(tiLive);
@@ -534,6 +543,7 @@ begin
   grdPids.AddColumn('Units', 55);
   grdPids.AddColumn('Bytes', 45, gaRight);
   grdPids.AddColumn('Test', 60);
+  grdPids.SetColumnShrink(1, True); // "Bitmapped" smaller rather than cut
   grdPids.OnGetText := PidsGetText;
   grdPids.OnGetStyle := PidsGetStyle;
   grdPids.OnGetChecked := PidsGetChecked;
@@ -590,30 +600,59 @@ begin
   grdMessages.AddColumn('', 400, gaLeft, True);
   grdMessages.OnGetText := MessagesGetText;
 
-  if IsMobile then
+  // Long names wrap rather than being cut (rows as tall as they need).
+  grdPids.SetColumnWrap(0, True);
+  grdPids.SetColumnWrap(1, True);
+  grdPids.AutoHeights := True;
+  for var I in [0, 1, 3] do
+    grdControls.SetColumnWrap(I, True);
+  grdControls.AutoHeights := True;
+  for var I in [1, 2, 3] do
+    grdDtcs.SetColumnWrap(I, True);
+  grdDtcs.AutoHeights := True;
+  ApplyPageGridColumns;
+end;
+
+{ Messages, controls and trouble codes: on a phone or a narrow window fewer,
+  narrower columns (and the messages wrap); the usual columns otherwise.
+  Redone when the window crosses the width. }
+procedure TMainForm.ApplyPageGridColumns;
+var
+  Compact: Boolean;
+  G: TDataGrid;
+begin
+  Compact := IsMobile or (ClientWidth < 700);
+  if FPageGridsSet and (Compact = FPageGridsCompact) then
+    Exit;
+  FPageGridsSet := True;
+  FPageGridsCompact := Compact;
+  grdMessages.SetColumnWrap(0, Compact);
+  grdControls.SetColumnVisible(2, not Compact); // the raw command is on the edit screen
+  if Compact then
   begin
-    // A phone is too narrow for these columns: wrap the text instead of cutting it.
-    grdMessages.SetColumnWrap(0, True);
-    grdMessages.AutoHeights := True;
-    grdPids.SetColumnWrap(0, True);
-    grdPids.SetColumnWrap(1, True);
-    grdPids.AutoHeights := True;
-    grdControls.SetColumnVisible(2, False); // the raw command is on the edit screen
     grdControls.SetColumnWidth(0, 120);
     grdControls.SetColumnWidth(1, 84);
     grdControls.SetColumnWidth(3, 110);
-    grdControls.SetColumnWrap(0, True);
-    grdControls.SetColumnWrap(1, True);
-    grdControls.SetColumnWrap(3, True);
-    grdControls.AutoHeights := True;
     grdDtcs.SetColumnWidth(0, 70);
     grdDtcs.SetColumnWidth(1, 90);
     grdDtcs.SetColumnWidth(3, 64);
-    grdDtcs.SetColumnWrap(1, True);
-    grdDtcs.SetColumnWrap(2, True);
-    grdDtcs.SetColumnWrap(3, True);
-    grdDtcs.AutoHeights := True;
+  end
+  else
+  begin
+    grdControls.SetColumnWidth(0, 230);
+    grdControls.SetColumnWidth(1, 110);
+    grdControls.SetColumnWidth(3, 200);
+    grdDtcs.SetColumnWidth(0, 80);
+    grdDtcs.SetColumnWidth(1, 140);
+    grdDtcs.SetColumnWidth(3, 70);
   end;
+  grdMessages.AutoHeights := Compact; // a long trace: only where lines must wrap
+  if Compact then
+    grdMessages.AutoRowHeights
+  else
+    grdMessages.ResetRowHeights;
+  for G in [grdControls, grdDtcs] do
+    G.AutoRowHeights;
 end;
 
 { Phone: the PID list becomes the first tab; the bars wrap. }
@@ -1325,6 +1364,19 @@ begin
   end;
 end;
 
+procedure TMainForm.FlowBoxResized(Sender: TObject);
+begin
+  if FFlowQueued then
+    Exit;
+  FFlowQueued := True;
+  TThread.ForceQueue(nil,
+    procedure
+    begin
+      FFlowQueued := False;
+      FitFlowHeights;
+    end);
+end;
+
 procedure TMainForm.FitFlowHeights;
 
   // Buttons and check boxes as wide as their text (the style sets the font).
@@ -1337,22 +1389,44 @@ procedure TMainForm.FitFlowHeights;
         FitTextWidth(Flow.Controls[I], MinWidth);
   end;
 
+  // Bar as tall as Flow's rows. The rows are worked out here from the widths
+  // (as the flow layout will wrap them): the flow itself may not have been
+  // laid out yet - on a page that was hidden while the window was resized,
+  // or right after FitWidths changed the widths.
   procedure Fit(Flow: TFlowLayout; Bar: TControl; Extra: Single);
   var
     I: Integer;
     C: TControl;
-    Bottom: Single;
+    W, X, Y, RowH, CW, Bottom: Single;
   begin
-    Bottom := 0;
+    if Flow = Bar then
+      W := Flow.Width
+    else
+      W := Bar.Width - Bar.Padding.Left - Bar.Padding.Right - Flow.Margins.Left - Flow.Margins.Right;
+    W := W - Flow.Padding.Left - Flow.Padding.Right;
+    if W < 50 then
+      Exit; // not laid out at all yet
+    X := 0;
+    Y := 0;
+    RowH := 0;
     for I := 0 to Flow.ControlsCount - 1 do
     begin
       C := Flow.Controls[I];
-      if C.Visible then
-        Bottom := Max(Bottom, C.Position.Y + C.Height);
+      if not C.Visible then
+        Continue;
+      CW := C.Width + C.Margins.Left + C.Margins.Right;
+      if (X > 0) and (X + CW > W + 0.5) then
+      begin
+        Y := Y + RowH + Flow.VerticalGap;
+        X := 0;
+        RowH := 0;
+      end;
+      X := X + CW + Flow.HorizontalGap;
+      RowH := Max(RowH, C.Height + C.Margins.Top + C.Margins.Bottom);
     end;
-    if Bottom <= 0 then
+    if RowH <= 0 then
       Exit;
-    Bottom := Bottom + Flow.Padding.Bottom + Extra;
+    Bottom := Flow.Padding.Top + Y + RowH + Flow.Padding.Bottom + Extra;
     if Abs(Bar.Height - Bottom) > 0.5 then
       Bar.Height := Bottom;
   end;
@@ -2704,6 +2778,7 @@ begin
       FGridQueued := False;
       if FGridCompact or LiveGridCompact then
         ApplyGridLayout;
+      ApplyPageGridColumns;
     end);
 end;
 
@@ -3824,35 +3899,65 @@ procedure TMainForm.LayoutDashboard;
 var
   View: TGaugeView;
   I: Integer;
-  X, Y, RowH, Avail: Single;
+  X, Y, RowH, Avail, K: Single;
   Sz: TSizeF;
+  Row: TArray<TGaugeView>;
 const
   Gap = 12;
+
+  // The gauges of a full row, centred in the width.
+  procedure PlaceRow;
+  var
+    V: TGaugeView;
+    Used, Shift: Single;
+  begin
+    if Row = nil then
+      Exit;
+    Used := Row[High(Row)].Position.X + Row[High(Row)].Width - Row[0].Position.X;
+    Shift := Max(0, (Avail - Used) / 2 - Row[0].Position.X);
+    for V in Row do
+      V.Position.X := V.Position.X + Shift;
+    Row := nil;
+  end;
+
 begin
   PlaceAddGauge;
   if (FGaugeViews = nil) or (FGaugeViews.Count = 0) then
     Exit;
-  Avail := sbDash.Width - 16;
+  Avail := sbDash.Width;
+  if not IsMobile then
+    Avail := Avail - 16; // the scroll bar (a phone's floats over the page)
   X := Gap;
   Y := Gap;
   RowH := 0;
+  Row := nil;
   for I := 0 to FGaugeViews.Count - 1 do
   begin
     View := FGaugeViews[I];
     Sz := TGaugeView.PreferredSize(FDisplay.Gauges[I].Style, FDisplay.Gauges[I].Size);
-    // A phone fits one column: scale the gauge up to its width.
-    if IsMobile and (Sz.cx * 2 + 3 * Gap > Avail) and (Sz.cx > 0) then
-      Sz := TSizeF.Create(Avail - 2 * Gap, Sz.cy * (Avail - 2 * Gap) / Sz.cx);
+    // Room for one column only (a phone, a narrow window): scale the gauge up
+    // to the width (at most double on a desktop, where it gets huge).
+    if (Sz.cx * 2 + 3 * Gap > Avail) and (Sz.cx > 0) then
+    begin
+      K := (Avail - 2 * Gap) / Sz.cx;
+      if not IsMobile then
+        K := Min(K, 2);
+      if K > 1 then
+        Sz := TSizeF.Create(Sz.cx * K, Sz.cy * K);
+    end;
     if (X > Gap) and (X + Sz.cx + Gap > Avail) then
     begin
+      PlaceRow;
       X := Gap;
       Y := Y + RowH + Gap;
       RowH := 0;
     end;
     View.SetBounds(X, Y, Sz.cx, Sz.cy);
+    Row := Row + [View];
     X := X + Sz.cx + Gap;
     RowH := Max(RowH, Sz.cy);
   end;
+  PlaceRow;
   // Room below the last row so the + button does not cover a gauge.
   if FAddGauge <> nil then
   begin

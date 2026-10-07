@@ -318,6 +318,7 @@ function TDataGrid.AddColumn(const Caption: string; Width: Single; Align: TGridA
 var
   C: TGridColumn;
 begin
+  C := Default(TGridColumn); // Wrap, Shrink: off
   C.Caption := Caption;
   C.Width := Width;
   C.Align := Align;
@@ -775,7 +776,9 @@ begin
         Fixed := Fixed + FColumns[I].Width;
     end;
   Avail := Width;
-  if FScrollBar.Visible or FReserveScroll then
+  // Auto row heights: measured once, so keep the width the same whether
+  // the scroll bar shows or not.
+  if FScrollBar.Visible or FReserveScroll or FAutoHeights then
     Avail := Avail - FScrollBar.Width;
   for I := 0 to High(FColumns) do
     if not FColumns[I].Visible then
