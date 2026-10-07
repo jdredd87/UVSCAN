@@ -14,6 +14,7 @@ uses
   System.StrUtils, System.IOUtils, System.Generics.Collections,
   FMX.Types, FMX.Controls, FMX.Forms, FMX.Graphics, FMX.Dialogs, FMX.StdCtrls, FMX.Edit,
   FMX.ListBox, FMX.Layouts, FMX.Objects, FMX.TabControl, FMX.Menus, FMX.Controls.Presentation,
+  FMX.Platform,
   UVScan.Serial, UVScan.Simulator, UVScan.Pids, UVScan.Dpid, UVScan.Dtc, UVScan.Engine,
   UVScan.Class2, UVScan.Paths, UVScan.Settings, UVScan.PidLists, UVScan.Defaults,
   UVScan.Display, UVScan.Alerts, UVScan.Controls, UVScan.Gauge, UVScan.UI.DataGrid;
@@ -343,6 +344,7 @@ type
     procedure LoadData;
     procedure LoadSettings;
     procedure SaveSettings;
+    function AppEvent(AAppEvent: TApplicationEvent; AContext: TObject): Boolean;
     procedure FillPorts(const Select: string);
     procedure FillPidList;
     procedure SetSelected(Id: Integer; Checked: Boolean);
@@ -367,7 +369,7 @@ implementation
 {$R *.fmx}
 
 uses
-  System.JSON, FMX.Platform, UVScan.JsonFile, UVScan.UI.Common, UVScan.Sound, UVScan.PidEditor,
+  System.JSON, UVScan.JsonFile, UVScan.UI.Common, UVScan.Sound, UVScan.PidEditor,
   UVScan.PidDiscovery, UVScan.DisplayEditor, UVScan.GaugeEditor, UVScan.ControlEditor, UVScan.LogViewer;
 
 const
@@ -394,6 +396,8 @@ end;
 { TMainForm }
 
 procedure TMainForm.FormCreate(Sender: TObject);
+var
+  Events: IFMXApplicationEventService;
 begin
   FZoom := 100;
   FSelected := TList<Integer>.Create;
@@ -433,12 +437,20 @@ begin
   BuildDashboard;
   FState := esDisconnected;
   UpdateControls;
-  if IsMobile then
-    tcMain.ActiveTab := tiLive
-  else
-    tcMain.ActiveTab := tiLive;
+  tcMain.ActiveTab := tiLive;
+  // Android ends an app without closing its form (swiped away, or killed in
+  // the background), so save whenever the app leaves the screen.
+  if TPlatformServices.Current.SupportsPlatformService(IFMXApplicationEventService, Events) then
+    Events.SetApplicationEventHandler(AppEvent);
   ApplyCommandLine;
   TThread.ForceQueue(nil, FitFlowHeights);
+end;
+
+function TMainForm.AppEvent(AAppEvent: TApplicationEvent; AContext: TObject): Boolean;
+begin
+  Result := False;
+  if (AAppEvent in [TApplicationEvent.EnteredBackground, TApplicationEvent.WillTerminate]) and not FClosing then
+    SaveSettings;
 end;
 
 procedure TMainForm.CreateGrids;
