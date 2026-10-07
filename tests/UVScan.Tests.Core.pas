@@ -23,6 +23,8 @@ type
     [Test] procedure ParsesNonBusFrames;
     [Test] procedure ParsesExtendedLengthFrame;
     [Test] procedure ResyncsAfterStrayHeaderByte;
+    [Test] procedure ResyncsAfterTruncatedFrame;
+    [Test] procedure SkipsTailOfFrameAtConnect;
   end;
 
   [TestFixture]
@@ -187,6 +189,47 @@ begin
     Assert.AreEqual(1, P.Resyncs);
     Assert.IsTrue(P.TryNext(F));
     Assert.AreEqual('01 60', F.ToHex);
+  finally
+    P.Free;
+  end;
+end;
+
+procedure TAvtFramingTests.ResyncsAfterTruncatedFrame;
+var
+  P: TAvtFrameParser;
+  F: TAvtFrame;
+begin
+  // Captured on an AVT-841 + Keyspan on Android: the PCM was still streaming
+  // when UVScan connected, the AVT reset cut a stream frame short after
+  // "0C 00", then answered E1 33 with 91 07, then the VIN block 1 reply came.
+  P := TAvtFrameParser.Create;
+  try
+    P.Push(HexToBytes('0C 00 91 07 0C 00 6C F1 10 7C 01 00 32 47 31 57 48 01 60'));
+    Assert.IsTrue(P.TryNext(F));
+    Assert.AreEqual('91 07', F.ToHex);
+    Assert.IsTrue(P.TryNext(F));
+    Assert.AreEqual('6C F1 10 7C 01 00 32 47 31 57 48', BytesToHex(F.BusMessage));
+    Assert.IsTrue(P.TryNext(F));
+    Assert.AreEqual('01 60', F.ToHex);
+    Assert.AreEqual(2, P.Resyncs); // the cut frame's header, then its status byte
+  finally
+    P.Free;
+  end;
+end;
+
+procedure TAvtFramingTests.SkipsTailOfFrameAtConnect;
+var
+  P: TAvtFrameParser;
+  F: TAvtFrame;
+begin
+  // Connecting in the middle of a stream frame: the first byte read is the
+  // last byte of a frame ("... 08 00 80").
+  P := TAvtFrameParser.Create;
+  try
+    P.Push(HexToBytes('80 0C 00 6C F1 10 6A FE 00 00 01 08 00 80'));
+    Assert.IsTrue(P.TryNext(F));
+    Assert.AreEqual('6C F1 10 6A FE 00 00 01 08 00 80', BytesToHex(F.BusMessage));
+    Assert.AreEqual(1, P.Resyncs);
   finally
     P.Free;
   end;

@@ -835,8 +835,10 @@ begin
   Msg[xoffChar] := 19;
   Msg[rts] := 1;
   Msg[dtr] := 1;
-  Msg[rxForwardingLength] := 16;
-  Msg[rxForwardingTimeout] := 16;  // ms
+  // Hand over every byte at once: the AVT's replies are short, and holding
+  // them back (Linux uses 16 bytes / 16 ms) made them arrive late.
+  Msg[rxForwardingLength] := 1;
+  Msg[rxForwardingTimeout] := 1;  // ms
   if not Closing then
     Msg[portEnabled] := 1;
   if FlushRx then

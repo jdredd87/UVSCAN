@@ -73,6 +73,7 @@ constructor TSimulatedAvt.Create;
 begin
   inherited;
   FParser := TAvtFrameParser.Create;
+  FParser.HostSide := True; // it reads what the host sends
   FDpids := TObjectDictionary<Byte, TList<TSimSlot>>.Create([doOwnsValues]);
   FStreaming := TList<TSimStream>.Create;
   FRejectedPids := TList<Word>.Create;

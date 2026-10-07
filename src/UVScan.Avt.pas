@@ -45,6 +45,7 @@ type
     FBuffer: TBytes;
     FCount: Integer;
     FResyncs: Integer;
+    FHostSide: Boolean;
     procedure Consume(N: Integer);
   public
     procedure Push(const Data; Count: Integer); overload;
@@ -54,6 +55,10 @@ type
     property Pending: Integer read FCount;
     { Number of stray bytes dropped to regain framing. }
     property Resyncs: Integer read FResyncs;
+    { True when parsing what the host sends to the AVT (the simulator): those
+      bus frames have no status byte and B0 has no data, so the checks that
+      resync the AVT's output are off. }
+    property HostSide: Boolean read FHostSide write FHostSide;
   end;
 
 function EncodeAvtFrame(Kind: Byte; const Payload: TBytes): TBytes;
@@ -165,6 +170,20 @@ begin
   // stray duplicate (seen once on an AVT-841 at 115200). Drop it.
   if (Header shr 4 = AvtKindBus) and (DataLen >= 2) and (FBuffer[1] <> 0) and
     (FBuffer[1] shr 4 = AvtKindBus) and (FBuffer[1] and $0F >= 2) and (FBuffer[2] = 0) then
+  begin
+    Consume(1);
+    Inc(FResyncs);
+    Exit(TryNext(Frame));
+  end;
+
+  // A frame with no data, or a bus message whose first byte is no Class 2
+  // header (Class 2 always uses the 3-byte header form: bit 4 clear), means
+  // the framing is off: a stray byte, or the AVT cut a frame short (it does
+  // when it is reset while the PCM is streaming, e.g. "0C 00" then "91 07").
+  // Skip one byte and look again.
+  if not FHostSide and (((Header <> AvtExtendedHeader) and (DataLen = 0)) or
+    (((Header shr 4 = AvtKindBus) or (Header = AvtExtendedHeader)) and (DataLen >= 4) and
+    (FBuffer[HeaderLen + 1] and $10 <> 0))) then
   begin
     Consume(1);
     Inc(FResyncs);

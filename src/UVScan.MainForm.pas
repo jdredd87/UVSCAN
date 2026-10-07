@@ -310,6 +310,7 @@ type
     procedure FitFlowHeights;
     procedure FitVehicleColumns;
     procedure FitFormRows;
+    procedure FitWrappedText;
     // navigation
     procedure ShowPage(Page: TTabItem);
     function CurrentPage: TTabItem;
@@ -577,6 +578,20 @@ begin
   {$ENDIF}
   grdMessages.AddColumn('', 400, gaLeft, True);
   grdMessages.OnGetText := MessagesGetText;
+
+  if IsMobile then
+  begin
+    // A phone is too narrow for these columns: wrap the text instead of cutting it.
+    grdMessages.SetColumnWrap(0, True);
+    grdMessages.AutoHeights := True;
+    grdControls.SetColumnVisible(2, False); // the raw command is on the edit screen
+    grdControls.SetColumnWidth(0, 120);
+    grdControls.SetColumnWidth(1, 84);
+    grdControls.SetColumnWidth(3, 110);
+    grdControls.SetColumnWrap(0, True);
+    grdControls.SetColumnWrap(3, True);
+    grdControls.AutoHeights := True;
+  end;
 end;
 
 { Phone: the PID list becomes the first tab; the bars wrap. }
@@ -1115,6 +1130,63 @@ begin
   Wide(chkSound, gbAlerts);
   Wide(lblDiscoverHelp, gbDiscover);
   lblDiscoverHelp.WordWrap := True;
+  // Advanced: caption, then the frame row, then the trace box, one under another.
+  if gbAdvanced.Width >= 50 then
+  begin
+    lblRaw.WordWrap := True;
+    lblRaw.Position.Y := 34;
+    lblRaw.Height := WrappedTextHeight(lblRaw, lblRaw.Width);
+    edtRaw.Position.Y := lblRaw.Position.Y + lblRaw.Height + 4;
+    btnSendRaw.Position.Y := edtRaw.Position.Y;
+    chkTrace.Position.Y := edtRaw.Position.Y + edtRaw.Height + 8;
+    gbAdvanced.Height := chkTrace.Position.Y + chkTrace.Height + 10;
+  end;
+  if gbDiscover.Width >= 50 then
+  begin
+    FitTextWidth(btnDiscoverPids);
+    btnDiscoverPids.Width := Min(btnDiscoverPids.Width, gbDiscover.Width - 24);
+    btnDiscoverPids.Position.Y := 34;
+    lblDiscoverHelp.Position.Y := btnDiscoverPids.Position.Y + btnDiscoverPids.Height + 6;
+  end;
+end;
+
+{ Boxes with word-wrapped text grow to show all of it (a phone wraps a lot). }
+procedure TMainForm.FitWrappedText;
+var
+  H: Single;
+begin
+  // Status strip: wraps on a phone rather than hiding the VIN and the rate.
+  if pnlStatus.Width > 50 then
+  begin
+    lblStatus.WordWrap := True;
+    lblStatus.TextSettings.Trimming := TTextTrimming.None;
+    H := WrappedTextHeight(lblStatus, pnlStatus.Width - lblStatus.Position.X - lblStatus.Margins.Right);
+    pnlStatus.Height := Max(28, H + 8);
+  end;
+  if pnlNotice.Width > 50 then
+  begin
+    lblNotice.WordWrap := True;
+    H := WrappedTextHeight(lblNotice, pnlNotice.Width - lblNotice.Margins.Left - lblNotice.Margins.Right);
+    pnlNotice.Height := Max(30, H + 10);
+  end;
+  if pnlCtlWarn.Width > 50 then
+  begin
+    lblCtlWarn.WordWrap := True;
+    H := WrappedTextHeight(lblCtlWarn, pnlCtlWarn.Width - lblCtlWarn.Margins.Left - lblCtlWarn.Margins.Right);
+    pnlCtlWarn.Height := H + lblCtlWarn.Margins.Top + lblCtlWarn.Margins.Bottom + 4;
+  end;
+  if pnlCtlRun.Width > 50 then
+  begin
+    lblCtlNotes.WordWrap := True;
+    lblCtlNotes.Height := Max(18, WrappedTextHeight(lblCtlNotes, pnlCtlRun.Width - pnlCtlRun.Padding.Left -
+      pnlCtlRun.Padding.Right));
+  end;
+  if gbDiscover.Width > 50 then
+  begin
+    lblDiscoverHelp.WordWrap := True;
+    lblDiscoverHelp.Height := WrappedTextHeight(lblDiscoverHelp, lblDiscoverHelp.Width);
+    gbDiscover.Height := lblDiscoverHelp.Position.Y + lblDiscoverHelp.Height + 12;
+  end;
 end;
 
 procedure TMainForm.FitFlowHeights;
@@ -1163,6 +1235,7 @@ begin
   FitTextWidth(lblList);
   FitVehicleColumns;
   FitFormRows;
+  FitWrappedText;
   // Connect page: group boxes around flow layouts (title + padding = 36).
   Fit(flAdapter, gbAdapter, 36);
   Fit(flScan, gbScan, 36);
@@ -1276,6 +1349,8 @@ begin
   if WindowState = TWindowState.wsNormal then
     FNormalBounds := TRect.Create(Left, Top, Left + Width, Top + Height);
   ArrangeLayout;
+  if IsMobile then
+    TThread.ForceQueue(nil, ApplyGridLayout);
   if FPidsDocked then
     pnlPids.Width := Min(pnlPids.Width, Max(200, ClientWidth - 400));
   TThread.ForceQueue(nil, FitFlowHeights);
@@ -2403,6 +2478,15 @@ begin
     D := FDisplay.Find(FLiveIds[I]);
     if (D <> nil) and (D.FontSize > 0) then
       grdLive.RowHeights[I] := Z(D.FontSize * PtToDip + 12);
+    // A wrapped PID name may need more lines than that.
+    if IsMobile then
+    begin
+      grdLive.RowHeights[I] := Max(grdLive.RowHeights[I],
+        grdLive.WrappedTextHeight(ColName, PidName(FLiveIds[I]), grdLive.FontSize));
+      if FCatalog.FindById(FLiveIds[I]) <> nil then
+        grdLive.RowHeights[I] := Max(grdLive.RowHeights[I],
+          grdLive.WrappedTextHeight(ColUnits, FCatalog.FindById(FLiveIds[I]).Units, grdLive.FontSize));
+    end;
   end;
 end;
 
@@ -2454,6 +2538,8 @@ end;
 
 { Column widths, row heights and fonts follow the zoom. }
 procedure TMainForm.ApplyGridLayout;
+var
+  W: Single;
 begin
   if grdLive = nil then
     Exit; // the form is still loading
@@ -2465,11 +2551,26 @@ begin
   grdLive.CellPadding := Z(6);
   if IsMobile then
   begin
-    grdLive.SetColumnWidth(ColName, Z(120));
-    grdLive.SetColumnWidth(ColValue, Z(96));
-    grdLive.SetColumnWidth(ColUnits, Z(52));
-    grdLive.SetColumnWidth(ColMin, Z(64));
-    grdLive.SetColumnWidth(ColMax, Z(64));
+    // A phone: the columns share the screen width whatever the zoom (zoom only
+    // changes the text), and PID names wrap rather than being cut short.
+    W := grdLive.Width - 14;
+    if W < 100 then
+      W := 380;
+    if chkMinMax.IsChecked then
+    begin
+      grdLive.SetColumnWidth(ColValue, W * 0.24);
+      grdLive.SetColumnWidth(ColUnits, W * 0.17);
+      grdLive.SetColumnWidth(ColMin, W * 0.15);
+      grdLive.SetColumnWidth(ColMax, W * 0.15);
+    end
+    else
+    begin
+      grdLive.SetColumnWidth(ColValue, W * 0.32);
+      grdLive.SetColumnWidth(ColUnits, W * 0.18);
+    end;
+    grdLive.SetColumnWidth(ColName, 60); // stretches into the rest
+    grdLive.SetColumnWrap(ColName, True);
+    grdLive.SetColumnWrap(ColUnits, True);
   end
   else
   begin
@@ -2800,6 +2901,7 @@ begin
   grdControls.OnSelect := nil;
   try
     grdControls.RowCount := Length(FCtlRows);
+    grdControls.AutoRowHeights;
     grdControls.ItemIndex := -1;
     for I := 0 to High(FCtlRows) do
       if (FCtlRows[I] <> nil) and SameText(FCtlRows[I].Name, Keep) then
@@ -3291,11 +3393,12 @@ end;
 procedure TMainForm.FlushMessages;
 var
   AtEnd: Boolean;
-  Cut: Integer;
+  Cut, First: Integer;
 begin
   if (FPendingLog.Count = 0) or (grdMessages = nil) then
     Exit;
   AtEnd := (FMessages.Count = 0) or (grdMessages.TopRow + grdMessages.VisibleRows >= FMessages.Count - 1);
+  First := FMessages.Count;
   FMessages.AddStrings(FPendingLog);
   FPendingLog.Clear;
   if FMessages.Count > MaxMessageLines + 500 then
@@ -3311,8 +3414,10 @@ begin
     finally
       FMessages.EndUpdate;
     end;
+    First := 0; // every row moved
   end;
   grdMessages.RowCount := FMessages.Count;
+  grdMessages.AutoRowHeights(First);
   if AtEnd then
     grdMessages.ScrollIntoView(FMessages.Count - 1);
   grdMessages.Refresh;
@@ -3350,6 +3455,7 @@ begin
     pnlNotice.Fill.Color := Palette.NoticeWarn;
   pnlNotice.Tag := Ord(IsError);
   pnlNotice.Visible := True;
+  TThread.ForceQueue(nil, FitWrappedText);
 end;
 
 procedure TMainForm.pnlNoticeClick(Sender: TObject);
@@ -3553,6 +3659,9 @@ begin
   begin
     View := FGaugeViews[I];
     Sz := TGaugeView.PreferredSize(FDisplay.Gauges[I].Style, FDisplay.Gauges[I].Size);
+    // A phone fits one column: scale the gauge up to its width.
+    if IsMobile and (Sz.cx * 2 + 3 * Gap > Avail) and (Sz.cx > 0) then
+      Sz := TSizeF.Create(Avail - 2 * Gap, Sz.cy * (Avail - 2 * Gap) / Sz.cx);
     if (X > Gap) and (X + Sz.cx + Gap > Avail) then
     begin
       X := Gap;
@@ -3779,6 +3888,8 @@ begin
     if FStatus[P] <> '' then
       S := S + IfThen(S <> '', '  ' + #$00B7 + '  ', '') + FStatus[P];
   lblStatus.Text := S;
+  if FChromeReady and (Part <> spRate) then // the rate changes every tick, but not its length much
+    FitWrappedText;
 end;
 
 end.

@@ -27,6 +27,7 @@ type
     [Setup] procedure Setup;
     [TearDown] procedure TearDown;
     [Test] procedure ConnectsAndReadsVehicleInfo;
+    [Test] procedure ConnectsWhenAvtHoldsHalfAFrame;
     [Test] procedure ScansAndDecodesValues;
     [Test] procedure ReportsRejectedPidAndKeepsScanning;
     [Test] procedure LogsToCsv;
@@ -148,6 +149,29 @@ begin
   Assert.AreEqual('04 0E', Ev.Vehicle.Firmware);
   Assert.AreEqual(SimulatedVin, Ev.Vehicle.Vin);
   Assert.AreEqual(IntToStr(SimulatedOsid), Ev.Vehicle.Osid);
+  Assert.IsFalse(HasEvent(eeError));
+end;
+
+procedure TEngineTests.ConnectsWhenAvtHoldsHalfAFrame;
+var
+  Cmd: TEngineCommand;
+  Ev: TEngineEvent;
+begin
+  // A program stopped while sending "09 6C 10 F1 ..." left the AVT waiting for
+  // six more bytes: the first two E1 33 / B0 rounds only complete that frame.
+  Cmd := Command(ecConnect);
+  Cmd.Factory :=
+    function: ISerialPort
+    begin
+      FSim := TSimulatedAvt.Create;
+      FSim.Open;
+      FSim.Write(HexToBytes('09 6C 10 F1'));
+      Result := FSim;
+    end;
+  FEngine.Post(Cmd);
+  Assert.IsTrue(WaitUntil(function: Boolean begin Result := HasEvent(eeVehicleInfo) end), 'no vehicle info');
+  Assert.IsTrue(FindEvent(eeVehicleInfo, Ev));
+  Assert.AreEqual(SimulatedVin, Ev.Vehicle.Vin);
   Assert.IsFalse(HasEvent(eeError));
 end;
 

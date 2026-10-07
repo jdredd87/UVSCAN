@@ -41,6 +41,7 @@ type
     Align: TGridAlign;
     Stretch: Boolean;
     Visible: Boolean;
+    Wrap: Boolean;          // word-wrap the text (give the row the height it needs)
   end;
 
   TDataGrid = class(TControl)
@@ -64,6 +65,9 @@ type
     FUpdatingScroll: Boolean;
     // colours
     FCheckColor: TAlphaColor;
+    FAutoHeights: Boolean;
+    FMeasure: TTextLayout;        // for WrappedTextHeight
+    FLastAutoWidth: Single;
     FThemeSub: TMessageSubscriptionId;
     FBackColor, FAltColor, FTextColor, FHeaderColor, FHeaderTextColor, FLineColor,
     FSelColor, FSelTextColor, FSelInactiveColor, FGroupColor, FGroupTextColor, FDimTextColor: TAlphaColor;
@@ -105,7 +109,7 @@ type
     function ColumnWidths: TArray<Single>;
     function HeaderBorderAt(X, Y: Single): Integer;
     procedure DrawText(const R: TRectF; const S: string; Align: TGridAlign; Color: TAlphaColor; Size: Single;
-      Bold: Boolean);
+      Bold: Boolean; Wrap: Boolean = False);
     procedure DrawCheck(const R: TRectF; Checked: Boolean; Color: TAlphaColor);
     function CheckRect(const RowRect: TRectF): TRectF;
   protected
@@ -128,6 +132,15 @@ type
     procedure SetColumnCaption(Index: Integer; const Caption: string);
     procedure SetColumnWidth(Index: Integer; Width: Single);
     procedure SetColumnVisible(Index: Integer; Visible: Boolean);
+    procedure SetColumnWrap(Index: Integer; Wrap: Boolean);
+    { Width a column gets now (stretch columns share what is left). }
+    function ColumnWidth(Index: Integer): Single;
+    { Height Text needs in column Index when wrapped (cell padding included). }
+    function WrappedTextHeight(Index: Integer; const Text: string; Size: Single; Bold: Boolean = False): Single;
+    { Gives rows FromRow.. the height their wrapped columns need (OnGetText). }
+    procedure AutoRowHeights(FromRow: Integer = 0);
+    { Redo AutoRowHeights whenever the width changes. }
+    property AutoHeights: Boolean read FAutoHeights write FAutoHeights;
     { Rows that fit on screen from TopRow on (at least 1). }
     function VisibleRows: Integer;
     function RowAt(Y: Single): Integer;      // -1 = header / below the last row
@@ -243,6 +256,7 @@ end;
 destructor TDataGrid.Destroy;
 begin
   TMessageManager.DefaultManager.Unsubscribe(TThemeChangedMessage, FThemeSub);
+  FMeasure.Free;
   FLayout.Free;
   inherited;
 end;
@@ -547,6 +561,93 @@ procedure TDataGrid.Resize;
 begin
   inherited;
   UpdateScrollBar;
+  if FAutoHeights and (Abs(Width - FLastAutoWidth) > 1) then
+  begin
+    FLastAutoWidth := Width;
+    AutoRowHeights;
+  end;
+end;
+
+procedure TDataGrid.AutoRowHeights(FromRow: Integer);
+var
+  R, C: Integer;
+  H: Single;
+  S: string;
+  Group, AnyWrap: Boolean;
+begin
+  AnyWrap := False;
+  for C := 0 to High(FColumns) do
+    AnyWrap := AnyWrap or (FColumns[C].Visible and FColumns[C].Wrap);
+  if not AnyWrap or not Assigned(FOnGetText) then
+    Exit;
+  if FromRow <= 0 then
+  begin
+    FRowHeights := nil;
+    FromRow := 0;
+  end;
+  SetLength(FRowHeights, FRowCount);
+  for R := FromRow to FRowCount - 1 do
+  begin
+    Group := False;
+    if Assigned(FOnIsGroupRow) then
+      FOnIsGroupRow(Self, R, Group);
+    H := 0;
+    if not Group then
+      for C := 0 to High(FColumns) do
+        if FColumns[C].Visible and FColumns[C].Wrap then
+        begin
+          S := '';
+          FOnGetText(Self, C, R, S);
+          if S <> '' then
+            H := Max(H, WrappedTextHeight(C, S, FFontSize));
+        end;
+    if H > FRowHeight then
+      FRowHeights[R] := H
+    else
+      FRowHeights[R] := 0;
+  end;
+  UpdateScrollBar;
+  Repaint;
+end;
+
+procedure TDataGrid.SetColumnWrap(Index: Integer; Wrap: Boolean);
+begin
+  FColumns[Index].Wrap := Wrap;
+  Repaint;
+end;
+
+function TDataGrid.ColumnWidth(Index: Integer): Single;
+begin
+  Result := ColumnWidths[Index];
+end;
+
+function TDataGrid.WrappedTextHeight(Index: Integer; const Text: string; Size: Single; Bold: Boolean): Single;
+var
+  L: TTextLayout;
+  W: Single;
+begin
+  W := ColumnWidth(Index) - 2 * FCellPadding;
+  if (Index = 0) and FCheckboxes then
+    W := W - Min(18, FRowHeight - 6) - FCellPadding;
+  if FMeasure = nil then
+    FMeasure := TTextLayoutManager.DefaultTextLayout.Create;
+  L := FMeasure;
+  L.BeginUpdate;
+  try
+    L.MaxSize := TPointF.Create(Max(10, W), 100000);
+    L.WordWrap := True;
+    L.Font.Size := Size;
+    if FFontFamily <> '' then
+      L.Font.Family := FFontFamily;
+    if Bold then
+      L.Font.Style := [TFontStyle.fsBold]
+    else
+      L.Font.Style := [];
+    L.Text := Text;
+  finally
+    L.EndUpdate;
+  end;
+  Result := Ceil(L.TextHeight) + 2 * FCellPadding;
 end;
 
 function TDataGrid.ColumnWidths: TArray<Single>;
@@ -659,7 +760,7 @@ begin
 end;
 
 procedure TDataGrid.DrawText(const R: TRectF; const S: string; Align: TGridAlign; Color: TAlphaColor;
-  Size: Single; Bold: Boolean);
+  Size: Single; Bold: Boolean; Wrap: Boolean);
 begin
   if (S = '') or (R.Width <= 2) then
     Exit;
@@ -668,7 +769,7 @@ begin
     FLayout.TopLeft := R.TopLeft;
     FLayout.MaxSize := TPointF.Create(R.Width, R.Height);
     FLayout.Text := S;
-    FLayout.WordWrap := False;
+    FLayout.WordWrap := Wrap;
     FLayout.Trimming := TTextTrimming.Character;
     FLayout.Font.Size := Size;
     if FFontFamily <> '' then
@@ -820,7 +921,7 @@ begin
           if St.FontSize > 0 then
             H := St.FontSize;
           DrawText(TRectF.Create(CellR.Left + FCellPadding, CellR.Top, CellR.Right - FCellPadding, CellR.Bottom),
-            Text, FColumns[Col].Align, Fore, H, St.Bold);
+            Text, FColumns[Col].Align, Fore, H, St.Bold, FColumns[Col].Wrap);
           X := X + W[Col];
         end;
       end;

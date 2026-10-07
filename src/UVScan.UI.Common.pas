@@ -96,6 +96,8 @@ procedure ShowMenuAsActions(Form: TCustomForm; Menu: TPopupMenu; const At: TPoin
 { Widens a button, check box or label so its text fits in the active style's
   font (styles differ: Win10Modern's text is bigger than the default's). }
 procedure FitTextWidth(C: TControl; MinWidth: Single = 0);
+{ Height a word-wrapped label needs at Width (in the active style's font). }
+function WrappedTextHeight(L: TLabel; Width: Single): Single;
 
 { True on phones and tablets: windows are full screen, no mouse hover. }
 function IsMobile: Boolean;
@@ -346,6 +348,28 @@ begin
   else
     Extra := 6;
   C.Width := Max(MinWidth, Ceil(W + Extra));
+end;
+
+function WrappedTextHeight(L: TLabel; Width: Single): Single;
+var
+  Layout: TTextLayout;
+begin
+  L.ApplyStyleLookup;
+  Layout := TTextLayoutManager.DefaultTextLayout.Create;
+  try
+    Layout.BeginUpdate;
+    try
+      Layout.Font := L.ResultingTextSettings.Font;
+      Layout.WordWrap := True;
+      Layout.MaxSize := TPointF.Create(Max(20, Width), 100000);
+      Layout.Text := L.Text;
+    finally
+      Layout.EndUpdate;
+    end;
+    Result := Ceil(Layout.TextHeight) + 2;
+  finally
+    Layout.Free;
+  end;
 end;
 
 procedure MessageBox(const Msg: string; DlgType: TMsgDlgType; const OnClose: TProc);

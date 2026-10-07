@@ -164,6 +164,8 @@ type
     procedure DoConnect(const Factory: TPortFactory);
     procedure DoDisconnect;
     procedure DoReadVehicleInfo;
+    function ReadBlock(Block: Byte; MinLen: Integer; out Msg: TClass2Message): Boolean;
+    procedure FlushInput;
     procedure DoStartScan(const Ids: TArray<Integer>);
     procedure DoStopScan;
     procedure ForgetScan;
@@ -445,6 +447,8 @@ begin
   if F.IsBusMessage and TryParseClass2(F.BusMessage, Msg) and (Msg.Mode = $6A) and
     (Length(Msg.Data) = 1) and (Msg.Data[0] = 0) then
     Exit; // PCM acknowledging "stop streaming" (6A 00)
+  if F.IsBusMessage and TryParseClass2(F.BusMessage, Msg) and (Msg.Mode = $60) then
+    Exit; // a module back to normal after mode $20 (sent when connecting / releasing controls)
   if F.IsBusMessage and TryParseClass2(F.BusMessage, Msg) then
   begin
     if FStreaming and (Msg.Mode = $6A) and (Msg.Source = AddrPcm) then
@@ -575,6 +579,8 @@ end;
 procedure TScanEngine.DoConnect(const Factory: TPortFactory);
 var
   F: TAvtFrame;
+  Ok: Boolean;
+  Attempt: Integer;
 begin
   if FPort <> nil then
     DoDisconnect;
@@ -587,20 +593,30 @@ begin
   SetState(esBusy);
 
   // Same initialisation the legacy app used: E1 33 (VPW mode), B0 (version).
-  SendFrame(HexToBytes('E1 33'));
-  if not WaitFor(
-    function(const Fr: TAvtFrame): Boolean
-    begin
-      Result := (Fr.Header = $91) or (Fr.Kind = $C); // AVT-841 answers 91 07
-    end, 500, F) then
-    Warn('No reply to AVT mode command (E1 33)');
-
-  SendFrame(HexToBytes('B0'));
-  if not WaitFor(
-    function(const Fr: TAvtFrame): Boolean
-    begin
-      Result := (Fr.Header = $92) and (Length(Fr.Data) >= 2);
-    end, 1000, F) then
+  // Tried three times: if a program was stopped halfway through sending a
+  // frame, the AVT takes the first bytes we send as the rest of that frame.
+  for Attempt := 1 to 3 do
+  begin
+    SendFrame(HexToBytes('E1 33'));
+    if not WaitFor(
+      function(const Fr: TAvtFrame): Boolean
+      begin
+        Result := (Fr.Header = $91) or (Fr.Kind = $C); // AVT-841 answers 91 07
+      end, 500, F) then
+      Log('No reply to the AVT mode command (E1 33)');
+    SendFrame(HexToBytes('B0'));
+    Ok := WaitFor(
+      function(const Fr: TAvtFrame): Boolean
+      begin
+        Result := (Fr.Header = $92) and (Length(Fr.Data) >= 2);
+      end, 1000, F);
+    if Ok or Terminated then
+      Break;
+    Log('No answer from the AVT (attempt %d of 3)', [Attempt]);
+    Drain(200);
+    FlushInput;
+  end;
+  if not Ok then
   begin
     EmitText(eeError, 'No response from the AVT interface. Check the port, baud rate and power.');
     DoDisconnect;
@@ -608,8 +624,22 @@ begin
   end;
   FVehicle.Firmware := BytesToHex(F.Data); // AVT-841: 92 04 13 -> '04 13'
   Log('AVT firmware %s', [FVehicle.Firmware]);
+  // The PCM may still be streaming for an earlier session (unplugged, or
+  // reconnected within its tester-present timeout): stop that and empty its
+  // schedule slots, so the replies below are not buried in stream data.
+  ResetStreamSlots;
+  FlushInput;
   SetState(esConnected);
   DoReadVehicleInfo;
+end;
+
+{ Drops whatever has arrived but not been handled yet: frames waiting in
+  FPending, half a frame in the parser, and bytes still in the adapter. }
+procedure TScanEngine.FlushInput;
+begin
+  FPending.Clear;
+  FParser.Clear;
+  FPort.Purge;
 end;
 
 procedure TScanEngine.DoDisconnect;
@@ -641,6 +671,27 @@ begin
   SetState(esDisconnected);
 end;
 
+{ Mode $3C read of one block, tried twice: a reply can be lost to a bus
+  collision or to framing that is resyncing. MinLen counts the block number. }
+function TScanEngine.ReadBlock(Block: Byte; MinLen: Integer; out Msg: TClass2Message): Boolean;
+var
+  Attempt: Integer;
+begin
+  for Attempt := 1 to 2 do
+  begin
+    Result := Exchange(ReadBlockRequest(Block),
+      function(const Fr: TAvtFrame): Boolean
+      var
+        M: TClass2Message;
+      begin
+        Result := FromPcm(Fr, M) and (M.Mode = ModeReadBlock + PositiveOffset) and
+          (Length(M.Data) >= MinLen) and (M.Data[0] = Block);
+      end, ReplyTimeoutMs, Msg);
+    if Result then
+      Exit;
+  end;
+end;
+
 procedure TScanEngine.DoReadVehicleInfo;
 var
   Msg: TClass2Message;
@@ -657,16 +708,10 @@ begin
   SetState(esBusy);
   try
     Vin := '';
+    FlushInput; // stale stream frames or half a frame would only get in the way
     for Block := BlockVin1 to BlockVin3 do
     begin
-      if not Exchange(ReadBlockRequest(Block),
-        function(const Fr: TAvtFrame): Boolean
-        var
-          M: TClass2Message;
-        begin
-          Result := FromPcm(Fr, M) and (M.Mode = ModeReadBlock + PositiveOffset) and
-            (Length(M.Data) > 0) and (M.Data[0] = Block);
-        end, ReplyTimeoutMs, Msg) then
+      if not ReadBlock(Block, 1, Msg) then
       begin
         Warn('No VIN reply from the PCM. Is the key on?');
         Vin := '';
@@ -678,14 +723,7 @@ begin
     end;
     FVehicle.Vin := Vin;
 
-    if Exchange(ReadBlockRequest(BlockOsid),
-      function(const Fr: TAvtFrame): Boolean
-      var
-        M: TClass2Message;
-      begin
-        Result := FromPcm(Fr, M) and (M.Mode = ModeReadBlock + PositiveOffset) and
-          (Length(M.Data) >= 5) and (M.Data[0] = BlockOsid);
-      end, ReplyTimeoutMs, Msg) then
+    if ReadBlock(BlockOsid, 5, Msg) then
       FVehicle.Osid := UIntToStr((Cardinal(Msg.Data[1]) shl 24) or (Msg.Data[2] shl 16) or
         (Msg.Data[3] shl 8) or Msg.Data[4])
     else
