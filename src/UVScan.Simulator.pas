@@ -370,7 +370,9 @@ begin
     begin
       S.Id := FSlots[Slot][I];
       S.IntervalMs := FSlotSpeed[Slot];
-      S.NextMs := FClock.ElapsedMilliseconds + 10 * (I + 1) + 5 * Slot;
+      // Slot 2 half an interval after slot 1, as the PCM spreads them: with
+      // the same DPIDs in both, updates come evenly (not in pairs 5 ms apart).
+      S.NextMs := FClock.ElapsedMilliseconds + 10 * (I + 1) + 5 + (Slot - 1) * (S.IntervalMs div 2);
       FStreaming.Add(S);
     end;
 end;

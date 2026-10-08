@@ -29,6 +29,7 @@ type
     [Test] procedure ConnectsAndReadsVehicleInfo;
     [Test] procedure ConnectsWhenAvtHoldsHalfAFrame;
     [Test] procedure ScansAndDecodesValues;
+    [Test] procedure UpdatesComeEvenly;
     [Test] procedure ReportsRejectedPidAndKeepsScanning;
     [Test] procedure LogsToCsv;
     [Test] procedure TestsPids;
@@ -206,6 +207,39 @@ begin
   FEngine.Post(Command(ecStopScan));
   Assert.IsTrue(WaitUntil(function: Boolean begin Result := FState = esConnected end), 'did not stop');
   Assert.IsFalse(HasEvent(eeError));
+end;
+
+{ Up to 4 DPIDs go in both PCM slots for about 10 updates a second; on the
+  bench PCM they come evenly (every 0.1 s), so the simulator's must too, or
+  the live chart and logs get pairs of nearly equal samples. }
+procedure TEngineTests.UpdatesComeEvenly;
+var
+  Cmd: TEngineCommand;
+  Samples: TArray<TLiveSample>;
+  I: Integer;
+  Gap, MinGap: Double;
+begin
+  Connect;
+  Cmd := Command(ecStartScan);
+  Cmd.PidIds := [IdRpm, IdEct];
+  FEngine.Post(Cmd);
+  Assert.IsTrue(WaitUntil(function: Boolean begin Result := FEngine.GetSnapshot.Cycles >= 2 end), 'no scan cycles');
+  FEngine.TakeSamples; // from here on
+  Samples := nil;
+  Assert.IsTrue(WaitUntil(
+    function: Boolean
+    begin
+      Samples := Samples + FEngine.TakeSamples;
+      Result := Length(Samples) >= 12;
+    end), 'too few samples');
+  MinGap := MaxDouble;
+  for I := 1 to High(Samples) do
+  begin
+    Gap := Samples[I].Time - Samples[I - 1].Time;
+    MinGap := Min(MinGap, Gap);
+  end;
+  Assert.IsTrue(MinGap > 0.06, Format('updates %.3f s apart', [MinGap]));
+  Assert.IsTrue((Samples[High(Samples)].Time - Samples[0].Time) / High(Samples) < 0.13, 'about 10 a second');
 end;
 
 procedure TEngineTests.ReportsRejectedPidAndKeepsScanning;
