@@ -6,6 +6,7 @@ UVScan reads live data, trouble codes and vehicle information from GM vehicles o
 - [Connecting](#connecting)
 - [Choosing PIDs and scan lists](#choosing-pids-and-scan-lists)
 - [Live data](#live-data)
+- [Live chart](#live-chart)
 - [Display and alerts](#display-and-alerts)
 - [Dashboard](#dashboard)
 - [Test display](#test-display)
@@ -70,6 +71,17 @@ Press **Start scan**. Each ticked PID gets a row with its current value, units a
 - With up to 4 DPIDs (about 24 bytes of PIDs) the PCM sends about 10 updates a second, with more about 5 (see [protocol notes](protocol.md)).
 
 ![Live data zoomed, without min / max](images/live-zoom.png)
+
+## Live chart
+
+The chart button in the top bar of *Live* and *Gauges* (or **⋮ → Live chart**) shows the running scan as a line chart — the [log viewer](#log-viewer)'s chart, fed by the scan instead of a file. It also charts the [test display](#test-display), so you can try it without a car. On Windows it is a window of its own, so you can keep it beside the live grid; on a phone it is a page (back returns to *Live*).
+
+- The newest values are on the right and the chart scrolls as they come in. The box after the buttons sets how much it shows: 15 s, 30 s, 1, 2, 5 or 10 minutes (remembered).
+- Every update of the scan is charted (about 10 a second with up to 4 DPIDs), and the last 15 minutes are kept while you scan, so you can open the chart after something happened and still see it.
+- **Pause:** click, drag or touch the chart (or press **Pause** / Space) to stop it scrolling and put the cursor there. The values on the left are then the ones at the cursor; the slider, **|<**, the mouse wheel, panning and selecting a stretch (for min / avg / max) all work as on a log. **Live** (or **>|**) goes back to now.
+- Channels, colours, widths, scales, alert colours, level bands, chart modes and saved **views** are the same as in the log viewer. The channels are named like the columns of a log, so a view saved for logs works on the live chart and the other way round.
+- **Image…** saves the chart as it is. **Demo**, **Open log…** or a recent log switch the window back to logs; **Live scan** (on a phone **Live**) returns to the scan.
+- A new scan starts the chart again with its PIDs.
 
 ## Display and alerts
 
@@ -277,7 +289,7 @@ Everything UVScan does is written here with a timestamp: connection steps, PCM a
 | F9 | Pause / resume log |
 | Ctrl + / Ctrl ‑ / Ctrl 0 | Zoom the live grid (Live data tab) |
 | Ctrl + mouse wheel | Zoom the live grid |
-| Space (log viewer) | Play / pause |
+| Space (log viewer) | Play / pause (live chart: pause / back to now) |
 | ← → Home End (log viewer chart) | Step through the log |
 
 ```

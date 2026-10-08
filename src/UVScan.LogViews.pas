@@ -3,7 +3,7 @@ unit UVScan.LogViews;
 (* Saved log viewer set-ups (logviews.json): which channels to chart, in what
    colour and width, on which scale, and how to colour values.
 
-  { "version": 1, "lastView": "Knock",
+  { "version": 1, "lastView": "Knock", "liveSpan": 60,
     "views": [
       { "name": "Knock", "mode": "lanes", "useDisplayLevels": true,
         "channels": [
@@ -13,7 +13,9 @@ unit UVScan.LogViews;
             "levels": [ { "name": "Knock", "when": ">=", "value": 2, "rowColor": "#FF5050" } ] } ] } ] }
 
   Channels are matched to a log by name ("RPM" or "RPM (RPM)"). Channels of
-  the log that a view does not list are hidden when the view is applied. *)
+  the log that a view does not list are hidden when the view is applied. The
+  live chart uses the same views (its channels are named like log columns);
+  liveSpan is how many seconds of it are shown. *)
 
 interface
 
@@ -55,6 +57,7 @@ type
     function GetItem(Index: Integer): TLogView;
   public
     LastView: string;
+    LiveSpan: Double;
     constructor Create;
     destructor Destroy; override;
     function IndexOf(const Name: string): Integer;
@@ -218,6 +221,7 @@ constructor TLogViewList.Create;
 begin
   inherited;
   FItems := TObjectList<TLogView>.Create(True);
+  LiveSpan := 60;
 end;
 
 destructor TLogViewList.Destroy;
@@ -268,9 +272,13 @@ var
   Arr: TJSONArray;
   I: Integer;
   V: TLogView;
+  S: Double;
 begin
   FItems.Clear;
   LastView := JStr(Root, 'lastView');
+  LiveSpan := 60;
+  if JFloatDef(Root, 'liveSpan', S) and (S >= 5) and (S <= 3600) then
+    LiveSpan := S;
   Arr := JArr(Root, 'views');
   if Arr = nil then
     Exit;
@@ -307,6 +315,7 @@ begin
   Result.AddPair('version', TJSONNumber.Create(LogViewsFileVersion));
   if LastView <> '' then
     Result.AddPair('lastView', LastView);
+  Result.AddPair('liveSpan', TJSONNumber.Create(LiveSpan));
   Arr := TJSONArray.Create;
   for V in FItems do
     Arr.AddElement(V.ToJson);

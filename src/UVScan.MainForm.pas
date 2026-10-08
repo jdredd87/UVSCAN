@@ -17,7 +17,7 @@ uses
   FMX.Platform, System.Messaging,
   UVScan.Serial, UVScan.Simulator, UVScan.Pids, UVScan.Dpid, UVScan.Dtc, UVScan.Engine,
   UVScan.Class2, UVScan.Paths, UVScan.Settings, UVScan.PidLists, UVScan.Defaults,
-  UVScan.Display, UVScan.Alerts, UVScan.Controls, UVScan.Gauge, UVScan.UI.DataGrid;
+  UVScan.Display, UVScan.Alerts, UVScan.Controls, UVScan.Gauge, UVScan.UI.DataGrid, UVScan.LogData;
 
 type
   { Parts of the one-line status strip. }
@@ -262,6 +262,9 @@ type
     FPidRows: TArray<Integer>;      // PID list rows: PID id, or -(category + 1) for a group row
     FLiveIds: TArray<Integer>;
     FLive: TLiveSnapshot;
+    FLiveLog: TLogData;       // the last minutes of the scan, for the live chart
+    FLiveStart: UInt64;
+    btnChart: TSpeedButton;
     FMin, FMax: TArray<Double>;
     FLogging: Boolean;
     FLogPaused: Boolean;
@@ -379,6 +382,8 @@ type
     procedure StopHolding;
     // live data
     procedure SetupLiveRows(const Ids: TArray<Integer>);
+    function AddLiveSample(const Time: Double; const Text: TArray<string>): Boolean;
+    procedure LiveChartClick(Sender: TObject);
     procedure StartTest;
     procedure StopTest;
     function TestSnapshot: TLiveSnapshot;
@@ -481,6 +486,8 @@ begin
   FConfirmed := TDictionary<string, Boolean>.Create;
   FAlerts := TAlertTracker.Create;
   FGaugeViews := TList<TGaugeView>.Create;
+  FLiveLog := TLogData.Create;
+  TLogViewerForm.SetLiveSource(FLiveLog);
   FMenuPidId := -1;
   FMenuGauge := -1;
   Caption := 'UVScan';
@@ -742,6 +749,20 @@ begin
   for I := 0 to 2 do
     Icon.Data.AddEllipse(TRectF.Create(10, 3 + I * 7, 14, 7 + I * 7));
   Icon.Stroke.Kind := TBrushKind.None;
+  // Live and Gauges: the live chart.
+  btnChart := TSpeedButton.Create(Self);
+  btnChart.Parent := pnlAppBar;
+  btnChart.Stored := False;
+  btnChart.Align := TAlignLayout.Right;
+  btnChart.Position.X := btnAction.Position.X - 1; // left of the main action
+  btnChart.Width := 44;
+  btnChart.Text := '';
+  btnChart.Hint := 'Live chart';
+  btnChart.ShowHint := True;
+  btnChart.OnClick := LiveChartClick;
+  Icon := AddIcon(btnChart);
+  Icon.Data.Data := 'M3 4 L3 20 L21 20 M6 15 L10 10 L14 13 L20 6';
+  Icon.Fill.Kind := TBrushKind.None;
 
   AddMore('Real-time controls', 'Switch outputs, hold values, reset learned values', tiControls);
   AddMore('Trouble codes', 'Read and clear stored codes', tiVehicle);
@@ -901,6 +922,7 @@ begin
   btnBack.Visible := (tcMain.ActiveTab = tiMore) and (P <> tiMoreMenu);
   btnMenu.Visible := (P = tiLive) or (P = tiDashboard) or (P = tiPids) or (P = tiMessages) or (P = tiConnect) or
     (P = tiControls);
+  btnChart.Visible := (P = tiLive) or (P = tiDashboard);
   for I := 0 to 4 do
     FNavButtons[I].Repaint;
 end;
@@ -1057,6 +1079,7 @@ begin
   P := CurrentPage;
   if P = tiLive then
   begin
+    AddPageMenuItem('Live chart', LiveChartClick);
     AddPageMenuItem('Reset min / max', btnResetMinMaxClick);
     AddPageMenuItem(btnLiveTest.Text, btnTestDisplayClick, btnLiveTest.Enabled);
     AddPageMenuItem('Show min / max', ToggleMinMaxClick, True, chkMinMax.IsChecked);
@@ -1070,6 +1093,7 @@ begin
     AddPageMenuItem('Add gauge...', btnAddGaugeClick);
     AddPageMenuItem('Tick these PIDs', btnTickDashPidsClick);
     AddPageMenuItem(btnDashTest.Text, btnTestDisplayClick, btnDashTest.Enabled);
+    AddPageMenuItem('Live chart', LiveChartClick);
   end
   else if P = tiPids then
   begin
@@ -1164,6 +1188,7 @@ begin
   Bar(pnlStatus);
   Icon(btnBack);
   Icon(btnMenu);
+  Icon(btnChart);
   if FAddGauge <> nil then
   begin
     FAddGauge.Fill.Color := P.Accent;
@@ -1510,6 +1535,8 @@ begin
   FConfirmed.Free;
   FAlerts.Free;
   FGaugeViews.Free; // the views themselves are owned by the form
+  TLogViewerForm.SetLiveSource(nil);
+  FLiveLog.Free;
   FDtcs.Free;
   FSelected.Free;
   FSupport.Free;
@@ -2442,7 +2469,8 @@ procedure TMainForm.tmrRefreshTimer(Sender: TObject);
 var
   I: Integer;
   V: Double;
-  Phase, Repaint: Boolean;
+  Phase, Repaint, Charted: Boolean;
+  Samples: TArray<TLiveSample>;
 begin
   FlushMessages;
   if not LiveActive then
@@ -2456,12 +2484,28 @@ begin
       if FRowStyles[I].Flash then
         Repaint := True;
   end;
+  Samples := nil;
   if FTestMode then
     FLive := TestSnapshot
   else
+  begin
     FLive := FEngine.GetSnapshot;
+    Samples := FEngine.TakeSamples;
+  end;
   if Length(FLive.Values) <> Length(FLiveIds) then
     Exit;
+  // The live chart: every cycle of the scan; the test display as shown.
+  Charted := False;
+  if FTestMode then
+  begin
+    if FLive.Cycles <> FShownCycles then
+      Charted := AddLiveSample((TThread.GetTickCount64 - FLiveStart) / 1000, FLive.Text);
+  end
+  else
+    for var S in Samples do
+      Charted := AddLiveSample(S.Time, S.Text) or Charted;
+  if Charted then
+    TLogViewerForm.LiveChanged(False);
   for I := 0 to High(FLive.Values) do
   begin
     V := FLive.Values[I];
@@ -2496,6 +2540,12 @@ end;
 
 { Live rows for a scan (or a display test): one row per PID, fresh min/max and alert state. }
 procedure TMainForm.SetupLiveRows(const Ids: TArray<Integer>);
+var
+  Names, Units: TArray<string>;
+  Switches: TArray<Boolean>;
+  Id: Integer;
+  P: TPidDef;
+  Fmt: string;
 begin
   FLiveIds := Ids;
   FLive := Default(TLiveSnapshot);
@@ -2513,6 +2563,58 @@ begin
   if CurrentPage <> tiDashboard then
     ShowPage(tiLive);
   grdLive.Refresh;
+  // The live chart: one channel per PID, named like the columns of a log so
+  // saved log views fit it too.
+  Names := nil;
+  Units := nil;
+  Switches := nil;
+  for Id in Ids do
+  begin
+    P := FCatalog.FindById(Id);
+    if P <> nil then
+    begin
+      Names := Names + [P.DisplayName];
+      Units := Units + [P.Units];
+      Fmt := LowerCase(P.ResultFormat);
+      Switches := Switches + [(Pos('%o', Fmt) > 0) or (Pos('%y', Fmt) > 0)];
+    end
+    else
+    begin
+      Names := Names + ['#' + IntToStr(Id)];
+      Units := Units + [''];
+      Switches := Switches + [False];
+    end;
+  end;
+  FLiveLog.StartLive(IfThen(FTestMode, 'Test display', 'Live scan'), Names, Units, Switches);
+  FLiveStart := TThread.GetTickCount64;
+  TLogViewerForm.LiveChanged(True);
+end;
+
+{ A sample of the live chart, read back from the values' text like a log (so
+  units conversions and ON / OFF match a log). The last 15 minutes are kept. }
+function TMainForm.AddLiveSample(const Time: Double; const Text: TArray<string>): Boolean;
+const
+  KeepSeconds = 15 * 60;
+var
+  Values: TArray<Double>;
+  I: Integer;
+  Switch: Boolean;
+begin
+  Result := (FLiveLog.ChannelCount = Length(FLiveIds)) and (Length(Text) = Length(FLiveIds));
+  if not Result then
+    Exit;
+  SetLength(Values, Length(FLiveIds));
+  for I := 0 to High(FLiveIds) do
+    if FRejected.Contains(FLiveIds[I]) then
+      Values[I] := NaN
+    else
+      Values[I] := ParseLogValue(Text[I], Switch);
+  FLiveLog.Append(Time, Values, KeepSeconds);
+end;
+
+procedure TMainForm.LiveChartClick(Sender: TObject);
+begin
+  TLogViewerForm.ShowLive(FCatalog, FDisplay, LogFolder, LogViewsFile);
 end;
 
 function TMainForm.LiveActive: Boolean;

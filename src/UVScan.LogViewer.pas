@@ -2,7 +2,12 @@ unit UVScan.LogViewer;
 
 { Log viewer: opens UVScan CSV logs (or a made-up demo drive) and shows them
   as a chart and a grid that follow one cursor, with playback, per-channel
-  colours / scales / alert levels, and saved view set-ups (logviews.json). }
+  colours / scales / alert levels, and saved view set-ups (logviews.json).
+
+  Live: the same chart fed by the running scan (the main form keeps the last
+  minutes in a TLogData and says when it changes). It shows the last few
+  seconds or minutes as they come in; touching the chart pauses it there,
+  Live (or the end button) goes back to now. }
 
 interface
 
@@ -92,7 +97,12 @@ type
     procedure ChannelSettingChange(Sender: TObject);
     procedure btnLevelsClick(Sender: TObject);
   private
-    FData: TLogData;
+    FData: TLogData;            // what is shown: FOwnData or the live data
+    FOwnData: TLogData;         // logs and the demo
+    FLive: Boolean;
+    FSpeedIndex: Integer;       // playback speed, kept while the box shows live spans
+    FLastStats: UInt64;
+    btnLive: TButton;
     FChart: TLogChart;
     FChannels: TDataGrid;
     FGrid: TDataGrid;
@@ -163,12 +173,22 @@ type
     procedure ShowChannel;
     procedure StylesChanged;
     procedure SyncToCursor(FromGrid: Boolean);
+    procedure ShowTime;
     procedure ChartCursorChange(Sender: TObject);
     procedure SetPlaying(Value: Boolean);
     function SelectedChannel: Integer;
     function DisplayLevelsFor(Ch: Integer): TArray<TDisplayLevel>;
     function ChannelValueText(Ch, Row: Integer): string;
     procedure UpdateStatus;
+    procedure SetLive(Value: Boolean);
+    procedure LeaveLive;
+    procedure LiveUpdated(NewChannels: Boolean);
+    procedure FillSpeeds;
+    procedure SpeedChange(Sender: TObject);
+    procedure btnLiveClick(Sender: TObject);
+    procedure ChartFollowChange(Sender: TObject);
+    procedure TogglePlay;
+    procedure UpdatePlayButton;
     procedure SaveViews;
     procedure SaveViewAs(const Name: string);
     procedure ChartSelectionChange(Sender: TObject);
@@ -189,10 +209,20 @@ type
     procedure FileDragOver(Sender: TObject; const Data: TDragObject; const Point: TPointF;
       var Operation: TDragOperation);
     procedure FileDragDrop(Sender: TObject; const Data: TDragObject; const Point: TPointF);
+    class function Prepare(Catalog: TPidCatalog; Display: TDisplaySettings;
+      const LogFolder, ViewsFile: string): TLogViewerForm;
+    procedure Present;
   public
     { Opens the viewer (one window, reused). FileName '' = just show it. }
     class procedure ShowViewer(Catalog: TPidCatalog; Display: TDisplaySettings; const LogFolder, ViewsFile,
       FileName: string);
+    { Opens it on the live data. }
+    class procedure ShowLive(Catalog: TPidCatalog; Display: TDisplaySettings; const LogFolder, ViewsFile: string);
+    { The live data (not owned; nil = none, e.g. when its owner goes). }
+    class procedure SetLiveSource(Data: TLogData);
+    { The live data has new samples, or (NewChannels) was started again for
+      another scan. }
+    class procedure LiveChanged(NewChannels: Boolean);
   end;
 
 implementation
@@ -204,6 +234,7 @@ uses
 
 var
   Viewer: TLogViewerForm;
+  LiveSource: TLogData;
 
 const
   Speeds: array[0..6] of Double = (0.25, 0.5, 1, 2, 5, 10, 20);
@@ -216,60 +247,112 @@ const
   NarrowWidth = 700;
   StatsColor = TAlphaColor($FF0060B0);  // selection statistics stand out
   CursorRowColor = TAlphaColor($FFC8E6F5);
+  LiveSpans: array[0..5] of Double = (15, 30, 60, 120, 300, 600);
 
-class procedure TLogViewerForm.ShowViewer(Catalog: TPidCatalog; Display: TDisplaySettings; const LogFolder,
-  ViewsFile, FileName: string);
+class function TLogViewerForm.Prepare(Catalog: TPidCatalog; Display: TDisplaySettings;
+  const LogFolder, ViewsFile: string): TLogViewerForm;
 begin
   if Viewer = nil then
     Viewer := TLogViewerForm.Create(Application);
-  Viewer.FCatalog := Catalog;
-  Viewer.FDisplay := Display;
-  Viewer.FLogFolder := LogFolder;
-  if Viewer.FViewsFile <> ViewsFile then
+  Result := Viewer;
+  Result.FCatalog := Catalog;
+  Result.FDisplay := Display;
+  Result.FLogFolder := LogFolder;
+  if Result.FViewsFile <> ViewsFile then
   begin
-    Viewer.FViewsFile := ViewsFile;
+    Result.FViewsFile := ViewsFile;
     if FileExists(ViewsFile) then
       try
-        Viewer.FViews.LoadFromFile(ViewsFile);
+        Result.FViews.LoadFromFile(ViewsFile);
       except
         // a broken file just means no saved views
       end;
-    Viewer.FillViews(Viewer.FViews.LastView);
+    Result.FillViews(Result.FViews.LastView);
+    Result.FillSpeeds; // the saved live span
   end;
-  Viewer.FillRecent;
-  Viewer.ApplyPalette; // the theme may have changed since it was last open
-  if FileName <> '' then
-    try
-      Viewer.FData.LoadFromFile(FileName);
-      Viewer.ShowLog;
-    except
-      on E: Exception do
-        ShowWarning('Could not open the log: ' + E.Message);
-    end;
+  Result.FillRecent;
+  Result.ApplyPalette; // the theme may have changed since it was last open
+end;
+
+procedure TLogViewerForm.Present;
+begin
   if IsMobile then
   begin
-    Viewer.WindowState := TWindowState.wsMaximized;
-    KeepInSafeArea(Viewer);
+    WindowState := TWindowState.wsMaximized;
+    KeepInSafeArea(Self);
   end
-  else if Viewer.WindowState = TWindowState.wsMinimized then
-    Viewer.WindowState := TWindowState.wsNormal;
-  Viewer.Show;
-  Viewer.Activate;
+  else if WindowState = TWindowState.wsMinimized then
+    WindowState := TWindowState.wsNormal;
+  Show;
+  Activate;
+  if FLive then
+    LiveUpdated(False);
+end;
+
+class procedure TLogViewerForm.ShowViewer(Catalog: TPidCatalog; Display: TDisplaySettings; const LogFolder,
+  ViewsFile, FileName: string);
+var
+  V: TLogViewerForm;
+begin
+  V := Prepare(Catalog, Display, LogFolder, ViewsFile);
+  if FileName <> '' then
+    try
+      V.LeaveLive;
+      V.FData.LoadFromFile(FileName);
+      V.ShowLog;
+    except
+      on E: Exception do
+      begin
+        V.ShowLog;
+        ShowWarning('Could not open the log: ' + E.Message);
+      end;
+    end;
+  V.Present;
+end;
+
+class procedure TLogViewerForm.ShowLive(Catalog: TPidCatalog; Display: TDisplaySettings;
+  const LogFolder, ViewsFile: string);
+var
+  V: TLogViewerForm;
+begin
+  V := Prepare(Catalog, Display, LogFolder, ViewsFile);
+  V.SetLive(True);
+  V.Present;
+end;
+
+class procedure TLogViewerForm.SetLiveSource(Data: TLogData);
+begin
+  LiveSource := Data;
+  if Viewer <> nil then
+  begin
+    if Viewer.FLive and (Data = nil) then
+      Viewer.SetLive(False);
+    Viewer.btnLive.Enabled := Data <> nil;
+  end;
+end;
+
+class procedure TLogViewerForm.LiveChanged(NewChannels: Boolean);
+begin
+  // Closed: only a new set of channels matters now; Present catches up.
+  if (Viewer <> nil) and Viewer.FLive and (Viewer.Visible or NewChannels) then
+    Viewer.LiveUpdated(NewChannels);
 end;
 
 procedure TLogViewerForm.FormCreate(Sender: TObject);
 var
   M: TChartMode;
-  S: Double;
 begin
-  FData := TLogData.Create;
+  FOwnData := TLogData.Create;
+  FData := FOwnData;
   FViews := TLogViewList.Create;
+  FSpeedIndex := 2;
 
   FChart := TLogChart.Create(Self);
   FChart.Parent := layChart;
   FChart.Align := TAlignLayout.Client;
   FChart.OnCursorChange := ChartCursorChange;
   FChart.OnSelectionChange := ChartSelectionChange;
+  FChart.OnFollowChange := ChartFollowChange;
   FChart.OnDragOver := FileDragOver;
   FChart.OnDragDrop := FileDragDrop;
 
@@ -285,6 +368,8 @@ begin
   FChannels.AddColumn('Min', 50, gaRight);
   FChannels.AddColumn('Avg', 54, gaRight);
   FChannels.AddColumn('Max', 54, gaRight);
+  for var C := ColValue to ColMax do
+    FChannels.SetColumnShrink(C, True); // a long number smaller, not cut short
   FChannels.OnGetText := ChannelsGetText;
   FChannels.OnGetStyle := ChannelsGetStyle;
   FChannels.OnGetChecked := ChannelsGetChecked;
@@ -306,9 +391,18 @@ begin
   for M := Low(TChartMode) to High(TChartMode) do
     cbMode.Items.Add(ChartModeCaptions[M]);
   cbMode.ItemIndex := 0;
-  for S in Speeds do
-    cbSpeed.Items.Add(FormatFloat('0.##', S) + 'x');
-  cbSpeed.ItemIndex := 2;
+  FillSpeeds;
+  cbSpeed.OnChange := SpeedChange;
+  // The running scan, charted as it comes in.
+  btnLive := TButton.Create(Self);
+  btnLive.Parent := btnDemo.Parent;
+  btnLive.Stored := False;
+  btnLive.Text := 'Live scan';
+  btnLive.Hint := 'Chart the values of the running scan (or the test display) as they come in';
+  btnLive.ShowHint := True;
+  btnLive.OnClick := btnLiveClick;
+  btnLive.Enabled := LiveSource <> nil;
+  btnLive.SetBounds(btnDemo.Position.X + btnDemo.Width + 6, btnDemo.Position.Y, 90, btnDemo.Height);
   for var I := 1 to 4 do
     cbWidth.Items.Add(IntToStr(I) + ' px');
   FillColors;
@@ -770,9 +864,12 @@ begin
   ShowControls([btnOpen, lblView, cbView, btnSaveView, btnDeleteView, lblMode, cbMode, btnImage], False);
   pnlBar.Height := 52;
   btnDemo.Text := 'Demo';
-  FitTextWidth(btnDemo, 80);
-  btnDemo.SetBounds(W - 12 - btnDemo.Width, 8, btnDemo.Width, 36);
-  cbRecent.SetBounds(12, 8, Max(80, W - 36 - btnDemo.Width), 36);
+  btnLive.Text := 'Live';
+  FitTextWidth(btnDemo, 72);
+  FitTextWidth(btnLive, 64);
+  btnLive.SetBounds(W - 12 - btnLive.Width, 8, btnLive.Width, 36);
+  btnDemo.SetBounds(btnLive.Position.X - 8 - btnDemo.Width, 8, btnDemo.Width, 36);
+  cbRecent.SetBounds(12, 8, Max(80, btnDemo.Position.X - 8 - 12), 36);
   // Playback: the buttons, then the position and time.
   ShowControls([chkFollow, chkBands, chkUseDisplay], False);
   pnlPlay.Height := 96;
@@ -830,6 +927,7 @@ begin
   ShowControls([lblView, cbView, btnSaveView, btnDeleteView, lblMode, cbMode, btnImage, chkFollow, chkBands,
     chkUseDisplay], True);
   btnDemo.Text := 'Demo drive (made up)';
+  btnLive.Text := 'Live scan';
   lblTime.TextSettings.HorzAlign := TTextAlign.Leading;
   chkAuto.TextSettings.WordWrap := False;
   chkLevelColors.TextSettings.WordWrap := False;
@@ -949,7 +1047,8 @@ begin
   lblTime.Text := S;
   tbPos.Width := 300;
   cbMode.Width := 210;
-  pnlBar.Height := Flow([Ctls([btnOpen, cbRecent, btnDemo]), Ctls([lblView, cbView, btnSaveView, btnDeleteView]),
+  cbSpeed.Width := 84; // "10 min" too
+  pnlBar.Height := Flow([Ctls([btnOpen, cbRecent, btnDemo, btnLive]), Ctls([lblView, cbView, btnSaveView, btnDeleteView]),
     Ctls([lblMode, cbMode, btnImage])], ClientWidth);
   pnlPlay.Height := Flow([Ctls([btnStart, btnPlay, btnEnd, cbSpeed]), Ctls([tbPos, lblTime]), Ctls([chkFollow, chkBands]),
     Ctls([chkUseDisplay]), Ctls([btnSelect])], ClientWidth);
@@ -1002,7 +1101,7 @@ end;
 
 procedure TLogViewerForm.FormDestroy(Sender: TObject);
 begin
-  FData.Free;
+  FOwnData.Free;
   FViews.Free;
   if Viewer = Self then
     Viewer := nil;
@@ -1135,11 +1234,13 @@ end;
 procedure TLogViewerForm.OpenFile(const FileName: string);
 begin
   SetPlaying(False);
+  LeaveLive;
   try
     FData.LoadFromFile(FileName);
   except
     on E: Exception do
     begin
+      ShowLog;
       ShowWarning('Could not open the log: ' + E.Message);
       Exit;
     end;
@@ -1176,7 +1277,10 @@ var
 begin
   if FData.Count = 0 then
     Exit;
-  Name := ChangeFileExt(IfThen(FData.FileName <> '', ExtractFileName(FData.FileName), 'demo'), '') + '.png';
+  if FLive then
+    Name := 'live ' + FormatDateTime('yyyy-mm-dd hhnnss', Now) + '.png'
+  else
+    Name := ChangeFileExt(IfThen(FData.FileName <> '', ExtractFileName(FData.FileName), 'demo'), '') + '.png';
   if IsMobile then
   begin
     // No save dialog on a phone: the picture goes next to the logs.
@@ -1210,8 +1314,193 @@ end;
 procedure TLogViewerForm.btnDemoClick(Sender: TObject);
 begin
   SetPlaying(False);
+  LeaveLive;
   FData.MakeDemo;
   ShowLog;
+end;
+
+{ Live }
+
+procedure TLogViewerForm.btnLiveClick(Sender: TObject);
+begin
+  if FLive then
+    FChart.Follow := True // back to now
+  else
+    SetLive(True);
+end;
+
+procedure TLogViewerForm.SetLive(Value: Boolean);
+begin
+  if Value and (LiveSource = nil) then
+    Value := False;
+  if Value = FLive then
+  begin
+    if Value then
+      FChart.Follow := True;
+    Exit;
+  end;
+  SetPlaying(False);
+  FLive := Value;
+  if Value then
+    FData := LiveSource
+  else
+    FData := FOwnData;
+  FillSpeeds;
+  ShowLog;
+end;
+
+{ Before a log or the demo is loaded (into the viewer's own data). }
+procedure TLogViewerForm.LeaveLive;
+begin
+  if not FLive then
+    Exit;
+  FLive := False;
+  FData := FOwnData;
+  FillSpeeds;
+  UpdatePlayButton;
+end;
+
+{ The box after the playback buttons: playback speed for a log, how much to
+  show for live data. }
+procedure TLogViewerForm.FillSpeeds;
+var
+  I, Best: Integer;
+  S: Double;
+begin
+  FLoading := True;
+  cbSpeed.Items.BeginUpdate;
+  try
+    cbSpeed.Items.Clear;
+    if FLive then
+    begin
+      Best := 0;
+      for I := 0 to High(LiveSpans) do
+      begin
+        S := LiveSpans[I];
+        if S < 60 then
+          cbSpeed.Items.Add(Format('%d s', [Round(S)]))
+        else
+          cbSpeed.Items.Add(Format('%d min', [Round(S / 60)]));
+        if Abs(S - FViews.LiveSpan) < Abs(LiveSpans[Best] - FViews.LiveSpan) then
+          Best := I;
+      end;
+      cbSpeed.ItemIndex := Best;
+      cbSpeed.Hint := 'How much of the scan the chart shows';
+      FChart.LiveSpan := LiveSpans[Best];
+    end
+    else
+    begin
+      for S in Speeds do
+        cbSpeed.Items.Add(FormatFloat('0.##', S) + 'x');
+      cbSpeed.ItemIndex := FSpeedIndex;
+      cbSpeed.Hint := 'Playback speed';
+    end;
+  finally
+    cbSpeed.Items.EndUpdate;
+    FLoading := False;
+  end;
+  if FLive then
+  begin
+    btnStart.Hint := 'Go to the oldest values kept';
+    btnPlay.Hint := 'Pause here / go back to now (Space)';
+    btnEnd.Hint := 'Back to now';
+  end
+  else
+  begin
+    btnStart.Hint := 'Go to the start';
+    btnPlay.Hint := 'Play / pause (Space)';
+    btnEnd.Hint := 'Go to the end';
+  end;
+end;
+
+procedure TLogViewerForm.SpeedChange(Sender: TObject);
+begin
+  if FLoading or (cbSpeed.ItemIndex < 0) then
+    Exit;
+  if not FLive then
+  begin
+    FSpeedIndex := cbSpeed.ItemIndex;
+    Exit;
+  end;
+  FViews.LiveSpan := LiveSpans[Min(cbSpeed.ItemIndex, High(LiveSpans))];
+  SaveViews;
+  FChart.LiveSpan := FViews.LiveSpan;
+  if FChart.Follow then
+    FChart.ShowLatest
+  else
+    FChart.Follow := True; // picking how much to see means: show it now
+end;
+
+procedure TLogViewerForm.ChartFollowChange(Sender: TObject);
+begin
+  UpdatePlayButton;
+  if FLive then
+  begin
+    UpdateStatus;
+    if FChart.Follow then
+      SyncToCursor(False);
+  end;
+end;
+
+procedure TLogViewerForm.UpdatePlayButton;
+begin
+  if FLive then
+    btnPlay.Text := IfThen(FChart.Follow, 'Pause', 'Live')
+  else
+    btnPlay.Text := IfThen(FPlaying, 'Pause', 'Play');
+end;
+
+procedure TLogViewerForm.TogglePlay;
+begin
+  if FLive then
+    FChart.Follow := not FChart.Follow
+  else
+    SetPlaying(not FPlaying);
+end;
+
+procedure TLogViewerForm.LiveUpdated(NewChannels: Boolean);
+var
+  Ch: Integer;
+  Lo, Hi: Double;
+begin
+  if NewChannels then
+  begin
+    ShowLog; // another scan: its PIDs, the view applied to them
+    Exit;
+  end;
+  FSyncing := True;
+  try
+    FGrid.RowCount := FData.Count;
+  finally
+    FSyncing := False;
+  end;
+  FChart.ShowLatest;
+  if FChart.Follow then
+    SyncToCursor(False)
+  else
+  begin
+    FGrid.Refresh;
+    ShowTime;
+  end;
+  // The min / avg / max, the status and an automatic scale twice a second.
+  if TThread.GetTickCount64 - FLastStats >= 500 then
+  begin
+    FLastStats := TThread.GetTickCount64;
+    ChartSelectionChange(nil);
+    // an automatic scale grows with the data: its range in the boxes too
+    Ch := SelectedChannel;
+    if (Ch >= 0) and FStyles[Ch].AutoScale then
+    begin
+      AutoRange(FData.Channels[Ch], Lo, Hi);
+      FLoading := True;
+      try
+        edtMin.Text := FormatFloat('0.###', Lo);
+        edtMax.Text := FormatFloat('0.###', Hi);
+      finally
+        FLoading := False;
+      end;
+    end;
+  end;
 end;
 
 procedure TLogViewerForm.FillViews(const Select: string);
@@ -1400,6 +1689,16 @@ begin
   SetPlaying(False);
   ApplyView(CurrentView(ComboText(cbView)));
   FChart.SetData(FData);
+  if FLive then
+  begin
+    FChart.EmptyText := 'Start a scan (or the test display) to chart its values here';
+    FChart.NoSamplesText := 'Waiting for values...';
+  end
+  else
+  begin
+    FChart.EmptyText := 'Open a log (or the demo) to see it here';
+    FChart.NoSamplesText := 'This log has no samples';
+  end;
   ComputeLevels;
   FChart.SetStyles(FStyles, FLevels);
   FGrid.ClearColumns;
@@ -1414,17 +1713,26 @@ begin
     FSyncing := False;
   end;
   FillChannels;
-  if FData.Count > 0 then
+  if FLive then
+    FChart.Follow := True
+  else if FData.Count > 0 then
     FChart.SetCursorTime(FData.Times[0], False);
+  FChart.ShowLatest;
+  UpdatePlayButton;
   SyncToCursor(False);
-  if FData.FileName <> '' then
+  if FLive then
+    Caption := 'Live chart'
+  else if FData.FileName <> '' then
     Caption := 'Log viewer - ' + FData.Title
   else if FData.Title <> '' then
     Caption := 'Log viewer - ' + FData.Title
   else
     Caption := 'Log viewer';
   if FTitle <> nil then
-    FTitle.Text := IfThen(FData.Title <> '', FData.Title, 'Log viewer');
+    if FLive then
+      FTitle.Text := 'Live chart'
+    else
+      FTitle.Text := IfThen(FData.Title <> '', FData.Title, 'Log viewer');
   FLoading := True;
   cbRecent.ItemIndex := cbRecent.Items.IndexOf(ExtractFileName(FData.FileName));
   FLoading := False;
@@ -1436,6 +1744,31 @@ procedure TLogViewerForm.UpdateStatus;
 var
   Rate: Double;
 begin
+  if FLive then
+  begin
+    if FData.ChannelCount = 0 then
+      lblStatus0.Text := 'Live: no scan yet - start one (or the test display) on the Live page'
+    else
+      lblStatus0.Text := FData.Title + ': the values as they come in'; // Live scan / Test display
+    Rate := 0;
+    if FData.Duration > 0 then
+      Rate := (FData.Count - 1) / FData.Duration;
+    if FData.Count > 0 then
+      lblStatus1.Text := Format('Last %s kept, %d samples, %.1f /s, %d channels',
+        [FormatLogTime(FData.Duration), FData.Count, Rate, FData.ChannelCount])
+    else
+      lblStatus1.Text := '';
+    if FData.Count = 0 then
+      lblStatus2.Text := ''
+    else if FChart.Follow and IsMobile then
+      lblStatus2.Text := 'Touch the chart to pause there and look back'
+    else if FChart.Follow then
+      lblStatus2.Text := 'Click or drag in the chart to pause there and look back'
+    else
+      lblStatus2.Text := 'Paused - Live goes back to now';
+    LayoutStatus;
+    Exit;
+  end;
   if FData.Count = 0 then
   begin
     if IsMobile then
@@ -1983,13 +2316,32 @@ begin
       FGrid.ItemIndex := Row;
     end;
     FGrid.Refresh;
-    if FData.Duration > 0 then
-      tbPos.Value := Round((FChart.CursorTime - FData.Times[0]) / FData.Duration * tbPos.Max);
-    lblTime.Text := FormatLogTime(FChart.CursorTime - FData.Times[0]) + ' / ' + FormatLogTime(FData.Duration);
+    ShowTime;
     RefreshValues;
   finally
     FSyncing := False;
   end;
+end;
+
+{ The slider and the time: the cursor in the log (live: since the scan started). }
+procedure TLogViewerForm.ShowTime;
+var
+  Was: Boolean;
+begin
+  if FData.Count = 0 then
+    Exit;
+  Was := FSyncing;
+  FSyncing := True; // moving the slider is not the user's doing
+  try
+    if FData.Duration > 0 then
+      tbPos.Value := Round((FChart.CursorTime - FData.Times[0]) / FData.Duration * tbPos.Max);
+  finally
+    FSyncing := Was;
+  end;
+  if FLive then
+    lblTime.Text := FormatLogTime(FChart.CursorTime) + ' / ' + FormatLogTime(FData.Times[FData.Count - 1])
+  else
+    lblTime.Text := FormatLogTime(FChart.CursorTime - FData.Times[0]) + ' / ' + FormatLogTime(FData.Duration);
 end;
 
 procedure TLogViewerForm.tbPosChange(Sender: TObject);
@@ -2004,11 +2356,11 @@ end;
 
 procedure TLogViewerForm.SetPlaying(Value: Boolean);
 begin
-  if Value and (FData.Count < 2) then
+  if (Value and (FData.Count < 2)) or FLive then
     Value := False;
   FPlaying := Value;
   tmrPlay.Enabled := Value;
-  btnPlay.Text := IfThen(Value, 'Pause', 'Play');
+  UpdatePlayButton;
   if Value then
   begin
     if FChart.CursorTime >= FData.Times[FData.Count - 1] then
@@ -2020,7 +2372,7 @@ end;
 
 procedure TLogViewerForm.btnPlayClick(Sender: TObject);
 begin
-  SetPlaying(not FPlaying);
+  TogglePlay;
 end;
 
 procedure TLogViewerForm.MoveCursorToRow(Row: Integer);
@@ -2039,7 +2391,9 @@ end;
 
 procedure TLogViewerForm.btnEndClick(Sender: TObject);
 begin
-  if FData.Count > 0 then
+  if FLive then
+    FChart.Follow := True
+  else if FData.Count > 0 then
     MoveCursorToRow(FData.Count - 1);
 end;
 
@@ -2071,7 +2425,7 @@ begin
   OnChart := (Focused <> nil) and (Focused.GetObject = FChart);
   if KeyChar = ' ' then
   begin
-    SetPlaying(not FPlaying);
+    TogglePlay;
     Key := 0;
     KeyChar := #0;
   end

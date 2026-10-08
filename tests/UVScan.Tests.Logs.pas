@@ -20,6 +20,7 @@ type
     [Test] procedure CsvAndHeaderSplitting;
     [Test] procedure DemoDriveIsPlausible;
     [Test] procedure SaveAndReload;
+    [Test] procedure LiveAppendKeepsTheLastMinutes;
   end;
 
   [TestFixture]
@@ -233,6 +234,44 @@ end;
 
 { TLogViewTests }
 
+procedure TLogDataTests.LiveAppendKeepsTheLastMinutes;
+var
+  D: TLogData;
+  I: Integer;
+  V: Double;
+begin
+  D := TLogData.Create;
+  try
+    D.StartLive('Live', ['RPM', 'Fan'], ['RPM', ''], [False, True]);
+    Assert.AreEqual(0, D.Count);
+    Assert.AreEqual(2, D.ChannelCount);
+    Assert.IsTrue(D.Channels[1].IsSwitch);
+    Assert.IsTrue(IsNan(D.Channels[0].MinValue));
+    // 10 samples a second for 100 s, keeping 30 s
+    for I := 0 to 999 do
+    begin
+      if I = 5 then
+        V := NaN
+      else
+        V := 1000 + I;
+      D.Append(I / 10, [V, I mod 2], 30);
+    end;
+    Assert.AreEqual(99.9, D.Times[D.Count - 1], 1E-9, 'newest kept');
+    Assert.IsTrue(D.Times[0] <= 99.9 - 30, 'at least the last 30 s');
+    Assert.IsTrue(D.Times[0] > 99.9 - 30 * 1.5, 'old samples dropped (in chunks)');
+    Assert.AreEqual(1999.0, D.Channels[0].MaxValue, 1E-9);
+    Assert.AreEqual(1000 + D.Times[0] * 10, D.Channels[0].MinValue, 1E-6, 'min of what is kept');
+    Assert.AreEqual(D.Times[0], D.Times[D.IndexAt(D.Times[0])], 1E-9);
+    Assert.AreEqual(D.Count - 1, D.IndexAt(1000));
+    // a sample older than the last one is ignored
+    I := D.Count;
+    D.Append(50, [1, 1], 30);
+    Assert.AreEqual(I, D.Count);
+  finally
+    D.Free;
+  end;
+end;
+
 procedure TLogViewTests.RoundTrip;
 var
   L, L2: TLogViewList;
@@ -264,6 +303,7 @@ begin
     V.Channels := V.Channels + [C];
     L.Put(V);
     L.LastView := 'Knock';
+    L.LiveSpan := 300;
     Root := L.ToJson;
     try
       L2.LoadFromJson(Root);
@@ -272,6 +312,7 @@ begin
     end;
     Assert.AreEqual(1, L2.Count);
     Assert.AreEqual('Knock', L2.LastView);
+    Assert.AreEqual(300.0, L2.LiveSpan, 1E-9);
     Got := L2[0];
     Assert.IsTrue(Got.Mode = cmOverlay);
     Assert.IsFalse(Got.UseDisplayLevels);

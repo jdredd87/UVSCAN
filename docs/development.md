@@ -85,9 +85,9 @@ UVScanProbe COM9 cpidconfirm 01 1104,110C 3 repeat single-bit tests, keep effect
 | `src/UVScan.Alerts.pas` | Alert sounds (built‑in tones) and when to play them |
 | `src/UVScan.Gauge.pas` | `TGaugeView`: dial / bar / number gauge drawn with GDI+ |
 | `src/UVScan.Controls.pas` | `TControlList` (controls.json): command templates, value scaling |
-| `src/UVScan.LogData.pas` | `TLogData`: reads UVScan CSV logs; the made‑up demo drive |
+| `src/UVScan.LogData.pas` | `TLogData`: reads UVScan CSV logs; the made‑up demo drive; the live chart's rolling buffer (`StartLive`, `Append`) |
 | `src/UVScan.LogViews.pas` | `TLogViewList` (logviews.json): saved log viewer set‑ups |
-| `src/UVScan.LogChart.pas` | `TLogChart`: lanes / overlay / shared chart with cursor, zoom and pan (GDI+) |
+| `src/UVScan.LogChart.pas` | `TLogChart`: lanes / overlay / shared chart with cursor, zoom and pan; `Follow` keeps the newest `LiveSpan` seconds in view |
 | `src/UVScan.Dtc.pas` | `TDtcCatalog` (dtcs.json) |
 | `src/UVScan.Settings.pas` | `TAppSettings` (settings.json) |
 | `src/UVScan.LegacyImport.pas` | Old `PIDS.csv` import and catalog merge |
@@ -101,7 +101,7 @@ UVScanProbe COM9 cpidconfirm 01 1104,110C 3 repeat single-bit tests, keep effect
 | `src/UVScan.DisplayEditor.*` | Display & alerts dialog |
 | `src/UVScan.GaugeEditor.*` | Gauge dialog |
 | `src/UVScan.ControlEditor.*` | Real‑time control dialog |
-| `src/UVScan.LogViewer.*` | Log viewer window |
+| `src/UVScan.LogViewer.*` | Log viewer window, also the live chart (`ShowLive`; the main form owns the live `TLogData` and calls `LiveChanged`) |
 | `data/` | Factory defaults, compiled into the exe |
 | `tests/` | DUnitX tests |
 | `tools/UVScanProbe.dpr` | Console bench tool |
@@ -110,4 +110,4 @@ UVScanProbe COM9 cpidconfirm 01 1104,110C 3 repeat single-bit tests, keep effect
 
 ## Threading
 
-One `TThread` (`TScanEngine`) owns the port. The UI posts commands to a `TThreadedQueue`; the engine handles them strictly one after another (request, wait for the matching reply or a timeout, next request), sends tester‑present from the same loop so it never lands in the middle of an exchange, and reports back through `TThread.Queue` events. Live values are copied into a lock‑protected snapshot that a 100 ms UI timer reads; the grid repaints only cells whose text changed, and messages are added to the Messages tab in batches.
+One `TThread` (`TScanEngine`) owns the port. The UI posts commands to a `TThreadedQueue`; the engine handles them strictly one after another (request, wait for the matching reply or a timeout, next request), sends tester‑present from the same loop so it never lands in the middle of an exchange, and reports back through `TThread.Queue` events. Live values are copied into a lock‑protected snapshot that a 100 ms UI timer reads; every completed cycle is also queued with its time (`TakeSamples`, at most 1000 waiting) so the live chart gets each one even when the timer runs late; the grid repaints only cells whose text changed, and messages are added to the Messages tab in batches.

@@ -106,7 +106,7 @@ The top‑level `"defaults"` number records which set of built‑ins the file ha
 ## logviews.json
 
 ```json
-{ "version": 1, "lastView": "Knock check",
+{ "version": 1, "lastView": "Knock check", "liveSpan": 60,
   "views": [
     { "name": "Knock check", "mode": "lanes", "useDisplayLevels": true,
       "channels": [
@@ -117,6 +117,7 @@ The top‑level `"defaults"` number records which set of built‑ins the file ha
 
 | Field | Meaning |
 |---|---|
+| `liveSpan` | Seconds the live chart shows (15‑600). |
 | `mode` | `lanes`, `overlay` (own scales) or `shared` (one scale). |
 | `useDisplayLevels` | Channels without their own `levels` use the *Display & alerts* levels of the PID with the same name and units. |
 | `channels[].name` | Matched to log columns by name (`RPM` or `RPM (RPM)`); log columns not listed are hidden. |

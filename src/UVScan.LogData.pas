@@ -5,7 +5,11 @@ unit UVScan.LogData;
   The logger writes "Time (s),<name> (<units>),..." and one row per update,
   numbers with a '.' decimal point, "--" for no data and ON / OFF, YES / NO
   for switch PIDs (read back as 1 / 0). Rows that cannot be read are skipped
-  and counted. }
+  and counted.
+
+  The live chart fills one sample at a time (StartLive, Append) and keeps only
+  the last few minutes. Times and Values hold Count samples; the arrays may be
+  longer (room to grow). }
 
 interface
 
@@ -28,6 +32,7 @@ type
     FTitle: string;
     FTimes: TArray<Double>;
     FChannels: TArray<TLogChannel>;
+    FCount: Integer;
     FSkipped: Integer;
     procedure Finish;
     function GetCount: Integer;
@@ -40,6 +45,11 @@ type
       with knock retard, back to idle) at 10 updates a second. }
     procedure MakeDemo;
     procedure SaveToFile(const FileName: string);
+    { An empty log with these channels, to be filled by Append. }
+    procedure StartLive(const Title: string; const Names, Units: TArray<string>; const Switches: TArray<Boolean>);
+    { Adds a sample (one value per channel, NaN = no data; T not before the
+      last one) and drops the samples older than KeepSeconds before T. }
+    procedure Append(const T: Double; const Values: TArray<Double>; const KeepSeconds: Double);
     { Index of the last sample at or before T (0 if T is before the start). }
     function IndexAt(const T: Double): Integer;
     function Duration: Double;
@@ -178,12 +188,13 @@ begin
   FTitle := '';
   FTimes := nil;
   FChannels := nil;
+  FCount := 0;
   FSkipped := 0;
 end;
 
 function TLogData.GetCount: Integer;
 begin
-  Result := Length(FTimes);
+  Result := FCount;
 end;
 
 function TLogData.GetChannelCount: Integer;
@@ -260,6 +271,7 @@ begin
     Inc(Row);
   end;
   SetLength(FTimes, Row);
+  FCount := Row;
   for C := 0 to N - 1 do
   begin
     SetLength(Lists[C], Row);
@@ -278,7 +290,7 @@ begin
   begin
     FChannels[C].MinValue := NaN;
     FChannels[C].MaxValue := NaN;
-    for I := 0 to High(FChannels[C].Values) do
+    for I := 0 to FCount - 1 do
     begin
       V := FChannels[C].Values[I];
       if IsNan(V) then
@@ -304,7 +316,7 @@ begin
     for C := 0 to High(FChannels) do
       SB.Append(',').Append(FChannels[C].Caption);
     W.WriteLine(SB.ToString);
-    for I := 0 to High(FTimes) do
+    for I := 0 to FCount - 1 do
     begin
       SB.Clear;
       SB.Append(FormatFloat('0.000', FTimes[I], TFormatSettings.Invariant));
@@ -328,12 +340,12 @@ function TLogData.IndexAt(const T: Double): Integer;
 var
   Lo, Hi, Mid: Integer;
 begin
-  if Length(FTimes) = 0 then
+  if FCount = 0 then
     Exit(-1);
   if T <= FTimes[0] then
     Exit(0);
   Lo := 0;
-  Hi := High(FTimes);
+  Hi := FCount - 1;
   while Lo < Hi do
   begin
     Mid := (Lo + Hi + 1) div 2;
@@ -347,10 +359,70 @@ end;
 
 function TLogData.Duration: Double;
 begin
-  if Length(FTimes) < 2 then
+  if FCount < 2 then
     Result := 0
   else
-    Result := FTimes[High(FTimes)] - FTimes[0];
+    Result := FTimes[FCount - 1] - FTimes[0];
+end;
+
+procedure TLogData.StartLive(const Title: string; const Names, Units: TArray<string>;
+  const Switches: TArray<Boolean>);
+var
+  C: Integer;
+begin
+  Clear;
+  FTitle := Title;
+  SetLength(FChannels, Length(Names));
+  for C := 0 to High(Names) do
+  begin
+    FChannels[C].Name := Names[C];
+    if C <= High(Units) then
+      FChannels[C].Units := Units[C];
+    FChannels[C].IsSwitch := (C <= High(Switches)) and Switches[C];
+    FChannels[C].MinValue := NaN;
+    FChannels[C].MaxValue := NaN;
+  end;
+end;
+
+procedure TLogData.Append(const T: Double; const Values: TArray<Double>; const KeepSeconds: Double);
+var
+  C, Drop, Cap: Integer;
+  V: Double;
+begin
+  if (FCount > 0) and (T < FTimes[FCount - 1]) then
+    Exit;
+  // Old samples go in chunks (a quarter of what is kept), not one by one.
+  Drop := IndexAt(T - KeepSeconds);
+  if (FCount > 0) and (FTimes[Drop] < T - KeepSeconds) and (Drop >= Max(16, FCount div 4)) then
+  begin
+    Move(FTimes[Drop], FTimes[0], (FCount - Drop) * SizeOf(Double));
+    for C := 0 to High(FChannels) do
+      Move(FChannels[C].Values[Drop], FChannels[C].Values[0], (FCount - Drop) * SizeOf(Double));
+    Dec(FCount, Drop);
+    Finish; // the lowest / highest may have gone
+  end;
+  if FCount >= Length(FTimes) then
+  begin
+    Cap := Max(256, Length(FTimes) * 2);
+    SetLength(FTimes, Cap);
+    for C := 0 to High(FChannels) do
+      SetLength(FChannels[C].Values, Cap);
+  end;
+  FTimes[FCount] := T;
+  for C := 0 to High(FChannels) do
+  begin
+    V := NaN;
+    if C <= High(Values) then
+      V := Values[C];
+    FChannels[C].Values[FCount] := V;
+    if IsNan(V) then
+      Continue;
+    if IsNan(FChannels[C].MinValue) or (V < FChannels[C].MinValue) then
+      FChannels[C].MinValue := V;
+    if IsNan(FChannels[C].MaxValue) or (V > FChannels[C].MaxValue) then
+      FChannels[C].MaxValue := V;
+  end;
+  Inc(FCount);
 end;
 
 function TLogData.IndexOfChannel(const Name: string): Integer;
@@ -384,6 +456,7 @@ begin
   FTitle := 'Demo drive (made-up data)';
   N := Seconds * Rate;
   SetLength(FTimes, N);
+  FCount := N;
   SetLength(FChannels, Length(Names));
   for C := 0 to High(Names) do
   begin

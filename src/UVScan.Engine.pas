@@ -66,6 +66,12 @@ type
     LogPaused: Boolean;
   end;
 
+  { One complete scan cycle, for the live chart. }
+  TLiveSample = record
+    Time: Double;           // seconds since the scan started
+    Text: TArray<string>;   // per PID, as a log row has it (FormatValue)
+  end;
+
   TEngineCommandKind = (ecConnect, ecDisconnect, ecReadVehicleInfo, ecStartScan, ecStopScan,
     ecStartLog, ecStopLog, ecPauseLog, ecReadDtcs, ecClearDtcs, ecTestPids, ecSendRaw,
     ecWriteVin,
@@ -139,6 +145,7 @@ type
     // Snapshot shared with the UI
     FLock: TCriticalSection;
     FSnapshot: TLiveSnapshot;
+    FSamples: TList<TLiveSample>;
 
     procedure Emit(const Ev: TEngineEvent);
     procedure EmitText(Kind: TEngineEventKind; const Text: string);
@@ -191,7 +198,7 @@ type
     procedure HandleAnalog(const F: TAvtFrame);
     procedure CompleteCycle;
     procedure ComputeCalculated;
-    procedure PublishSnapshot;
+    procedure PublishSnapshot(CycleDone: Boolean = False);
     procedure WriteLogRow;
   protected
     procedure Execute; override;
@@ -201,6 +208,9 @@ type
     procedure Post(const Cmd: TEngineCommand);
     procedure Cancel;
     function GetSnapshot: TLiveSnapshot;
+    { Every cycle completed since the last call (the newest 1000 if it has
+      been longer), so a slow screen does not miss any. }
+    function TakeSamples: TArray<TLiveSample>;
     procedure SetTrace(Enabled: Boolean);
     { $2A speed nibble (StreamSpeedFast/Medium/Slow); applies from the next scan. }
     property StreamSpeed: Byte read FStreamSpeed write FStreamSpeed;
@@ -243,6 +253,7 @@ begin
   FPending := TQueue<TAvtFrame>.Create;
   FHeld := TDictionary<string, THeldControl>.Create;
   FLock := TCriticalSection.Create;
+  FSamples := TList<TLiveSample>.Create;
   FStreamSpeed := StreamSpeedFast;
   inherited Create(False);
   NameThreadForDebugging('UVScan engine');
@@ -258,6 +269,7 @@ begin
   FPending.Free;
   FHeld.Free;
   FLock.Free;
+  FSamples.Free;
 end;
 
 procedure TScanEngine.Post(const Cmd: TEngineCommand);
@@ -280,6 +292,17 @@ end;
 procedure TScanEngine.SetTrace(Enabled: Boolean);
 begin
   TInterlocked.Exchange(FTrace, Ord(Enabled));
+end;
+
+function TScanEngine.TakeSamples: TArray<TLiveSample>;
+begin
+  FLock.Enter;
+  try
+    Result := FSamples.ToArray;
+    FSamples.Clear;
+  finally
+    FLock.Leave;
+  end;
 end;
 
 function TScanEngine.GetSnapshot: TLiveSnapshot;
@@ -955,6 +978,12 @@ begin
     FRateCycles := 0;
     FRate := 0;
     FStray := 0;
+    FLock.Enter;
+    try
+      FSamples.Clear;
+    finally
+      FLock.Leave;
+    end;
     FScanClock := TStopwatch.StartNew;
     FRateClock := TStopwatch.StartNew;
     FLastData := TStopwatch.StartNew;
@@ -1140,13 +1169,16 @@ begin
   end;
   if (FLog <> nil) and not FLogPaused then
     WriteLogRow;
-  PublishSnapshot;
+  PublishSnapshot(True);
 end;
 
-procedure TScanEngine.PublishSnapshot;
+procedure TScanEngine.PublishSnapshot(CycleDone: Boolean);
+const
+  MaxSamples = 1000;
 var
   I: Integer;
   S: TLiveSnapshot;
+  Sample: TLiveSample;
 begin
   SetLength(S.PidIds, Length(FScanPids));
   SetLength(S.Values, Length(FScanPids));
@@ -1169,6 +1201,14 @@ begin
   FLock.Enter;
   try
     FSnapshot := S;
+    if CycleDone then
+    begin
+      Sample.Time := FScanClock.Elapsed.TotalSeconds;
+      Sample.Text := S.Text;
+      FSamples.Add(Sample);
+      if FSamples.Count > MaxSamples then
+        FSamples.DeleteRange(0, FSamples.Count - MaxSamples);
+    end;
   finally
     FLock.Leave;
   end;

@@ -12,7 +12,11 @@ unit UVScan.LogChart;
   double-click = show the whole log.
   Touch: drag = move the cursor, pinch = zoom (and pan with two fingers),
   double tap = whole log, long press then drag = select a range (or turn on
-  SelectMode so a drag selects). }
+  SelectMode so a drag selects).
+
+  Live data: with Follow on, ShowLatest shows the last LiveSpan seconds with
+  the cursor on the newest sample. Moving the cursor, panning, zooming or
+  selecting turns Follow off (pause), so what was just seen can be studied. }
 
 interface
 
@@ -47,6 +51,12 @@ type
     FOnSelectionChange: TNotifyEvent;
     FOnCursorChange: TNotifyEvent;
     FOnWindowChange: TNotifyEvent;
+    FFollow: Boolean;
+    FLiveSpan: Double;
+    FOnFollowChange: TNotifyEvent;
+    FEmptyText: string;
+    FNoSamplesText: string;
+    procedure SetFollow(Value: Boolean);
     procedure SetMode(Value: TChartMode);
     procedure SetShowBands(Value: Boolean);
     function TimeAtX(X: Single): Double;
@@ -80,6 +90,9 @@ type
     procedure Zoom(Factor: Double; const Around: Double);
     { Scrolls the window so T is visible (used while playing back). }
     procedure KeepVisible(const T: Double);
+    { Follow: the last LiveSpan seconds, the cursor on the newest sample;
+      otherwise just repaints (new samples may change the scales). }
+    procedure ShowLatest;
     function WindowStart: Double;
     function WindowEnd: Double;
     function HasSelection: Boolean;
@@ -97,6 +110,12 @@ type
     property SelectMode: Boolean read FSelectMode write FSelectMode;
     property OnCursorChange: TNotifyEvent read FOnCursorChange write FOnCursorChange;
     property OnWindowChange: TNotifyEvent read FOnWindowChange write FOnWindowChange;
+    property Follow: Boolean read FFollow write SetFollow;
+    property LiveSpan: Double read FLiveSpan write FLiveSpan;
+    property OnFollowChange: TNotifyEvent read FOnFollowChange write FOnFollowChange;
+    { Shown with no channels / with channels but under two samples. }
+    property EmptyText: string read FEmptyText write FEmptyText;
+    property NoSamplesText: string read FNoSamplesText write FNoSamplesText;
     property PopupMenu;
   end;
 
@@ -200,6 +219,9 @@ begin
   FSel0 := NaN;
   FSel1 := NaN;
   FShowBands := True;
+  FLiveSpan := 60;
+  FEmptyText := 'Open a log (or the demo) to see it here';
+  FNoSamplesText := 'This log has no samples';
   CanFocus := True;
   TabStop := True;
   HitTest := True;
@@ -325,10 +347,40 @@ begin
   Result := FT1;
 end;
 
+procedure TLogChart.SetFollow(Value: Boolean);
+begin
+  if FFollow = Value then
+    Exit;
+  FFollow := Value;
+  if Value then
+    ShowLatest;
+  if Assigned(FOnFollowChange) then
+    FOnFollowChange(Self);
+end;
+
+procedure TLogChart.ShowLatest;
+var
+  First, Last: Double;
+begin
+  if FFollow and (FData <> nil) and (FData.Count > 0) then
+  begin
+    First := FData.Times[0];
+    Last := FData.Times[FData.Count - 1];
+    // Until there is a full span, the line grows from the left edge.
+    FT1 := Max(Last, First + FLiveSpan);
+    FT0 := FT1 - FLiveSpan;
+    FCursor := Last;
+    if Assigned(FOnWindowChange) then
+      FOnWindowChange(Self);
+  end;
+  Repaint;
+end;
+
 procedure TLogChart.SetWindow(T0, T1: Double);
 var
   First, Last, Span, MinSpan: Double;
 begin
+  Follow := False;
   if (FData = nil) or (FData.Count < 2) then
   begin
     FT0 := 0;
@@ -385,6 +437,7 @@ procedure TLogChart.SetCursorTime(const T: Double; Notify: Boolean);
 begin
   if (FData = nil) or (FData.Count = 0) then
     Exit;
+  Follow := False;
   FCursor := EnsureRange(T, FData.Times[0], FData.Times[FData.Count - 1]);
   Repaint;
   if Notify and Assigned(FOnCursorChange) then
@@ -641,11 +694,11 @@ begin
     if (FData = nil) or (FData.Count < 2) or (FPlot.Width < 20) or (FPlot.Height < 20) then
     begin
       if (FData = nil) or (FData.ChannelCount = 0) then
-        S := 'Open a log (or the demo) to see it here'
+        S := FEmptyText
       else if N = 0 then
         S := 'Tick channels on the left to chart them'
       else if FData.Count < 2 then
-        S := 'This log has no samples'
+        S := FNoSamplesText
       else
         S := '';
       Txt(S, 0, 0, W, H, 15, DimText, TTextAlign.Center);
@@ -653,14 +706,15 @@ begin
     end;
     Fill(FPlot.Left, FPlot.Top, FPlot.Width, FPlot.Height, PlotBack);
 
-    // time grid and labels
+    // time grid and labels (not under the cursor's time)
     Step := NiceStep(FT1 - FT0, Max(2, Trunc(FPlot.Width / 90)));
     Tick := Ceil(FT0 / Step) * Step;
     while Tick <= FT1 do
     begin
       X := X_(Tick);
       Line(X, FPlot.Top, X, FPlot.Bottom, 1, GridColor);
-      Txt(FormatLogTime(Tick), X - 40, FPlot.Bottom + 3, 80, 18, 11, DimText, TTextAlign.Center);
+      if Abs(X - X_(FCursor)) > 50 then
+        Txt(FormatLogTime(Tick), X - 40, FPlot.Bottom + 3, 80, 18, 11, DimText, TTextAlign.Center);
       Tick := Tick + Step;
     end;
 
@@ -822,6 +876,7 @@ end;
 
 procedure TLogChart.StartSelect(X: Single);
 begin
+  Follow := False;
   FDrag := dgSelect;
   FSel0 := EnsureRange(TimeAtX(X), FData.Times[0], FData.Times[FData.Count - 1]);
   FSel1 := FSel0;
@@ -848,6 +903,7 @@ begin
   end
   else
   begin
+    Follow := False;
     FDrag := dgPan;
     Cursor := crSizeWE;
   end;
