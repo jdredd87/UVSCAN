@@ -546,6 +546,7 @@ begin
   // the background), so save whenever the app leaves the screen.
   if TPlatformServices.Current.SupportsPlatformService(IFMXApplicationEventService, Events) then
     Events.SetApplicationEventHandler(AppEvent);
+  HookBackGesture; // Android 16 no longer sends the back key
   ApplyCommandLine;
   TThread.ForceQueue(nil, FitFlowHeights);
 end;
@@ -1096,17 +1097,15 @@ procedure TMainForm.FormKeyUp(Sender: TObject; var Key: Word; var KeyChar: WideC
 begin
   if Key <> vkHardwareBack then
     Exit;
-  // Android back: out of a More page, then back to Live; from Live, leave the app.
+  // Android back: out of a More page, then back to Live; from Live, to the
+  // background like Home (the scan carries on for a while, see AppEvent).
   if btnBack.Visible then
-  begin
-    btnBackClick(nil);
-    Key := 0;
-  end
+    btnBackClick(nil)
   else if CurrentPage <> tiLive then
-  begin
-    ShowPage(tiLive);
-    Key := 0;
-  end;
+    ShowPage(tiLive)
+  else
+    MoveAppToBack;
+  Key := 0;
 end;
 
 procedure TMainForm.pnlStatusClick(Sender: TObject);

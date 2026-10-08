@@ -141,13 +141,138 @@ function IsMobile: Boolean;
   (Android draws apps edge to edge). Does nothing on a desktop. }
 procedure KeepInSafeArea(Form: TCommonCustomForm);
 
+{ Android 16+: apps built for it no longer get the back key; the system
+  closes them instead. This takes the back gesture / button again and gives
+  it to the open form as the back key (vkHardwareBack), as before. Call once.
+  Does nothing elsewhere. }
+procedure HookBackGesture;
+{ Android: UVScan to the background, as the Home button does. }
+procedure MoveAppToBack;
+
 implementation
 
 uses
   System.Math, FMX.DialogService, FMX.Dialogs, FMX.Platform, FMX.TextLayout,
   FMX.Effects, UVScan.UI.Theme
   {$IFDEF ANDROID}, Androidapi.Helpers, Androidapi.JNI.App, Androidapi.JNI.GraphicsContentViewText,
-  FMX.Helpers.Android{$ENDIF};
+  Androidapi.JNIBridge, FMX.Helpers.Android, FMX.VirtualKeyboard{$ENDIF};
+
+{$IFDEF ANDROID}
+// Not declared by Delphi's units (Androidapi.JNI.App has them commented out).
+type
+  JOnBackInvokedCallback = interface;
+  JOnBackInvokedDispatcher = interface;
+
+  JOnBackInvokedCallbackClass = interface(IJavaClass)
+    ['{AA7159CA-1C0E-4301-B91F-CE7880B94990}']
+  end;
+
+  [JavaSignature('android/window/OnBackInvokedCallback')]
+  JOnBackInvokedCallback = interface(IJavaInstance)
+    ['{57047FF8-4A31-413A-87E9-00A45CB19911}']
+    procedure onBackInvoked; cdecl;
+  end;
+
+  JOnBackInvokedDispatcherClass = interface(IJavaClass)
+    ['{5899A59E-5706-4B36-82F7-C30F99669EFC}']
+  end;
+
+  [JavaSignature('android/window/OnBackInvokedDispatcher')]
+  JOnBackInvokedDispatcher = interface(IJavaInstance)
+    ['{1EC6CB3C-B123-4422-9014-9743617DED2D}']
+    procedure registerOnBackInvokedCallback(priority: Integer; callback: JOnBackInvokedCallback); cdecl;
+    procedure unregisterOnBackInvokedCallback(callback: JOnBackInvokedCallback); cdecl;
+  end;
+
+  JBackActivityClass = interface(IJavaClass)
+    ['{EE8A1977-775E-4D0A-B43C-E71AAF5D349B}']
+  end;
+
+  [JavaSignature('android/app/Activity')]
+  JBackActivity = interface(IJavaInstance)
+    ['{195C092F-E9F1-4ACF-A221-EF11957AE8D8}']
+    function getOnBackInvokedDispatcher: JOnBackInvokedDispatcher; cdecl;
+  end;
+  TJBackActivity = class(TJavaGenericImport<JBackActivityClass, JBackActivity>);
+
+  TBackCallback = class(TJavaLocal, JOnBackInvokedCallback)
+  public
+    procedure onBackInvoked; cdecl;
+  end;
+
+var
+  BackCallback: JOnBackInvokedCallback; // keeps the Java side alive
+
+{ What FMX does with a back key: the open form gets key down and key up; if
+  it did not use the key, a visible keyboard is hidden or the form closed. }
+procedure SendBackKey;
+var
+  Form: TCommonCustomForm;
+  Key: Word;
+  Ch: WideChar;
+  DownUsed: Boolean;
+  Kb: IFMXVirtualKeyboardService;
+begin
+  Form := Screen.ActiveForm;
+  if Form = nil then
+    Form := Application.MainForm;
+  if Form = nil then
+    Exit;
+  Key := vkHardwareBack;
+  Ch := #0;
+  Form.KeyDown(Key, Ch, []);
+  DownUsed := (Key = 0) and (Ch = #0);
+  Key := vkHardwareBack;
+  Ch := #0;
+  Form.KeyUp(Key, Ch, []);
+  if DownUsed or (Key <> vkHardwareBack) then
+    Exit;
+  if TPlatformServices.Current.SupportsPlatformService(IFMXVirtualKeyboardService, Kb) and
+    (TVirtualKeyboardState.Visible in Kb.VirtualKeyboardState) then
+  begin
+    Form.Focused := nil;
+    Kb.HideVirtualKeyboard;
+  end
+  else if Form = Application.MainForm then
+    MoveAppToBack
+  else
+    Form.Close;
+end;
+
+procedure TBackCallback.onBackInvoked;
+begin
+  // Called on Android's UI thread; the forms live on Delphi's main thread.
+  TThread.Queue(nil, SendBackKey);
+end;
+{$ENDIF}
+
+procedure HookBackGesture;
+begin
+  {$IFDEF ANDROID}
+  // Before Android 16 (or for apps not built for it) the back key still
+  // arrives as a key; a callback as well would act on it twice.
+  if (BackCallback <> nil) or not TOSVersion.Check(16) then
+    Exit;
+  BackCallback := TBackCallback.Create;
+  CallInUIThread(
+    procedure
+    begin
+      TJBackActivity.Wrap((TAndroidHelper.Activity as ILocalObject).GetObjectID)
+        .getOnBackInvokedDispatcher.registerOnBackInvokedCallback(0 {PRIORITY_DEFAULT}, BackCallback);
+    end);
+  {$ENDIF}
+end;
+
+procedure MoveAppToBack;
+begin
+  {$IFDEF ANDROID}
+  CallInUIThread(
+    procedure
+    begin
+      TAndroidHelper.Activity.moveTaskToBack(True);
+    end);
+  {$ENDIF}
+end;
 
 {$IFDEF MSWINDOWS}
 // Declared here: Winapi.Windows in the uses would hide FMX's TBitmap.
@@ -700,6 +825,8 @@ begin
           end);
       end;
     end);
+  if IsMobile and Form.Visible then
+    KeepInSafeArea(Form); // on screen now: the insets are known
 end;
 
 { Colour boxes }

@@ -31,6 +31,7 @@ For development, connect the IDE to the phone over Wi‑Fi (Developer options > 
 ### Writing UI code
 
 - Forms are `.fmx`. The custom controls (`TDataGrid`, `TGaugeView`, `TLogChart`) are not registered components: each form creates them in `FormCreate` inside a `TLayout` placeholder, so the forms open in the designer without a package.
+- Android back: forms handle `vkHardwareBack` in `OnKeyUp` (set `Key := 0` when used; `MakePage` does it for editor pages). Android 16 no longer sends apps built for it the back key, so `HookBackGesture` (called once by the main form) registers an `OnBackInvokedCallback` (declared in `UVScan.UI.Common`, Delphi's units lack it) that feeds the gesture to the active form as `vkHardwareBack`, as FMX does on older Android. Forms shown as pages (`ShowDialog`, the log viewer) apply `KeepInSafeArea` again once on screen: asked before, they get no insets.
 - Nothing may block on Android: use `UVScan.UI.Common` (`ShowInfo`, `Confirm`, `AskText`, `ShowDialog`) and pass a callback. On Windows these are still modal and the callback runs before the call returns.
 - Colours are `TAlphaColor`; `NoColor` (0) means "the default".
 - One layout on both platforms: top bar, pages in `tcMain` / `tcMore`, status strip and tab bar (built in `BuildChrome`). `ArrangeLayout` docks the PID list and shows the page tool bars on any window at least `WideLayoutWidth` wide (tablets included). Switch pages with `ShowPage`, not `ActiveTab`.
