@@ -140,6 +140,8 @@ The gauge editor shows the gauge at the top; drag **Try a value** to see it at a
 
 While scanning, **Start log (F8)** writes every update to a CSV file named `UVScan_<date>_<time>.csv` in the log folder (default *Documents\UVScan Logs*, change it in *More → Settings*). **Pause (F9)** stops writing rows without closing the file. The first column is the time since the log started, then one column per PID with its units in the header.
 
+**On a phone, stay in UVScan while logging.** Android lets an app it is not showing run for only a short while before pausing it, which would cut the stream off part‑way. So when you switch to another app (or the screen turns off) UVScan waits; if you are not back within the time set in *Settings → Logging* (**Away from UVScan, stop and disconnect after**, 15 seconds unless you change it), it closes the log, stops the scan, releases any held controls and disconnects. The rows recorded until then stay in the log. When you come back a notice says what was stopped; connect and start again. Back sooner, and everything just carries on. Keep the screen on (*Settings → Appearance*) so it does not turn off by itself mid‑drive.
+
 ## Log viewer
 
 **Open logs** on the *Connect* page or *More → Log viewer* (or **F7**) opens your logs as a chart and a grid that follow one cursor. The first time it opens the newest log in the log folder; **Open log…** picks any file and the list next to it holds the 40 most recent. **Demo drive (made up)** opens a generated 10‑minute drive (cold start, city, highway, a hard pull with knock retard) to try everything without a log.

@@ -133,7 +133,7 @@ The top‑level `"defaults"` number records which set of built‑ins the file ha
 
 ## settings.json
 
-Port and baud, the ticked PIDs and active scan list, stream speed, log folder, raw traffic option, alert sounds, live grid zoom and min / max columns, window position and PID panel width. Written when UVScan closes. An unreadable file is renamed to `settings.json.bad` and defaults are used.
+Port and baud, the ticked PIDs and active scan list, stream speed, log folder, how long a phone may be away from UVScan before it stops (`logging.backgroundStop`, seconds), raw traffic option, alert sounds, live grid zoom and min / max columns, window position and PID panel width. Written when UVScan closes. An unreadable file is renamed to `settings.json.bad` and defaults are used.
 
 ## CSV logs
 

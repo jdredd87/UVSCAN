@@ -38,6 +38,8 @@ type
     [Test] procedure DiscoversSupportedPids;
     [Test] procedure DeviceControlsShareAPacket;
     [Test] procedure DeviceControlRefusalIsReported;
+    [Test] procedure StopsEverythingWhenAwayTooLong;
+    [Test] procedure CarriesOnWhenBackInTime;
   end;
 
 implementation
@@ -250,6 +252,82 @@ begin
     Lines.Free;
     TFile.Delete(FileName);
   end;
+end;
+
+{ Phone in the background: after the set time the log is closed, the scan
+  stopped and the adapter disconnected, with a warning saying so. }
+procedure TEngineTests.StopsEverythingWhenAwayTooLong;
+var
+  Cmd: TEngineCommand;
+  FileName: string;
+  Ev: TEngineEvent;
+  Lines: TStringList;
+begin
+  FileName := TPath.Combine(TPath.GetTempPath, 'uvscan_test_away.csv');
+  Connect;
+  Cmd := Command(ecStartScan);
+  Cmd.PidIds := [IdRpm, IdEct];
+  FEngine.Post(Cmd);
+  Assert.IsTrue(WaitUntil(function: Boolean begin Result := FState = esScanning end));
+  Cmd := Command(ecStartLog);
+  Cmd.Text := FileName;
+  FEngine.Post(Cmd);
+  Assert.IsTrue(WaitUntil(function: Boolean begin Result := FEngine.GetSnapshot.LogRows >= 3 end), 'no log rows');
+  Cmd := Command(ecBackground);
+  Cmd.Seconds := 1;
+  FEngine.Post(Cmd);
+  Assert.IsTrue(WaitUntil(function: Boolean begin Result := FState = esDisconnected end, 4000), 'still connected');
+  Assert.IsTrue(HasEvent(eeLogStopped), 'log not closed');
+  Assert.IsTrue(FindEvent(eeWarning, Ev), 'no warning');
+  Assert.Contains(Ev.Text, 'background for 1 s');
+  Assert.Contains(Ev.Text, 'the log was closed, the scan stopped and the adapter was disconnected');
+  Lines := TStringList.Create;
+  try
+    Lines.LoadFromFile(FileName);
+    Assert.IsTrue(Lines.Count >= 4, 'rows written before it stopped are kept');
+  finally
+    Lines.Free;
+    TFile.Delete(FileName);
+  end;
+  // Coming back afterwards changes nothing.
+  Cmd := Command(ecForeground);
+  Cmd.Seconds := 2;
+  Cmd.Flag := True;
+  FEngine.Post(Cmd);
+  CheckSynchronize(200);
+  Assert.IsTrue(FState = esDisconnected);
+end;
+
+procedure TEngineTests.CarriesOnWhenBackInTime;
+var
+  Cmd: TEngineCommand;
+  Rows: Int64;
+begin
+  Connect;
+  Cmd := Command(ecStartScan);
+  Cmd.PidIds := [IdRpm];
+  FEngine.Post(Cmd);
+  Assert.IsTrue(WaitUntil(function: Boolean begin Result := FState = esScanning end));
+  Cmd := Command(ecBackground);
+  Cmd.Seconds := 2;
+  FEngine.Post(Cmd);
+  WaitUntil(function: Boolean begin Result := False end, 500);
+  Cmd := Command(ecForeground);
+  Cmd.Seconds := 0;
+  FEngine.Post(Cmd);
+  WaitUntil(function: Boolean begin Result := False end, 2500); // past the 2 s
+  Assert.IsTrue(FState = esScanning, 'stopped although back in time');
+  Rows := FEngine.GetSnapshot.Cycles;
+  Assert.IsTrue(WaitUntil(function: Boolean begin Result := FEngine.GetSnapshot.Cycles > Rows end), 'stream stopped');
+  // Back too late by the wall clock (the app was frozen): stops even if the engine's clock says otherwise.
+  Cmd := Command(ecBackground);
+  Cmd.Seconds := 30;
+  FEngine.Post(Cmd);
+  Cmd := Command(ecForeground);
+  Cmd.Seconds := 45;
+  Cmd.Flag := True;
+  FEngine.Post(Cmd);
+  Assert.IsTrue(WaitUntil(function: Boolean begin Result := FState = esDisconnected end), 'not stopped');
 end;
 
 procedure TEngineTests.TestsPids;

@@ -262,6 +262,9 @@ type
     FPidRows: TArray<Integer>;      // PID list rows: PID id, or -(category + 1) for a group row
     FLiveIds: TArray<Integer>;
     FLive: TLiveSnapshot;
+    FAwaySince: TDateTime;    // phone: when the app left the screen, 0 = on screen
+    lblAway: TLabel;
+    cbAway: TComboBox;
     FLiveLog: TLogData;       // the last minutes of the scan, for the live chart
     FLiveStart: UInt64;
     btnChart: TSpeedButton;
@@ -441,7 +444,8 @@ implementation
 
 uses
   System.JSON, UVScan.JsonFile, UVScan.UI.Common, UVScan.UI.Theme, UVScan.Sound, UVScan.PidEditor,
-  UVScan.PidDiscovery, UVScan.DisplayEditor, UVScan.GaugeEditor, UVScan.ControlEditor, UVScan.LogViewer;
+  UVScan.PidDiscovery, UVScan.DisplayEditor, UVScan.GaugeEditor, UVScan.ControlEditor, UVScan.LogViewer,
+  System.DateUtils;
 
 const
   SimulatorPort = 'Simulator';
@@ -528,10 +532,38 @@ begin
 end;
 
 function TMainForm.AppEvent(AAppEvent: TApplicationEvent; AContext: TObject): Boolean;
+var
+  Cmd: TEngineCommand;
+  Secs: Int64;
 begin
   Result := False;
   if (AAppEvent in [TApplicationEvent.EnteredBackground, TApplicationEvent.WillTerminate]) and not FClosing then
     SaveSettings;
+  if FClosing or not IsMobile then
+    Exit;
+  // Away from the screen: the engine stops the log, the scan and the
+  // connection after a while (Settings > Logging); back sooner, it carries on.
+  if (AAppEvent = TApplicationEvent.EnteredBackground) and (FAwaySince = 0) then
+  begin
+    FAwaySince := Now;
+    if FState <> esDisconnected then
+    begin
+      Cmd := Command(ecBackground);
+      Cmd.Seconds := FSettings.BackgroundStop;
+      Post(Cmd);
+    end;
+  end
+  else if (AAppEvent in [TApplicationEvent.WillBecomeForeground, TApplicationEvent.BecameActive]) and
+    (FAwaySince <> 0) then
+  begin
+    // Wall-clock time: a frozen app's own clocks may not have counted it all.
+    Secs := SecondsBetween(Now, FAwaySince);
+    FAwaySince := 0;
+    Cmd := Command(ecForeground);
+    Cmd.Seconds := Secs;
+    Cmd.Flag := Secs >= FSettings.BackgroundStop;
+    Post(Cmd);
+  end;
 end;
 
 procedure TMainForm.CreateGrids;
@@ -670,6 +702,7 @@ end;
 
 const
   NavCaptions: array[0..4] of string = ('Connect', 'PIDs', 'Live', 'Gauges', 'More');
+  AwayChoices: array[0..5] of Integer = (5, 10, 15, 30, 60, 120); // seconds, Settings > Logging
   // Tab bar icons on a 24 x 24 grid, drawn as 2 px lines (More: three dots).
   NavIcons: array[0..4] of string = (
     'M9 3 L9 8 M15 3 L15 8 M6 8 L18 8 L18 11 C18 14.3 15.3 17 12 17 C8.7 17 6 14.3 6 11 Z M12 17 L12 21',
@@ -805,6 +838,25 @@ begin
 
   FPageMenu := TPopupMenu.Create(Self);
   FPageMenu.Parent := Self;
+
+  // Settings > Logging (phones): how long UVScan may be off the screen.
+  lblAway := TLabel.Create(Self);
+  lblAway.Parent := gbLogging;
+  lblAway.Stored := False;
+  lblAway.Text := 'Away from UVScan, stop and disconnect after';
+  cbAway := TComboBox.Create(Self);
+  cbAway.Parent := gbLogging;
+  cbAway.Stored := False;
+  cbAway.Height := edtLogFolder.Height;
+  for I := 0 to High(AwayChoices) do
+    if AwayChoices[I] < 60 then
+      cbAway.Items.Add(Format('%d seconds', [AwayChoices[I]]))
+    else
+      cbAway.Items.Add(Format('%d minute%s', [AwayChoices[I] div 60, IfThen(AwayChoices[I] > 60, 's', '')]));
+  cbAway.Hint := 'Android stops an app it is not showing after a while: the log, the scan and the connection ' +
+    'are closed properly first';
+  lblAway.Visible := IsMobile;
+  cbAway.Visible := IsMobile;
   tiConnect.Text := 'Connection';
 
   // The controls warning hides with a tap (it takes a lot of a phone's screen).
@@ -1259,15 +1311,15 @@ const
   RowTop = 32;
 
   // Lays out a row at the top of Box; the result is where the next control goes.
-  function Row(Cap: TLabel; Field, Btn: TControl; Box: TControl): Single;
+  function Row(Cap: TLabel; Field, Btn: TControl; Box: TControl; Top: Single = RowTop): Single;
   var
     X, R: Single;
   begin
-    Result := RowTop + Field.Height + 8;
+    Result := Top + Field.Height + 8;
     if Box.Width < 50 then
       Exit; // not laid out yet
     X := 12;
-    Field.Position.Y := RowTop;
+    Field.Position.Y := Top;
     if Cap <> nil then
     begin
       Cap.WordWrap := False;
@@ -1275,14 +1327,14 @@ const
       Cap.Position.X := 12;
       if Box.Width < 480 then
       begin
-        Cap.Position.Y := RowTop - 2;
+        Cap.Position.Y := Top - 2;
         Cap.Height := 24;
-        Field.Position.Y := RowTop + 24;
+        Field.Position.Y := Top + 24;
       end
       else
       begin
         Cap.Height := 22;
-        Cap.Position.Y := RowTop + (Field.Height - Cap.Height) / 2;
+        Cap.Position.Y := Top + (Field.Height - Cap.Height) / 2;
         X := 12 + Cap.Width + 12;
       end;
     end;
@@ -1317,6 +1369,8 @@ begin
     gbAppearance.Height := Y + chkKeepAwake.Height + 10;
   end;
   Y := Row(lblLogFolderCaption, edtLogFolder, btnBrowseLogFolder, gbLogging);
+  if cbAway.Visible then
+    Y := Row(lblAway, cbAway, nil, gbLogging, Y + 6);
   if gbLogging.Width >= 50 then
     gbLogging.Height := Y + 4;
   Y := Row(lblRate, cbRate, nil, gbStream);
@@ -1678,6 +1732,10 @@ begin
   FillPorts(FSettings.Port);
   cbBaud.ItemIndex := Max(0, cbBaud.Items.IndexOf(IntToStr(FSettings.Baud)));
   edtLogFolder.Text := FSettings.LogFolder;
+  cbAway.ItemIndex := High(AwayChoices);
+  for N := High(AwayChoices) downto 0 do
+    if AwayChoices[N] >= FSettings.BackgroundStop then
+      cbAway.ItemIndex := N;
   cbRate.ItemIndex := Ord(FSettings.StreamSpeed);
   chkTrace.IsChecked := FSettings.Trace;
   chkSound.IsChecked := FSettings.AlertSounds;
@@ -1711,6 +1769,8 @@ begin
   FSettings.Port := ComboText(cbPort);
   FSettings.Baud := StrToIntDef(ComboText(cbBaud), 115200);
   FSettings.LogFolder := edtLogFolder.Text;
+  if cbAway.ItemIndex >= 0 then
+    FSettings.BackgroundStop := AwayChoices[cbAway.ItemIndex];
   FSettings.StreamSpeed := TStreamSpeed(Max(0, cbRate.ItemIndex));
   FSettings.Trace := chkTrace.IsChecked;
   FSettings.AlertSounds := chkSound.IsChecked;

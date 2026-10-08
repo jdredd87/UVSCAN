@@ -37,6 +37,7 @@ type
     ActiveList: string;     // name of the scan list last chosen, '' if none
     StreamSpeed: TStreamSpeed;
     LogFolder: string;
+    BackgroundStop: Integer; // phone: seconds in the background before the log, scan and connection stop
     Trace: Boolean;
     AlertSounds: Boolean;   // play the sounds of the PID alert levels
     LiveZoom: Integer;      // live data grid zoom, percent
@@ -106,6 +107,7 @@ begin
   ActiveList := '';
   StreamSpeed := ssFast;
   LogFolder := DefaultLogFolder;
+  BackgroundStop := 15;
   Trace := False;
   AlertSounds := True;
   LiveZoom := 100;
@@ -140,6 +142,7 @@ begin
 
   Sec := TJSONObject.Create;
   Sec.AddPair('folder', LogFolder);
+  Sec.AddPair('backgroundStop', TJSONNumber.Create(BackgroundStop));
   Result.AddPair('logging', Sec);
 
   Sec := TJSONObject.Create;
@@ -202,7 +205,10 @@ begin
 
   Sec := JObj(Root, 'logging');
   if Sec <> nil then
+  begin
     LogFolder := JStr(Sec, 'folder', LogFolder);
+    BackgroundStop := EnsureRange(JInt(Sec, 'backgroundStop', BackgroundStop), 5, 600);
+  end;
 
   Sec := JObj(Root, 'advanced');
   if Sec <> nil then

@@ -78,7 +78,9 @@ type
     ecDiscoverPids,              // Text = PID ranges, e.g. '0000-00FF,1000-1FFF'
     ecControl,                   // Text = name, Data = message, Release = message that undoes it,
                                  // Flag = the control stays active until released
-    ecReleaseControls);          // send the release of every active control
+    ecReleaseControls,           // send the release of every active control
+    ecBackground,                // the app left the screen: stop everything after Seconds
+    ecForeground);               // back: Flag = it was away too long (wall clock), Seconds = how long
 
   TEngineCommand = record
     Kind: TEngineCommandKind;
@@ -88,6 +90,7 @@ type
     Factory: TPortFactory;
     Data: TBytes;
     Release: TBytes;
+    Seconds: Integer;
   end;
 
   TFrameMatch = reference to function(const F: TAvtFrame): Boolean;
@@ -145,6 +148,10 @@ type
     // Snapshot shared with the UI
     FLock: TCriticalSection;
     FSnapshot: TLiveSnapshot;
+
+    // The app is in the background (phones): stop after FAwayMs, 0 = not away
+    FAwayMs: Int64;
+    FAwayClock: TStopwatch;
     FSamples: TList<TLiveSample>;
 
     procedure Emit(const Ev: TEngineEvent);
@@ -198,6 +205,7 @@ type
     procedure HandleAnalog(const F: TAvtFrame);
     procedure CompleteCycle;
     procedure ComputeCalculated;
+    procedure StopForBackground(AwaySeconds: Int64);
     procedure PublishSnapshot(CycleDone: Boolean = False);
     procedure WriteLogRow;
   protected
@@ -540,6 +548,13 @@ begin
   try
     while not Terminated do
     begin
+      if (FAwayMs > 0) and (FAwayClock.ElapsedMilliseconds >= FAwayMs) then
+        try
+          StopForBackground(FAwayMs div 1000);
+        except
+          on E: Exception do
+            EmitText(eeError, E.Message);
+        end;
       if FCommands.PopItem(Cmd) = wrSignaled then
       begin
         TInterlocked.Exchange(FCancel, 0);
@@ -597,7 +612,51 @@ begin
     ecWriteVin: if RequireConnected then DoWriteVin(Cmd.Text);
     ecControl: if RequireConnected then DoControl(Cmd);
     ecReleaseControls: if (FPort <> nil) and FPort.IsOpen then DoReleaseControls;
+    ecBackground:
+      begin
+        FAwayMs := Int64(Max(1, Cmd.Seconds)) * 1000;
+        FAwayClock := TStopwatch.StartNew;
+      end;
+    ecForeground:
+      if FAwayMs > 0 then
+      begin
+        if Cmd.Flag or (FAwayClock.ElapsedMilliseconds >= FAwayMs) then
+          StopForBackground(Max(Cmd.Seconds, FAwayClock.ElapsedMilliseconds div 1000))
+        else
+          FAwayMs := 0; // back in time: carry on
+      end;
   end;
+end;
+
+{ Android lets an app in the background run for a while, then freezes it:
+  the stream would stop part-way (the PCM and the adapter carrying on) and
+  the log would just end. So after a while away everything is stopped
+  properly, and the user is told when they come back. }
+procedure TScanEngine.StopForBackground(AwaySeconds: Int64);
+var
+  Parts: TArray<string>;
+  Text: string;
+  I: Integer;
+begin
+  FAwayMs := 0;
+  if FPort = nil then
+    Exit;
+  Parts := nil;
+  if FLog <> nil then
+    Parts := Parts + ['the log was closed'];
+  if FStreaming then
+    Parts := Parts + ['the scan stopped'];
+  if FHeld.Count > 0 then
+    Parts := Parts + ['the controls were released'];
+  Parts := Parts + ['the adapter was disconnected'];
+  DoDisconnect;
+  Text := Parts[0];
+  for I := 1 to High(Parts) do
+    if I = High(Parts) then
+      Text := Text + ' and ' + Parts[I]
+    else
+      Text := Text + ', ' + Parts[I];
+  Warn(Format('UVScan was in the background for %d s: %s.', [AwaySeconds, Text]));
 end;
 
 function TScanEngine.RequireConnected: Boolean;
