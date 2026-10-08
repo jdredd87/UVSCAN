@@ -2,7 +2,7 @@
 
 A data logger and scan tool for GM vehicles on **J1850 VPW (GM Class 2)**, using an **AVT‑841** (or 838 / 842) interface on a serial port. Written for the 1996‑2005 GM V6s (3100 / 3400 / 3800), it works with any Class 2 PCM.
 
-It is a rewrite of the 2008 UVSCAN (Delphi 2007, kept in [`legacy/`](legacy) for reference) for **Delphi 13 FireMonkey (FMX)**, with no third‑party components. It runs on Windows (Win32/Win64) and builds for **Android** (64‑bit); the last VCL version is git tag `vcl-final`.
+It is a rewrite of the 2008 UVSCAN (Delphi 2007, kept in [`legacy/`](legacy) for reference) for **Delphi 13 FireMonkey (FMX)**, with no third‑party components. It runs on Windows (Win32) and builds for **Android** (64‑bit); the last VCL version is git tag `vcl-final`.
 
 ![Live data](docs/images/live-data.png)
 
@@ -44,10 +44,10 @@ Command line (as in the old UVSCAN): `UVScan.exe -port COM9 -connect -scan -log`
 
 ## Build
 
-Delphi 13 (RAD Studio 37.0), Win32 or Win64:
+Delphi 13 (RAD Studio 37.0); Win32 Debug for now:
 
 ```
-build.cmd [Debug|Release] [Win32|Win64]
+build.cmd
 build.cmd android [install]
 ```
 

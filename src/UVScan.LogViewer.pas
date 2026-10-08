@@ -26,7 +26,7 @@ type
 
   TLogViewerForm = class(TForm)
     pnlBar: TPanel;
-    sbBar: THorzScrollBox;
+    sbBar: TLayout; // the bars wrap to fit (FlowWideBars / LayoutNarrow), so they never scroll
     btnOpen: TButton;
     cbRecent: TComboBox;
     btnDemo: TButton;
@@ -38,7 +38,7 @@ type
     cbMode: TComboBox;
     btnImage: TButton;
     pnlPlay: TPanel;
-    sbPlay: THorzScrollBox;
+    sbPlay: TLayout;
     btnStart: TButton;
     btnPlay: TButton;
     btnEnd: TButton;

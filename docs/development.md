@@ -2,12 +2,12 @@
 
 ## Building
 
-Delphi 13 (RAD Studio 37.0), FireMonkey (FMX): Win32, Win64 and Android64. No third‑party components: the serial port, AVT protocol, formula evaluator, JSON handling, grid, gauges and chart are all in `src\`. The last VCL version is git tag `vcl-final`.
+Delphi 13 (RAD Studio 37.0), FireMonkey (FMX): Win32 and Android64 (Win32 Debug is the only Windows build for now). No third‑party components: the serial port, AVT protocol, formula evaluator, JSON handling, grid, gauges and chart are all in `src\`. The last VCL version is git tag `vcl-final`.
 
 Open `UVScan.dproj` in the IDE, or from a command prompt:
 
 ```
-build.cmd [Debug|Release] [Win32|Win64]
+build.cmd
 ```
 
 That builds the app (`Win32\Debug\UVScan.exe`), builds and runs the DUnitX tests (`tests\UVScanTests.dproj`), and builds the bench tool (`tools\Win32\UVScanProbe.exe`). It stops at the first failure.

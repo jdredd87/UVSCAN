@@ -1,14 +1,12 @@
 @echo off
-rem Builds UVScan and the unit tests with the Delphi 13 command-line tools, runs the tests,
-rem and builds the console bench probe.
-rem Usage: build [Debug|Release] [Win32|Win64]
+rem Builds UVScan and the unit tests (Win32 Debug, the only Windows build for now) with the
+rem Delphi 13 command-line tools, runs the tests, and builds the console bench probe.
+rem Usage: build
 rem        build android [install]   - Android64 debug APK (install: adb install on the attached phone)
 setlocal
 if /i "%~1"=="android" goto android
-set UV_CONFIG=%~1
-if "%UV_CONFIG%"=="" set UV_CONFIG=Debug
-set UV_PLATFORM=%~2
-if "%UV_PLATFORM%"=="" set UV_PLATFORM=Win32
+set UV_CONFIG=Debug
+set UV_PLATFORM=Win32
 call "C:\Program Files (x86)\Embarcadero\Studio\37.0\bin\rsvars.bat" || exit /b 1
 msbuild "%~dp0UVScan.dproj" /t:Build /p:Config=%UV_CONFIG% /p:Platform=%UV_PLATFORM% /nologo /v:minimal || exit /b 1
 msbuild "%~dp0tests\UVScanTests.dproj" /t:Build /p:Config=%UV_CONFIG% /p:Platform=%UV_PLATFORM% /nologo /v:minimal || exit /b 1
