@@ -1697,6 +1697,7 @@ var
 begin
   SetPlaying(False);
   ApplyView(CurrentView(ComboText(cbView)));
+  FChart.Live := FLive;
   FChart.SetData(FData);
   if FLive then
   begin

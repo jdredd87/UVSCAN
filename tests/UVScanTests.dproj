@@ -92,6 +92,7 @@
         <DCCReference Include="UVScan.Tests.Controls.pas"/>
         <DCCReference Include="..\src\UVScan.LogData.pas"/>
         <DCCReference Include="..\src\UVScan.LogViews.pas"/>
+        <DCCReference Include="..\src\UVScan.LogChart.pas"/>
         <DCCReference Include="UVScan.Tests.Logs.pas"/>
         <RcCompile Include="..\UVScan.Defaults.rc">
             <Form>UVScan.Defaults.res</Form>

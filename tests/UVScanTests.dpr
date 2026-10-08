@@ -34,6 +34,7 @@ uses
   UVScan.Tests.Controls in 'UVScan.Tests.Controls.pas',
   UVScan.LogData in '..\src\UVScan.LogData.pas',
   UVScan.LogViews in '..\src\UVScan.LogViews.pas',
+  UVScan.LogChart in '..\src\UVScan.LogChart.pas',
   UVScan.Tests.Logs in 'UVScan.Tests.Logs.pas';
 
 {$R 'UVScan.Defaults.res' '..\UVScan.Defaults.rc'}

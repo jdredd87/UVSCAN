@@ -52,6 +52,7 @@ type
     FOnCursorChange: TNotifyEvent;
     FOnWindowChange: TNotifyEvent;
     FFollow: Boolean;
+    FLive: Boolean;
     FLiveSpan: Double;
     FOnFollowChange: TNotifyEvent;
     FEmptyText: string;
@@ -112,6 +113,9 @@ type
     property OnWindowChange: TNotifyEvent read FOnWindowChange write FOnWindowChange;
     property Follow: Boolean read FFollow write SetFollow;
     property LiveSpan: Double read FLiveSpan write FLiveSpan;
+    { The data is a running scan: a window may be LiveSpan wide even while
+      the scan is shorter (as Follow shows it), not just as wide as the data. }
+    property Live: Boolean read FLive write FLive;
     property OnFollowChange: TNotifyEvent read FOnFollowChange write FOnFollowChange;
     { Shown with no channels / with channels but under two samples. }
     property EmptyText: string read FEmptyText write FEmptyText;
@@ -378,7 +382,7 @@ end;
 
 procedure TLogChart.SetWindow(T0, T1: Double);
 var
-  First, Last, Span, MinSpan: Double;
+  First, Last, Span, MinSpan, MaxSpan: Double;
 begin
   Follow := False;
   if (FData = nil) or (FData.Count < 2) then
@@ -391,12 +395,15 @@ begin
   First := FData.Times[0];
   Last := FData.Times[FData.Count - 1];
   MinSpan := Min(Last - First, 2);
+  MaxSpan := Last - First;
+  if FLive then
+    MaxSpan := Max(MaxSpan, FLiveSpan); // pausing a short scan keeps its span
   Span := Max(MinSpan, T1 - T0);
-  Span := Min(Span, Last - First);
-  if T0 < First then
-    T0 := First;
+  Span := Min(Span, MaxSpan);
   if T0 + Span > Last then
     T0 := Last - Span;
+  if T0 < First then
+    T0 := First; // a live span longer than the scan: from its start, as Follow shows it
   FT0 := T0;
   FT1 := T0 + Span;
   Repaint;

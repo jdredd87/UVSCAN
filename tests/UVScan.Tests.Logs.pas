@@ -6,7 +6,8 @@ interface
 
 uses
   System.SysUtils, System.Classes, System.Math, System.JSON, System.IOUtils, System.UITypes,
-  DUnitX.TestFramework, UVScan.LogData, UVScan.LogViews, UVScan.Display, UVScan.JsonFile, UVScan.Defaults;
+  DUnitX.TestFramework, UVScan.LogData, UVScan.LogViews, UVScan.Display, UVScan.JsonFile, UVScan.Defaults,
+  UVScan.LogChart;
 
 type
   [TestFixture]
@@ -21,6 +22,7 @@ type
     [Test] procedure DemoDriveIsPlausible;
     [Test] procedure SaveAndReload;
     [Test] procedure LiveAppendKeepsTheLastMinutes;
+    [Test] procedure PausedLiveChartKeepsItsSpan;
   end;
 
   [TestFixture]
@@ -229,6 +231,44 @@ begin
     System.SysUtils.DeleteFile(F);
     A.Free;
     B.Free;
+  end;
+end;
+
+{ The live chart paused (zoom, pan, cursor) while the scan is shorter than
+  the span shown: the window stays as wide as it was, not the scan so far. }
+procedure TLogDataTests.PausedLiveChartKeepsItsSpan;
+var
+  D: TLogData;
+  C: TLogChart;
+  I: Integer;
+begin
+  D := TLogData.Create;
+  C := TLogChart.Create(nil);
+  try
+    D.StartLive('Live', ['RPM'], ['RPM'], [False]);
+    for I := 0 to 300 do
+      D.Append(5 + I / 10, [800 + I], 15 * 60); // 30 s of scan, from 5 s
+    C.Live := True;
+    C.LiveSpan := 60;
+    C.SetData(D);
+    C.Follow := True;
+    Assert.AreEqual(5.0, C.WindowStart, 1E-9, 'follow: from the start');
+    Assert.AreEqual(65.0, C.WindowEnd, 1E-9, 'follow: a full span');
+    C.Zoom(1, 20); // as a pan or a pause does: the same window again
+    Assert.IsFalse(C.Follow, 'paused');
+    Assert.AreEqual(5.0, C.WindowStart, 1E-9, 'paused: start kept');
+    Assert.AreEqual(65.0, C.WindowEnd, 1E-9, 'paused: span kept');
+    C.Zoom(0.5, 20); // zooming in still works
+    Assert.AreEqual(30.0, C.WindowEnd - C.WindowStart, 1E-9);
+    // A log (not live) still fits its data.
+    C.Live := False;
+    C.SetData(D);
+    C.Zoom(2, 20);
+    Assert.AreEqual(5.0, C.WindowStart, 1E-9);
+    Assert.AreEqual(35.0, C.WindowEnd, 1E-9);
+  finally
+    C.Free;
+    D.Free;
   end;
 end;
 
