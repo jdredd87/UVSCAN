@@ -76,6 +76,8 @@ Press **Start scan**. Each ticked PID gets a row with its current value, units a
 
 The chart button in the top bar of *Live* and *Gauges* (or **⋮ → Live chart**) shows the running scan as a line chart — the [log viewer](#log-viewer)'s chart, fed by the scan instead of a file. It also charts the [test display](#test-display), so you can try it without a car. On Windows it is a window of its own, so you can keep it beside the live grid; on a phone it is a page (back returns to *Live*).
 
+![Live chart](images/live-chart.png)
+
 - The newest values are on the right and the chart scrolls as they come in. The box after the buttons sets how much it shows: 15 s, 30 s, 1, 2, 5 or 10 minutes (remembered).
 - Every update of the scan is charted (about 10 a second with up to 4 DPIDs), and the last 15 minutes are kept while you scan, so you can open the chart after something happened and still see it.
 - **Pause:** click, drag or touch the chart (or press **Pause** / Space) to stop it scrolling and put the cursor there. The values on the left are then the ones at the cursor; the slider, **|<**, the mouse wheel, panning and selecting a stretch (for min / avg / max) all work as on a log. **Live** (or **>|**) goes back to now.
@@ -181,10 +183,10 @@ While scanning, **Start log (F8)** writes every update to a CSV file named `UVSc
 
 ## Vehicle and trouble codes
 
-![Vehicle and codes](images/vehicle-codes.png)
+![Trouble codes](images/trouble-codes.png)
 
-- **Read vehicle info** — AVT firmware, VIN and PCM OS ID.
-- **Read codes** — trouble codes from every module that answers (PCM, TCM, ABS, BCM, …) with descriptions from `dtcs.json`.
+- **Read vehicle info** (on the *Connect* page) — AVT firmware, VIN and PCM OS ID.
+- **Read codes** (*More → Trouble codes*) — trouble codes from every module that answers (PCM, TCM, ABS, BCM, …) with descriptions from `dtcs.json`.
 - **Clear codes** — asks first, then clears the PCM's codes (cycle the key and read again to confirm).
 
 ## Real‑time controls
@@ -247,9 +249,10 @@ If you know the command for something (from a service manual, a forum, or by log
 ![Tools](images/tools.png)
 
 - **Write VIN** — writes a new 17‑character VIN to the PCM (asks first; turn the key off for 15 s afterwards).
-- **Logging** — the folder for CSV logs.
-- **Advanced** — send a raw AVT frame (hex) and see the reply in Messages, show the raw bus traffic in Messages (**Show raw traffic in Messages**), and choose the stream speed (fast / medium / slow; applies from the next scan).
+- **Advanced** — send a raw AVT frame (hex) and see the reply in Messages, and show the raw bus traffic in Messages (**Show raw traffic in Messages**).
 - **Search PCM for supported PIDs…** — see [below](#finding-pids-a-pcm-supports).
+
+The log folder and the stream speed (fast / medium / slow; applies from the next scan) are in *More → Settings*.
 
 ## Editing PIDs
 
