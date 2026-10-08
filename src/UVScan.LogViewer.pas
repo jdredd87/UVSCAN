@@ -285,6 +285,8 @@ begin
     WindowState := TWindowState.wsNormal;
   Show;
   Activate;
+  if IsMobile then
+    KeepInSafeArea(Self); // on screen now: the insets are known
   if FLive then
     LiveUpdated(False);
 end;
@@ -877,11 +879,18 @@ begin
   btnPlay.SetBounds(68, 6, 84, 38);
   btnEnd.SetBounds(160, 6, 48, 38);
   cbSpeed.SetBounds(216, 6, 84, 38);
+  X := 12; // where the slider starts
   if btnSelect.Visible then
   begin
     FitTextWidth(btnSelect, 90);
-    X := Max(308, W - 12 - btnSelect.Width);
-    btnSelect.SetBounds(X, 6, Min(btnSelect.Width, W - 12 - X), 38);
+    if W - 12 - 308 >= btnSelect.Width then
+      btnSelect.SetBounds(W - 12 - btnSelect.Width, 6, btnSelect.Width, 38)
+    else
+    begin
+      // a small phone: first on the slider's line
+      btnSelect.SetBounds(12, 52, btnSelect.Width, 38);
+      X := 12 + btnSelect.Width + 8;
+    end;
   end;
   lblTime.WordWrap := False;
   lblTime.TextSettings.HorzAlign := TTextAlign.Trailing;
@@ -890,7 +899,7 @@ begin
   FitTextWidth(lblTime, 100);
   lblTime.Text := S;
   lblTime.SetBounds(W - 12 - lblTime.Width, 52, lblTime.Width, 38);
-  tbPos.SetBounds(12, 52, Max(60, W - 32 - lblTime.Width), 38);
+  tbPos.SetBounds(X, 52, Max(60, W - 20 - lblTime.Width - X), 38);
   // The chart, then Channels | Data.
   splLeft.Visible := False;
   splChart.Visible := False;

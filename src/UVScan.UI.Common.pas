@@ -202,12 +202,20 @@ end;
 procedure KeepInSafeArea(Form: TCommonCustomForm);
 var
   Svc: IFMXWindowSafeAreaService;
+  Insets: TRectF;
 begin
   if not IsMobile then
     Exit;
   Form.OnSafeAreaChanged := TSafeArea.Changed;
+  Insets := TRectF.Empty;
   if TPlatformServices.Current.SupportsPlatformService(IFMXWindowSafeAreaService, Svc) then
-    TSafeArea.Changed(Form, Svc.GetSafeAreaInsets(Form));
+    Insets := Svc.GetSafeAreaInsets(Form);
+  // A second form asked before it is on screen gets no insets (seen on a
+  // Galaxy S23), and no change event follows: the main form's are the same.
+  if (Insets.Top = 0) and (Insets.Bottom = 0) and (Application.MainForm is TCustomForm) and
+    (Application.MainForm <> Form) then
+    Insets := TCustomForm(Application.MainForm).Padding.Rect;
+  TSafeArea.Changed(Form, Insets);
 end;
 
 { Action menu }
