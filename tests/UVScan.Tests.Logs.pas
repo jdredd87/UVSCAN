@@ -23,6 +23,7 @@ type
     [Test] procedure SaveAndReload;
     [Test] procedure LiveAppendKeepsTheLastMinutes;
     [Test] procedure PausedLiveChartKeepsItsSpan;
+    [Test] procedure DecimalsForSteadyText;
   end;
 
   [TestFixture]
@@ -270,6 +271,18 @@ begin
     C.Free;
     D.Free;
   end;
+end;
+
+{ The channel list shows each channel with fixed decimals (steady width). }
+procedure TLogDataTests.DecimalsForSteadyText;
+begin
+  Assert.AreEqual(0, DecimalsNeeded([195, 196, NaN, 210], 4), 'whole numbers');
+  Assert.AreEqual(1, DecimalsNeeded([14.1, 14, 13.9], 3));
+  Assert.AreEqual(2, DecimalsNeeded([1948, 1945.25, 1941.5], 3), 'rpm in quarters');
+  Assert.AreEqual(3, DecimalsNeeded([0.125, 1], 2));
+  Assert.AreEqual(3, DecimalsNeeded([1 / 3], 1), 'at most 3');
+  Assert.AreEqual(0, DecimalsNeeded([1, 2.5], 1), 'only the first Count');
+  Assert.AreEqual(0, DecimalsNeeded(nil, 0));
 end;
 
 { TLogViewTests }

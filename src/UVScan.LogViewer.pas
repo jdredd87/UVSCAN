@@ -110,6 +110,7 @@ type
     FStyles: TArray<TChannelStyle>;
     FLevels: TArray<TArray<TDisplayLevel>>;   // what is in effect per channel
     FValueText: TArray<string>;               // channel list: value at the cursor
+    FDecimals: TArray<Integer>;               // per channel: decimals every value is shown with
     FStatText: TArray<TArray<string>>;        // channel list: min / avg / max
     FCatalog: TPidCatalog;      // not owned: matches log columns to PIDs
     FDisplay: TDisplaySettings; // not owned: their alert levels
@@ -179,6 +180,7 @@ type
     function SelectedChannel: Integer;
     function DisplayLevelsFor(Ch: Integer): TArray<TDisplayLevel>;
     function ChannelValueText(Ch, Row: Integer): string;
+    procedure MeasureChannels;
     procedure UpdateStatus;
     procedure SetLive(Value: Boolean);
     procedure LeaveLive;
@@ -1497,6 +1499,7 @@ begin
   begin
     FLastStats := TThread.GetTickCount64;
     ChartSelectionChange(nil);
+    MeasureChannels; // new values may need more decimals or room
     // an automatic scale grows with the data: its range in the boxes too
     Ch := SelectedChannel;
     if (Ch >= 0) and FStyles[Ch].AutoScale then
@@ -1889,6 +1892,7 @@ begin
   try
     SetLength(FValueText, FData.ChannelCount);
     SetLength(FStatText, FData.ChannelCount);
+    MeasureChannels;
     for var I := 0 to High(FStatText) do
       FStatText[I] := ['', '', ''];
     FChannels.RowCount := FData.ChannelCount;
@@ -1993,8 +1997,35 @@ begin
     Result := '--'
   else if FData.Channels[Ch].IsSwitch then
     Result := IfThen(V >= 0.5, 'ON', 'OFF')
+  else if Ch <= High(FDecimals) then
+    Result := FormatFloat('0.' + StringOfChar('0', FDecimals[Ch]), V) // fixed decimals: the same width every row
   else
     Result := FormatFloat('0.###', V);
+end;
+
+{ Each channel's decimals, and a Value column wide enough for every channel's
+  widest value. While playing, values of changing width (1948 / 1945.25) were
+  sometimes too wide and drawn smaller, sometimes not: the column flickered. }
+procedure TLogViewerForm.MeasureChannels;
+var
+  C: Integer;
+  W, Need: Single;
+begin
+  SetLength(FDecimals, FData.ChannelCount);
+  for C := 0 to FData.ChannelCount - 1 do
+    FDecimals[C] := DecimalsNeeded(FData.Channels[C].Values, FData.Count);
+  Need := 0;
+  for C := 0 to FData.ChannelCount - 1 do
+    if not FData.Channels[C].IsSwitch then
+    begin
+      W := Max(FChannels.TextWidth(ChannelValueText(C, -1), FChannels.FontSize, True),
+        FChannels.TextWidth(ChannelValueText(C, -2), FChannels.FontSize, True));
+      Need := Max(Need, W);
+    end;
+  Need := Max(56, Ceil(Need + 2 * FChannels.CellPadding + 3));
+  // grow at once; shrink only for a new log (live data: no jumping back and forth)
+  if (Need > FChannels.ColumnWidth(ColValue) + 0.5) or (not FLive and (Need < FChannels.ColumnWidth(ColValue) - 0.5)) then
+    FChannels.SetColumnWidth(ColValue, Need);
 end;
 
 function NumText(const V: Double): string;

@@ -151,6 +151,8 @@ type
     function ColumnWidth(Index: Integer): Single;
     { Height Text needs in column Index when wrapped (cell padding included). }
     function WrappedTextHeight(Index: Integer; const Text: string; Size: Single; Bold: Boolean = False): Single;
+    { Width of Text on one line in the grid's font (no padding). }
+    function TextWidth(const Text: string; Size: Single; Bold: Boolean = False): Single;
     { Gives rows FromRow.. the height their wrapped columns need (OnGetText). }
     procedure AutoRowHeights(FromRow: Integer = 0);
     { Redo AutoRowHeights whenever the width changes. }
@@ -761,6 +763,28 @@ begin
     L.EndUpdate;
   end;
   Result := Ceil(L.TextHeight) + 2 * FCellPadding;
+end;
+
+function TDataGrid.TextWidth(const Text: string; Size: Single; Bold: Boolean): Single;
+begin
+  if FMeasure = nil then
+    FMeasure := TTextLayoutManager.DefaultTextLayout.Create;
+  FMeasure.BeginUpdate;
+  try
+    FMeasure.MaxSize := TPointF.Create(100000, 1000);
+    FMeasure.WordWrap := False;
+    FMeasure.Font.Size := Size;
+    if FFontFamily <> '' then
+      FMeasure.Font.Family := FFontFamily;
+    if Bold then
+      FMeasure.Font.Style := [TFontStyle.fsBold]
+    else
+      FMeasure.Font.Style := [];
+    FMeasure.Text := Text;
+  finally
+    FMeasure.EndUpdate;
+  end;
+  Result := FMeasure.TextWidth;
 end;
 
 function TDataGrid.ColumnWidths: TArray<Single>;

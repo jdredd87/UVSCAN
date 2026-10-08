@@ -73,6 +73,9 @@ procedure SplitHeader(const Header: string; out Name, Units: string);
 function ParseLogValue(const S: string; out Switch: Boolean): Double;
 { m:ss.s for a time in seconds. }
 function FormatLogTime(const Seconds: Double): string;
+{ How many decimals (0-3) the first Count values need, so a channel can be
+  shown with the same number every time (its text does not change width). }
+function DecimalsNeeded(const Values: TArray<Double>; Count: Integer): Integer;
 
 implementation
 
@@ -156,6 +159,26 @@ begin
   end;
   if not TryStrToFloat(T, Result, TFormatSettings.Invariant) then
     Result := NaN;
+end;
+
+function DecimalsNeeded(const Values: TArray<Double>; Count: Integer): Integer;
+const
+  Scale: array[0..2] of Double = (1, 10, 100);
+var
+  I: Integer;
+  V: Double;
+begin
+  Result := 0;
+  for I := 0 to Min(Count, Length(Values)) - 1 do
+  begin
+    V := Values[I];
+    if IsNan(V) or IsInfinite(V) then
+      Continue;
+    while (Result < 3) and (Abs(V * Scale[Result] - Round(V * Scale[Result])) > 1E-6 * Scale[Result]) do
+      Inc(Result);
+    if Result = 3 then
+      Exit;
+  end;
 end;
 
 function FormatLogTime(const Seconds: Double): string;
