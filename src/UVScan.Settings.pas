@@ -38,6 +38,7 @@ type
     StreamSpeed: TStreamSpeed;
     LogFolder: string;
     BackgroundStop: Integer; // phone: seconds in the background before the log, scan and connection stop
+    PendingNotice: string;   // shown at the next start (Android may end the app before the user is back)
     Trace: Boolean;
     AlertSounds: Boolean;   // play the sounds of the PID alert levels
     LiveZoom: Integer;      // live data grid zoom, percent
@@ -108,6 +109,7 @@ begin
   StreamSpeed := ssFast;
   LogFolder := DefaultLogFolder;
   BackgroundStop := 15;
+  PendingNotice := '';
   Trace := False;
   AlertSounds := True;
   LiveZoom := 100;
@@ -143,6 +145,8 @@ begin
   Sec := TJSONObject.Create;
   Sec.AddPair('folder', LogFolder);
   Sec.AddPair('backgroundStop', TJSONNumber.Create(BackgroundStop));
+  if PendingNotice <> '' then
+    Sec.AddPair('pendingNotice', PendingNotice);
   Result.AddPair('logging', Sec);
 
   Sec := TJSONObject.Create;
@@ -208,6 +212,7 @@ begin
   begin
     LogFolder := JStr(Sec, 'folder', LogFolder);
     BackgroundStop := EnsureRange(JInt(Sec, 'backgroundStop', BackgroundStop), 5, 600);
+    PendingNotice := JStr(Sec, 'pendingNotice', '');
   end;
 
   Sec := JObj(Root, 'advanced');

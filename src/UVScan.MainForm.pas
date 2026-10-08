@@ -550,7 +550,7 @@ begin
     begin
       Cmd := Command(ecBackground);
       Cmd.Seconds := FSettings.BackgroundStop;
-      Post(Cmd);
+      FEngine.Post(Cmd); // not Post: that hides the notice, as for a button press
     end;
   end
   else if (AAppEvent in [TApplicationEvent.WillBecomeForeground, TApplicationEvent.BecameActive]) and
@@ -559,10 +559,15 @@ begin
     // Wall-clock time: a frozen app's own clocks may not have counted it all.
     Secs := SecondsBetween(Now, FAwaySince);
     FAwaySince := 0;
+    if FSettings.PendingNotice <> '' then
+    begin
+      FSettings.PendingNotice := ''; // still running: the notice is on screen now
+      SaveSettings;
+    end;
     Cmd := Command(ecForeground);
     Cmd.Seconds := Secs;
     Cmd.Flag := Secs >= FSettings.BackgroundStop;
-    Post(Cmd);
+    FEngine.Post(Cmd); // keeps the notice of a stop made while away
   end;
 end;
 
@@ -843,7 +848,7 @@ begin
   lblAway := TLabel.Create(Self);
   lblAway.Parent := gbLogging;
   lblAway.Stored := False;
-  lblAway.Text := 'Away from UVScan, stop and disconnect after';
+  lblAway.Text := 'Stop and disconnect when away for';
   cbAway := TComboBox.Create(Self);
   cbAway.Parent := gbLogging;
   cbAway.Stored := False;
@@ -1365,6 +1370,10 @@ begin
   Y := Row(lblTheme, cbTheme, nil, gbAppearance);
   if gbAppearance.Width >= 50 then
   begin
+    // the check box wraps on a narrow screen
+    Wide(chkKeepAwake, gbAppearance);
+    chkKeepAwake.TextSettings.WordWrap := True;
+    chkKeepAwake.Height := Max(30, WrappedTextHeight(chkKeepAwake, chkKeepAwake.Width - 40) + 8);
     chkKeepAwake.Position.Y := Y;
     gbAppearance.Height := Y + chkKeepAwake.Height + 10;
   end;
@@ -1729,6 +1738,12 @@ begin
     ShowNotice('Settings could not be read - defaults used (see Messages)', False);
   end;
 
+  if FSettings.PendingNotice <> '' then
+  begin
+    AddMessage('Last time: ' + FSettings.PendingNotice);
+    ShowNotice('Last time ' + FSettings.PendingNotice, False);
+    FSettings.PendingNotice := '';
+  end;
   FillPorts(FSettings.Port);
   cbBaud.ItemIndex := Max(0, cbBaud.Items.IndexOf(IntToStr(FSettings.Baud)));
   edtLogFolder.Text := FSettings.LogFolder;
@@ -2350,6 +2365,13 @@ begin
       begin
         AddMessage('Warning: ' + Ev.Text);
         ShowNotice(Ev.Text, False);
+        if Ev.Flag and (FAwaySince <> 0) then
+        begin
+          // Stopped while away: Android may end the app before the user is
+          // back, so the notice is kept for the next start too.
+          FSettings.PendingNotice := Ev.Text;
+          SaveSettings;
+        end;
       end;
     eeError:
       begin
@@ -2448,7 +2470,7 @@ begin
     eeLogStopped:
       begin
         if FLastLogFile <> '' then
-          AddMessage('Log saved: ' + FLastLogFile + '  (F7 opens it in the log viewer)');
+          AddMessage('Log saved: ' + FLastLogFile + IfThen(IsMobile, '', '  (F7 opens it in the log viewer)'));
         FLogging := False;
         FLogPaused := False;
         SetStatus(spLog, '');

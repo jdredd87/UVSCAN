@@ -48,7 +48,8 @@ type
     Progress, Total: Integer;  // eePidTest, eePidSearchProgress, eePidSearchDone
     DataBytes: Integer;        // eePidFound: size of the PCM's answer (PidId = PID number)
     Raw: string;               // eePidFound: data bytes as hex; eeControl: details
-    Flag: Boolean;             // eeControl: the control is now active (held)
+    Flag: Boolean;             // eeControl: the control is now active (held);
+                               // eeWarning: stopped because the app was away (StopForBackground)
   end;
 
   TEngineEventHandler = reference to procedure(const Event: TEngineEvent);
@@ -634,6 +635,7 @@ end;
   properly, and the user is told when they come back. }
 procedure TScanEngine.StopForBackground(AwaySeconds: Int64);
 var
+  Ev: TEngineEvent;
   Parts: TArray<string>;
   Text: string;
   I: Integer;
@@ -656,7 +658,11 @@ begin
       Text := Text + ' and ' + Parts[I]
     else
       Text := Text + ', ' + Parts[I];
-  Warn(Format('UVScan was in the background for %d s: %s.', [AwaySeconds, Text]));
+  Ev := Default(TEngineEvent);
+  Ev.Kind := eeWarning;
+  Ev.Text := Format('UVScan was in the background for %d s: %s.', [AwaySeconds, Text]);
+  Ev.Flag := True;
+  Emit(Ev);
 end;
 
 function TScanEngine.RequireConnected: Boolean;

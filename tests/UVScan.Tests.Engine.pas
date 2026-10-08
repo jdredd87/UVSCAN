@@ -278,7 +278,10 @@ begin
   FEngine.Post(Cmd);
   Assert.IsTrue(WaitUntil(function: Boolean begin Result := FState = esDisconnected end, 4000), 'still connected');
   Assert.IsTrue(HasEvent(eeLogStopped), 'log not closed');
-  Assert.IsTrue(FindEvent(eeWarning, Ev), 'no warning');
+  // the warning follows the disconnect
+  Assert.IsTrue(WaitUntil(function: Boolean begin Result := HasEvent(eeWarning) end, 2000), 'no warning');
+  Assert.IsTrue(FindEvent(eeWarning, Ev));
+  Assert.IsTrue(Ev.Flag, 'marked as a stop for being away');
   Assert.Contains(Ev.Text, 'background for 1 s');
   Assert.Contains(Ev.Text, 'the log was closed, the scan stopped and the adapter was disconnected');
   Lines := TStringList.Create;
