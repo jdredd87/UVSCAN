@@ -59,6 +59,7 @@ type
     FItemIndex: Integer;
     FCheckboxes: Boolean;
     FStriped: Boolean;
+    FFixedStripes: Boolean;
     FGridLines: Boolean;
     FCellPadding: Single;
     FScrollBar: TScrollBar;
@@ -203,6 +204,9 @@ type
     property FontFamily: string read FFontFamily write FFontFamily;
     property Checkboxes: Boolean read FCheckboxes write SetCheckboxes default False;
     property Striped: Boolean read FStriped write FStriped default True;
+    { Stripes stay where they are on screen while the rows scroll under them
+      (a grid that scrolls by itself, a row at a time, does not strobe). }
+    property FixedStripes: Boolean read FFixedStripes write FFixedStripes default False;
     property GridLines: Boolean read FGridLines write FGridLines default True;
     property CellPadding: Single read FCellPadding write FCellPadding;
     property OnGetText: TGridTextEvent read FOnGetText write FOnGetText;
@@ -1020,7 +1024,7 @@ begin
       end
       else
       begin
-        if FStriped and Odd(Row) then
+        if FStriped and Odd(IfThen(FFixedStripes, Row - FTopRow, Row)) then
           RowBack := FAltColor
         else
           RowBack := FBackColor;

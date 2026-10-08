@@ -384,6 +384,7 @@ begin
   FGrid.RowHeight := 22;
   FGrid.HeaderHeight := 24;
   FGrid.FontSize := 12;
+  FGrid.FixedStripes := True; // it scrolls a row at a time while playing
   FGrid.OnGetText := GridGetText;
   FGrid.OnGetStyle := GridGetStyle;
   FGrid.OnSelect := GridSelect;
@@ -2319,11 +2320,26 @@ begin
     Row := FData.IndexAt(FChart.CursorTime);
     if not FromGrid and (FGrid.ItemIndex <> Row) then
     begin
-      // Keep the cursor row about a third of the way down.
       Vis := FGrid.VisibleRows;
-      if (Row < FGrid.TopRow) or (Row >= FGrid.TopRow + Vis * 2 div 3) then
+      if FPlaying or (FLive and FChart.Follow) then
+      begin
+        // Moving by itself: the cursor row stays put and the rows scroll
+        // under it one at a time. (Jumping a third of the grid every few
+        // rows moved every row and colour at once: it looked like flashing.)
+        if FLive then
+          FGrid.TopRow := Max(0, Row - Vis + 1) // the newest at the bottom
+        else
+          FGrid.TopRow := Max(0, Row - Vis div 3);
+      end
+      // Moved by hand: keep the cursor row about a third of the way down.
+      else if (Row < FGrid.TopRow) or (Row >= FGrid.TopRow + Vis * 2 div 3) then
         FGrid.TopRow := Max(0, Row - Vis div 3);
       FGrid.ItemIndex := Row;
+    end
+    else if FPlaying and (Row = FGrid.ItemIndex) then
+    begin
+      ShowTime; // still on the same row: the grid and the values have not changed
+      Exit;
     end;
     FGrid.Refresh;
     ShowTime;

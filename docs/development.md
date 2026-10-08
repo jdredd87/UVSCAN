@@ -69,6 +69,10 @@ UVScanProbe COM9 cpidconfirm 01 1104,110C 3 repeat single-bit tests, keep effect
 
 `cpids`, `cpidlen`, `cpidmap` and `cpidconfirm` **send device control commands**; `cpidmap` on CPID $02 resets learned values. They end with mode $20 (return to normal). See [protocol notes](protocol.md#device-control-mode-ae).
 
+## Sample log
+
+`python tools\make_sample_log.py [file.csv]` writes a made-up 25-minute drive (10 rows a second, 20 channels: cold start, city, on-ramp and passing pulls with knock retard, highway with the converter clutch locked, a hot idle with the fan and A/C cycling) as a UVScan log, by default `UVScan_sample_drive.csv` in *Documents\UVScan Logs*, for trying the log viewer and playback with more than the built-in demo.
+
 ## Source layout
 
 | Path | Purpose |
@@ -106,6 +110,7 @@ UVScanProbe COM9 cpidconfirm 01 1104,110C 3 repeat single-bit tests, keep effect
 | `data/` | Factory defaults, compiled into the exe |
 | `tests/` | DUnitX tests |
 | `tools/UVScanProbe.dpr` | Console bench tool |
+| `tools/make_sample_log.py` | Writes the sample log (see above) |
 | `docs/` | This documentation and its screenshots |
 | `legacy/` | The original 2008 source, for reference only; not used by the new app |
 
