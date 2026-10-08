@@ -263,6 +263,7 @@ type
     FLiveIds: TArray<Integer>;
     FLive: TLiveSnapshot;
     FAwaySince: TDateTime;    // phone: when the app left the screen, 0 = on screen
+    FSaveDue: UInt64;         // tick count when changed settings are saved, 0 = nothing to save
     FNotes: TNotificationCenter; // phone: the notification while away
     lblAway: TLabel;
     cbAway: TComboBox;
@@ -421,6 +422,7 @@ type
     procedure LoadData;
     procedure LoadSettings;
     procedure SaveSettings;
+    procedure SettingsChanged;
     function AppEvent(AAppEvent: TApplicationEvent; AContext: TObject): Boolean;
     procedure FillPorts(const Select: string);
     procedure FillPidList;
@@ -1016,6 +1018,11 @@ begin
   btnMenu.Visible := (P = tiLive) or (P = tiDashboard) or (P = tiPids) or (P = tiMessages) or (P = tiConnect) or
     (P = tiControls);
   btnChart.Visible := (P = tiLive) or (P = tiDashboard);
+  // Without the menu button, the main button keeps a gap to the edge.
+  if btnMenu.Visible then
+    btnAction.Margins.Right := 4
+  else
+    btnAction.Margins.Right := 12;
   for I := 0 to 4 do
     FNavButtons[I].Repaint;
 end;
@@ -2021,6 +2028,7 @@ begin
   finally
     Ordered.Free;
   end;
+  SettingsChanged;
 end;
 
 procedure TMainForm.edtSearchChange(Sender: TObject);
@@ -2142,6 +2150,7 @@ begin
   if I < 0 then
     Exit;
   FSelected.Clear;
+  SettingsChanged;
   Missing := 0;
   for Id in FLists[I].PidIds do
   begin
@@ -2211,6 +2220,7 @@ end;
 procedure TMainForm.btnClearSelectionClick(Sender: TObject);
 begin
   FSelected.Clear;
+  SettingsChanged;
   FillPidList;
 end;
 
@@ -2308,6 +2318,7 @@ begin
     Exit;
   end;
   Baud := StrToIntDef(ComboText(cbBaud), 115200);
+  SettingsChanged; // the port and speed
   {$IFDEF ANDROID}
   // Android 13+: notifications need the user's yes (for the one shown while away).
   if TOSVersion.Check(13) and not PermissionsService.IsPermissionGranted('android.permission.POST_NOTIFICATIONS') then
@@ -2432,6 +2443,8 @@ begin
         begin
           grdLive.Refresh;
           RefreshDashboard;
+          if not FTestMode then
+            SetStatus(spRate, ''); // no updates any more
         end;
         if (FState = esConnected) and FAutoScan then
         begin
@@ -2593,6 +2606,14 @@ begin
   end;
 end;
 
+{ Saves soon (from the refresh timer): Android may end the app without
+  closing it - updated, force-stopped, short of memory - and the ticked PIDs
+  or the port would be lost. }
+procedure TMainForm.SettingsChanged;
+begin
+  FSaveDue := TThread.GetTickCount64 + 1000;
+end;
+
 procedure TMainForm.tmrRefreshTimer(Sender: TObject);
 var
   I: Integer;
@@ -2601,6 +2622,11 @@ var
   Samples: TArray<TLiveSample>;
 begin
   FlushMessages;
+  if (FSaveDue <> 0) and (TThread.GetTickCount64 >= FSaveDue) then
+  begin
+    FSaveDue := 0;
+    SaveSettings;
+  end;
   if not LiveActive then
     Exit;
   Repaint := False;
@@ -4443,16 +4469,20 @@ procedure TMainForm.SetStatus(Part: TStatusPart; const Text: string);
 var
   P: TStatusPart;
   S: string;
+  Refit: Boolean;
 begin
   if FStatus[Part] = Text then
     Exit; // avoid repainting the status strip for nothing
+  // The rate changes every tick: its lines are only measured again when it
+  // appears, goes or changes length (it may need another line then).
+  Refit := (Part <> spRate) or (Length(FStatus[Part]) <> Length(Text));
   FStatus[Part] := Text;
   S := '';
   for P := Low(TStatusPart) to High(TStatusPart) do
     if FStatus[P] <> '' then
       S := S + IfThen(S <> '', '  ' + #$00B7 + '  ', '') + FStatus[P];
   lblStatus.Text := S;
-  if FChromeReady and (Part <> spRate) then // the rate changes every tick, but not its length much
+  if FChromeReady and Refit then
     FitWrappedText;
 end;
 
