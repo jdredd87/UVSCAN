@@ -14,7 +14,7 @@ uses
   System.StrUtils, System.IOUtils, System.Generics.Collections,
   FMX.Types, FMX.Controls, FMX.Forms, FMX.Graphics, FMX.Dialogs, FMX.StdCtrls, FMX.Edit,
   FMX.ListBox, FMX.Layouts, FMX.Objects, FMX.TabControl, FMX.Menus, FMX.Controls.Presentation,
-  FMX.Platform, System.Messaging,
+  FMX.Platform, System.Messaging, System.Notification,
   UVScan.Serial, UVScan.Simulator, UVScan.Pids, UVScan.Dpid, UVScan.Dtc, UVScan.Engine,
   UVScan.Class2, UVScan.Paths, UVScan.Settings, UVScan.PidLists, UVScan.Defaults,
   UVScan.Display, UVScan.Alerts, UVScan.Controls, UVScan.Gauge, UVScan.UI.DataGrid, UVScan.LogData;
@@ -263,6 +263,7 @@ type
     FLiveIds: TArray<Integer>;
     FLive: TLiveSnapshot;
     FAwaySince: TDateTime;    // phone: when the app left the screen, 0 = on screen
+    FNotes: TNotificationCenter; // phone: the notification while away
     lblAway: TLabel;
     cbAway: TComboBox;
     FLiveLog: TLogData;       // the last minutes of the scan, for the live chart
@@ -387,6 +388,8 @@ type
     procedure SetupLiveRows(const Ids: TArray<Integer>);
     function AddLiveSample(const Time: Double; const Text: TArray<string>): Boolean;
     procedure LiveChartClick(Sender: TObject);
+    procedure ShowAwayNote(const Title, Body: string);
+    procedure ClearAwayNote;
     procedure StartTest;
     procedure StopTest;
     function TestSnapshot: TLiveSnapshot;
@@ -445,7 +448,11 @@ implementation
 uses
   System.JSON, UVScan.JsonFile, UVScan.UI.Common, UVScan.UI.Theme, UVScan.Sound, UVScan.PidEditor,
   UVScan.PidDiscovery, UVScan.DisplayEditor, UVScan.GaugeEditor, UVScan.ControlEditor, UVScan.LogViewer,
-  System.DateUtils;
+  System.DateUtils, System.Permissions;
+
+const
+  AwayNote = 'uvscan_away';       // the notification's name
+  AwayChannel = 'uvscan_running'; // its channel (Android 8+)
 
 const
   SimulatorPort = 'Simulator';
@@ -492,6 +499,18 @@ begin
   FGaugeViews := TList<TGaugeView>.Create;
   FLiveLog := TLogData.Create;
   TLogViewerForm.SetLiveSource(FLiveLog);
+  if IsMobile then
+  begin
+    FNotes := TNotificationCenter.Create(Self);
+    var Channel := FNotes.CreateChannel(AwayChannel, 'Scanning while away',
+      'Shown when you leave UVScan while it is connected, scanning or logging');
+    try
+      Channel.Importance := TImportance.High; // shows as a banner
+      FNotes.CreateOrUpdateChannel(Channel);
+    finally
+      Channel.Free;
+    end;
+  end;
   FMenuPidId := -1;
   FMenuGauge := -1;
   Caption := 'UVScan';
@@ -535,6 +554,7 @@ function TMainForm.AppEvent(AAppEvent: TApplicationEvent; AContext: TObject): Bo
 var
   Cmd: TEngineCommand;
   Secs: Int64;
+  Wait: string;
 begin
   Result := False;
   if (AAppEvent in [TApplicationEvent.EnteredBackground, TApplicationEvent.WillTerminate]) and not FClosing then
@@ -551,6 +571,20 @@ begin
       Cmd := Command(ecBackground);
       Cmd.Seconds := FSettings.BackgroundStop;
       FEngine.Post(Cmd); // not Post: that hides the notice, as for a button press
+      // A notification says it is still running, and for how long.
+      if FSettings.BackgroundStop < 60 then
+        Wait := Format('%d seconds', [FSettings.BackgroundStop])
+      else
+        Wait := Format('%d minute%s', [FSettings.BackgroundStop div 60, IfThen(FSettings.BackgroundStop >= 120, 's', '')]);
+      if FLogging then
+        ShowAwayNote('UVScan is logging', Format('Tap to go back. After %s away the log is closed and the ' +
+          'adapter disconnected.', [Wait]))
+      else if FState = esScanning then
+        ShowAwayNote('UVScan is scanning', Format('Tap to go back. After %s away the scan stops and the ' +
+          'adapter is disconnected.', [Wait]))
+      else
+        ShowAwayNote('UVScan is connected', Format('Tap to go back. After %s away the adapter is disconnected.',
+          [Wait]));
     end;
   end
   else if (AAppEvent in [TApplicationEvent.WillBecomeForeground, TApplicationEvent.BecameActive]) and
@@ -559,6 +593,7 @@ begin
     // Wall-clock time: a frozen app's own clocks may not have counted it all.
     Secs := SecondsBetween(Now, FAwaySince);
     FAwaySince := 0;
+    ClearAwayNote; // the notice in the app says the rest
     if FSettings.PendingNotice <> '' then
     begin
       FSettings.PendingNotice := ''; // still running: the notice is on screen now
@@ -1600,6 +1635,7 @@ begin
   FGaugeViews.Free; // the views themselves are owned by the form
   TLogViewerForm.SetLiveSource(nil);
   FLiveLog.Free;
+  ClearAwayNote;
   FDtcs.Free;
   FSelected.Free;
   FSupport.Free;
@@ -2273,6 +2309,16 @@ begin
     Exit;
   end;
   Baud := StrToIntDef(ComboText(cbBaud), 115200);
+  {$IFDEF ANDROID}
+  // Android 13+: notifications need the user's yes (for the one shown while away).
+  if TOSVersion.Check(13) and not PermissionsService.IsPermissionGranted('android.permission.POST_NOTIFICATIONS') then
+    PermissionsService.RequestPermissions(['android.permission.POST_NOTIFICATIONS'],
+      procedure(const APermissions: TClassicStringDynArray; const AGrantResults: TClassicPermissionStatusDynArray)
+      begin
+        if (Length(AGrantResults) > 0) and (AGrantResults[0] <> TPermissionStatus.Granted) then
+          AddMessage('Notifications are off: leaving UVScan while scanning will not show one');
+      end);
+  {$ENDIF}
   Cmd := Command(ecConnect);
   if PortName = SimulatorPort then
     Cmd.Factory :=
@@ -2371,6 +2417,7 @@ begin
           // back, so the notice is kept for the next start too.
           FSettings.PendingNotice := Ev.Text;
           SaveSettings;
+          ShowAwayNote('UVScan stopped', Ev.Text);
         end;
       end;
     eeError:
@@ -2692,6 +2739,34 @@ begin
     else
       Values[I] := ParseLogValue(Text[I], Switch);
   FLiveLog.Append(Time, Values, KeepSeconds);
+end;
+
+{ Phone: the notification while away (one, replaced as things change; a tap
+  brings UVScan back). }
+procedure TMainForm.ShowAwayNote(const Title, Body: string);
+var
+  N: TNotification;
+begin
+  if FNotes = nil then
+    Exit;
+  N := FNotes.CreateNotification;
+  try
+    N.Name := AwayNote;
+    N.Title := Title;
+    N.AlertBody := Body;
+    N.ChannelId := AwayChannel;
+    N.EnableSound := False;
+    FNotes.CancelNotification(AwayNote);
+    FNotes.PresentNotification(N);
+  finally
+    N.Free;
+  end;
+end;
+
+procedure TMainForm.ClearAwayNote;
+begin
+  if FNotes <> nil then
+    FNotes.CancelNotification(AwayNote);
 end;
 
 procedure TMainForm.LiveChartClick(Sender: TObject);
