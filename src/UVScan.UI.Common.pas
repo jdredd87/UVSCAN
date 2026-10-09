@@ -55,6 +55,9 @@ procedure ShowWarning(const Msg: string; const OnClose: TProc = nil);
 procedure ShowError(const Msg: string; const OnClose: TProc = nil);
 { Yes / No question; OnYes runs only on Yes. }
 procedure Confirm(const Msg: string; const OnYes: TProc; const OnNo: TProc = nil);
+{ For an editor's OnCloseQuery: closing other than with OK while Changed
+  asks Question first (Yes closes it, No keeps it open). }
+function CanCloseEditor(Form: TCustomForm; Changed: Boolean; const Question: string): Boolean;
 { One line of text; OnOK gets the trimmed text (only when OK is pressed). }
 procedure AskText(const Title, Prompt, Default: string; const OnOK: TProc<string>);
 
@@ -895,6 +898,41 @@ end;
 procedure ShowError(const Msg: string; const OnClose: TProc);
 begin
   MessageBox(Msg, TMsgDlgType.mtError, OnClose);
+end;
+
+type
+  TDiscardGuard = class(TComponent)
+  private
+    FDiscard: Boolean; // the user said to discard: close without asking again
+  end;
+
+function CanCloseEditor(Form: TCustomForm; Changed: Boolean; const Question: string): Boolean;
+var
+  G: TDiscardGuard;
+  I: Integer;
+begin
+  if Form.ModalResult = mrOk then
+    Exit(True);
+  G := nil;
+  for I := 0 to Form.ComponentCount - 1 do
+    if Form.Components[I] is TDiscardGuard then
+      G := TDiscardGuard(Form.Components[I]);
+  if G = nil then
+    G := TDiscardGuard.Create(Form);
+  if G.FDiscard or not Changed then
+    Exit(True);
+  Result := False;
+  Confirm(Question,
+    procedure
+    begin
+      G.FDiscard := True;
+      // close again once the question is out of the way
+      TThread.ForceQueue(nil,
+        procedure
+        begin
+          Form.ModalResult := mrCancel;
+        end);
+    end);
 end;
 
 procedure Confirm(const Msg: string; const OnYes: TProc; const OnNo: TProc);

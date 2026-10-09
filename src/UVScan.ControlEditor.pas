@@ -76,6 +76,9 @@ type
     FOriginal: TControlDef;
     FLoading: Boolean;
     FKindButtons: TArray<TRadioButton>;
+    FStart: string; // StateText when it opened
+    function StateText: string;
+    procedure FormCloseQuery(Sender: TObject; var CanClose: Boolean);
     procedure LoadFrom(C: TControlDef);
     function ReadInto(C: TControlDef): string; // '' or the problem
     function KindIndex: Integer;
@@ -119,6 +122,8 @@ begin
   else
     F.Caption := 'Edit real-time control';
   F.LoadFrom(C);
+  F.FStart := F.StateText;
+  F.OnCloseQuery := F.FormCloseQuery;
   MakePage(F, F.Caption, F.btnOK);
   ShowDialog(F,
     procedure(R: TModalResult)
@@ -365,6 +370,19 @@ begin
   lblProblem.Text := Problem;
   FormResize(nil); // their wrapped height may have changed
   btnOK.Enabled := Problem = '';
+end;
+
+{ What the user can change, to tell whether closing loses anything. }
+function TControlEditorForm.StateText: string;
+begin
+  Result := string.Join('|', [edtName.Text, cbGroup.Text, IntToStr(KindIndex), cbModule.Text, edtOn.Text, edtOff.Text,
+    edtUnits.Text, edtConfirm.Text, memNotes.Text, edtMin.Text, edtMax.Text, edtStep.Text, edtScale.Text,
+    edtOffset.Text]);
+end;
+
+procedure TControlEditorForm.FormCloseQuery(Sender: TObject; var CanClose: Boolean);
+begin
+  CanClose := CanCloseEditor(Self, StateText <> FStart, 'Discard your changes to this control?');
 end;
 
 procedure TControlEditorForm.btnOKClick(Sender: TObject);

@@ -103,6 +103,7 @@ type
     FDisplay: TPidDisplay;
     FLoading: Boolean;
     FFitting: Boolean;
+    FStart: string;                  // StateText when it opened
     FFlashOn: Boolean;
     FEditing: Integer;               // level shown on the level page, -1 = none
     FCards: TArray<TRectangle>;
@@ -120,6 +121,8 @@ type
     procedure SetValueValid(Valid: Boolean);
     procedure FitLayout;
     procedure LevelListResized(Sender: TObject);
+    function StateText: string;
+    procedure FormCloseQuery(Sender: TObject; var CanClose: Boolean);
     procedure ApplyPalette;
     procedure FormKeyUp(Sender: TObject; var Key: Word; var KeyChar: WideChar; Shift: TShiftState);
   public
@@ -140,7 +143,7 @@ implementation
 {$R *.fmx}
 
 uses
-  System.StrUtils, FMX.DialogService, UVScan.UI.Common, UVScan.UI.Theme, UVScan.Sound;
+  System.StrUtils, System.JSON, FMX.DialogService, UVScan.UI.Common, UVScan.UI.Theme, UVScan.Sound;
 
 const
   PtToDip = 96 / 72; // the live grid's font sizes are in points
@@ -158,6 +161,7 @@ begin
     F.FDisplay.Assign(Existing);
   F.FDisplay.PidId := Pid.Id;
   F.LoadAll;
+  F.FStart := F.StateText;
   ShowDialog(F,
     procedure(R: TModalResult)
     begin
@@ -177,6 +181,7 @@ var
   L: TLabel;
 begin
   lytLevelList.OnResized := LevelListResized;
+  OnCloseQuery := FormCloseQuery;
   FLoading := True; // filling the boxes fires their OnChange
   FEditing := -1;
   FDisplay := TPidDisplay.Create(0);
@@ -289,6 +294,24 @@ end;
 
 { The form's resize comes before its contents have their new widths (the
   first layout on a phone, a turn): the list's own resize lays out again. }
+{ What the user can change, to tell whether closing loses anything. }
+function TDisplayEditorForm.StateText: string;
+var
+  J: TJSONArray;
+begin
+  J := LevelsToJson(FDisplay.Levels);
+  try
+    Result := Format('%d|%d|%d|', [FDisplay.FontSize, FDisplay.TextColor, FDisplay.RowColor]) + J.ToJSON;
+  finally
+    J.Free;
+  end;
+end;
+
+procedure TDisplayEditorForm.FormCloseQuery(Sender: TObject; var CanClose: Boolean);
+begin
+  CanClose := CanCloseEditor(Self, StateText <> FStart, 'Discard your changes to the display and alerts?');
+end;
+
 procedure TDisplayEditorForm.LevelListResized(Sender: TObject);
 begin
   FitLayout;

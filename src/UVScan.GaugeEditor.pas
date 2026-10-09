@@ -66,6 +66,7 @@ type
     FStyle: TGaugeStyle;
     FSize: TGaugeSize;
     FLoading: Boolean;
+    FStart: string; // StateText when it opened
     FFlashOn: Boolean;
     FStyleChips: TArray<TRectangle>;
     FSizeChips: TArray<TRectangle>;
@@ -83,6 +84,8 @@ type
     function AddChips(Parent: TLayout; const Captions: array of string; OnClick: TNotifyEvent): TArray<TRectangle>;
     procedure LayoutChips(const Chips: TArray<TRectangle>; Parent: TLayout);
     procedure ChipRowResized(Sender: TObject);
+    function StateText: string;
+    procedure FormCloseQuery(Sender: TObject; var CanClose: Boolean);
     procedure PidBoxResized(Sender: TObject);
     procedure PreviewResized(Sender: TObject);
     procedure TrackResized(Sender: TObject);
@@ -236,6 +239,7 @@ begin
   F.UpdatePid;
   F.UpdateAlerts;
   F.UpdatePreview;
+  F.FStart := F.StateText;
   ShowDialog(F,
     procedure(R: TModalResult)
     var
@@ -258,6 +262,7 @@ var
 begin
   FLoading := True;
   OnKeyUp := FormKeyUp;
+  OnCloseQuery := FormCloseQuery;
   btnCancel.Text := '';
   btnPickerBack.Text := '';
   AddLineIcon(btnCancel, IconBack);
@@ -672,6 +677,17 @@ begin
       if Assigned(FOnAlertsChanged) then
         FOnAlertsChanged();
     end);
+end;
+
+{ What the user can change, to tell whether closing loses anything. }
+function TGaugeEditorForm.StateText: string;
+begin
+  Result := Format('%d|%d|%d|%s|%s', [FPidId, Ord(FStyle), Ord(FSize), edtMin.Text, edtMax.Text]);
+end;
+
+procedure TGaugeEditorForm.FormCloseQuery(Sender: TObject; var CanClose: Boolean);
+begin
+  CanClose := CanCloseEditor(Self, StateText <> FStart, 'Discard your changes to this gauge?');
 end;
 
 procedure TGaugeEditorForm.btnOKClick(Sender: TObject);
