@@ -866,7 +866,7 @@ begin
   end;
   if (C is TCheckBox) or (C is TRadioButton) then
     Extra := 34 // the box (or circle) and the gap
-  else if C is TButton then
+  else if (C is TButton) or ((C is TSpeedButton) and SameText(TSpeedButton(C).StyleLookup, 'buttonstyle')) then
     Extra := 28
   else
     Extra := 6;

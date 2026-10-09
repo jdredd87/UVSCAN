@@ -4348,29 +4348,33 @@ end;
   phone) the sizes stay apart: small gauges shrink so two fit a row, medium
   ones keep their size, large ones fill the width; bars take the width at
   their size's height. }
+{ The gauges in order, in rows centred in the width. A gauge shorter than its
+  row goes under the one before it when both fit the row's height (a large
+  dial with two small ones beside it, one above the other), rather than
+  leaving that room empty. }
 procedure TMainForm.LayoutDashboard;
 var
-  View: TGaugeView;
-  I: Integer;
-  X, Y, RowH, Avail, K, Cap: Single;
+  I, J, RowFirst: Integer;
+  Avail, K, Cap, Y, RowH, ColX, ColW, ColH, Shift: Single;
   Sz: TSizeF;
-  Row: TArray<TGaugeView>;
+  R: TArray<TRectF>;
 const
   Gap = 12;
 
   // The gauges of a full row, centred in the width.
-  procedure PlaceRow;
+  procedure PlaceRow(Last: Integer);
   var
-    V: TGaugeView;
-    Used, Shift: Single;
+    N: Integer;
+    Right: Single;
   begin
-    if Row = nil then
+    if Last < RowFirst then
       Exit;
-    Used := Row[High(Row)].Position.X + Row[High(Row)].Width - Row[0].Position.X;
-    Shift := Max(0, (Avail - Used) / 2 - Row[0].Position.X);
-    for V in Row do
-      V.Position.X := V.Position.X + Shift;
-    Row := nil;
+    Right := 0;
+    for N := RowFirst to Last do
+      Right := Max(Right, R[N].Right);
+    Shift := Max(0, (Avail - (Right - Gap)) / 2 - Gap);
+    for N := RowFirst to Last do
+      R[N].Offset(Shift, 0);
   end;
 
 begin
@@ -4380,13 +4384,15 @@ begin
   Avail := sbDash.Width;
   if not IsMobile then
     Avail := Avail - 16; // the scroll bar (a phone's floats over the page)
-  X := Gap;
+  SetLength(R, FGaugeViews.Count);
   Y := Gap;
   RowH := 0;
-  Row := nil;
+  RowFirst := 0;
+  ColX := Gap; // the column the last gauge is in: its left, width and filled height
+  ColW := 0;
+  ColH := 0;
   for I := 0 to FGaugeViews.Count - 1 do
   begin
-    View := FGaugeViews[I];
     Sz := TGaugeView.PreferredSize(FDisplay.Gauges[I].Style, FDisplay.Gauges[I].Size);
     if (Sz.cx > 0) and (Sz.cx * 2 + 3 * Gap > Avail) and (FDisplay.Gauges[I].Style = gsBar) then
       Sz := TSizeF.Create(Floor(Avail - 2 * Gap), Sz.cy) // a bar is wide anyway: the width, its size's height
@@ -4420,19 +4426,32 @@ begin
       if Sz.cy > Cap then
         Sz := TSizeF.Create(Round(Sz.cx * Cap / Sz.cy), Cap);
     end;
-    if (X > Gap) and (X + Sz.cx + Gap > Avail) then
+    if (I > RowFirst) and (Sz.cx <= ColW + 0.5) and (ColH + Gap + Sz.cy <= RowH + 0.5) then
     begin
-      PlaceRow;
-      X := Gap;
+      // under the one before it, in its column
+      R[I] := TRectF.Create(TPointF.Create(ColX + (ColW - Sz.cx) / 2, Y + ColH + Gap), Sz.cx, Sz.cy);
+      ColH := ColH + Gap + Sz.cy;
+      Continue;
+    end;
+    if (I > RowFirst) and (ColX + ColW + Gap + Sz.cx + Gap > Avail) then
+    begin
+      PlaceRow(I - 1);
       Y := Y + RowH + Gap;
       RowH := 0;
-    end;
-    View.SetBounds(X, Y, Sz.cx, Sz.cy);
-    Row := Row + [View];
-    X := X + Sz.cx + Gap;
+      RowFirst := I;
+      ColX := Gap;
+      ColW := 0;
+    end
+    else if I > RowFirst then
+      ColX := ColX + ColW + Gap;
+    R[I] := TRectF.Create(TPointF.Create(ColX, Y), Sz.cx, Sz.cy);
+    ColW := Sz.cx;
+    ColH := Sz.cy;
     RowH := Max(RowH, Sz.cy);
   end;
-  PlaceRow;
+  PlaceRow(FGaugeViews.Count - 1);
+  for J := 0 to High(R) do
+    FGaugeViews[J].SetBounds(R[J].Left, R[J].Top, R[J].Width, R[J].Height);
   // Room below the last row so the + button does not cover a gauge.
   if FAddGauge <> nil then
   begin

@@ -826,7 +826,6 @@ begin
         Fill(X, FPlot.Top, Y - X, FPlot.Height, SelColor, 38);
         Line(X, FPlot.Top, X, FPlot.Bottom, 1, SelColor, 160);
         Line(Y, FPlot.Top, Y, FPlot.Bottom, 1, SelColor, 160);
-        Txt(FormatLogTime(Abs(FSel1 - FSel0)), X, FPlot.Top + 2, Y - X, 14, 10.5, SelColor, TTextAlign.Center, True);
       end;
     end;
     // cursor line
@@ -867,6 +866,19 @@ begin
           Fill(X + 4, FPlot.Top + 10 + I * 17 + 4, 6, 9, BoxColors[I]);
           Txt(Box[I], X + 13, FPlot.Top + 10 + I * 17, Px - 14, 17, 12, BoxColors[I], TTextAlign.Leading, True);
         end;
+      end;
+    end;
+    // the selection's length: at its foot, clear of the values box at the top
+    if HasSelection then
+    begin
+      X := Max(FPlot.Left, X_(Min(FSel0, FSel1)));
+      Y := Min(FPlot.Right, X_(Max(FSel0, FSel1)));
+      if Y > X then
+      begin
+        S := FormatLogTime(Abs(FSel1 - FSel0));
+        Px := Min(Y - X, TextWidth(S, 10.5, True) + 10);
+        Fill((X + Y - Px) / 2, FPlot.Bottom - 20, Px, 17, Back, 200);
+        Txt(S, X, FPlot.Bottom - 20, Y - X, 17, 10.5, SelColor, TTextAlign.Center, True);
       end;
     end;
     if IsFocused then

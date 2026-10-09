@@ -431,6 +431,7 @@ begin
   // button to select a range with a finger.
   btnOpen.Visible := not IsMobile;
   btnSelect.Visible := IsMobile;
+  btnSelect.StyleLookup := 'buttonstyle'; // a speed button's pressed look on Android is a big circle
   OnKeyUp := FormKeyUp;
   // The wide layout (absolute positions), kept for when the window is wide again.
   SaveBounds([btnDemo, cbRecent, btnStart, btnPlay, btnEnd, cbSpeed, tbPos, lblTime, btnSelect, lblColor, cbxColor,
@@ -966,10 +967,10 @@ begin
   PlaceShortTitle;
   // Playback: the buttons, then the position and time (one row when short).
   ShowControls([chkFollow, chkBands, chkUseDisplay], False);
-  btnStart.SetBounds(12, 6, 48, 38);
-  btnPlay.SetBounds(68, 6, 84, 38);
-  btnEnd.SetBounds(160, 6, 48, 38);
-  cbSpeed.SetBounds(216, 6, 84, 38);
+  btnStart.SetBounds(12, 6, 44, 38);
+  btnPlay.SetBounds(62, 6, 72, 38);
+  btnEnd.SetBounds(140, 6, 44, 38);
+  cbSpeed.SetBounds(190, 6, 66, 38);
   lblTime.WordWrap := False;
   lblTime.TextSettings.HorzAlign := TTextAlign.Trailing;
   S := lblTime.Text; // as wide as the longest time it will show
@@ -982,7 +983,7 @@ begin
   if FShort then
   begin
     pnlPlay.Height := 50;
-    X := 308; // where the slider starts
+    X := 264; // where the slider starts
     FitTextWidth(btnSelect, 90);
     if W - 20 - lblTime.Width - X - btnSelect.Width - 8 < 160 then
       btnSelect.Visible := False;
@@ -1001,7 +1002,7 @@ begin
     if btnSelect.Visible then
     begin
       FitTextWidth(btnSelect, 90);
-      if W - 12 - 308 >= btnSelect.Width then
+      if W - 12 - 264 >= btnSelect.Width then
         btnSelect.SetBounds(W - 12 - btnSelect.Width, 6, btnSelect.Width, 38)
       else
       begin
