@@ -61,6 +61,10 @@ type
     property RejectedPids: TList<Word> read FRejectedPids;
     { DPIDs currently being streamed. }
     function ActiveDpids: TArray<Byte>;
+    { What the simulated PCM answers for Pid (Size bytes) T seconds into its
+      drive: believable values, the inverse of the default catalog's formula,
+      for the PIDs it knows; a slow sweep of the whole range for the rest. }
+    class function RawValue(Pid: Word; Size: Byte; T: Double): TBytes; static;
   end;
 
 const
@@ -405,16 +409,123 @@ begin
 end;
 
 function TSimulatedAvt.PidValue(Pid: Word; Size: Byte): TBytes;
+begin
+  Result := RawValue(Pid, Size, Seconds);
+end;
+
+{ The drive behind the values: the pedal (0..1) goes down now and then,
+  sometimes hard, and comes back up. }
+function SimThrottle(T: Double): Double;
+begin
+  Result := EnsureRange(0.04 + 0.7 * Power(Max(0, Sin(T * 0.31)), 3) + 0.2 * Power(Max(0, Sin(T * 1.13 + 1)), 6), 0, 1);
+end;
+
+class function TSimulatedAvt.RawValue(Pid: Word; Size: Byte; T: Double): TBytes;
+const
+  Ratios: array[1..4] of Double = (3.06, 1.63, 1.0, 0.7); // a 4L60-E
 var
-  T, Raw: Double;
+  Thr, Mph, Rpm, Maf, Map, Knock, O2, Oss, Raw: Double;
+  Gear: Integer;
   N: Int64;
   I: Integer;
 begin
-  T := Seconds;
+  Thr := SimThrottle(T - 0.4); // the engine follows the pedal a moment later
+  Mph := 35 + 25 * Sin(T * 0.045) + 12 * SimThrottle(T - 3);
+  if Mph < 14 then
+    Gear := 1
+  else if Mph < 28 then
+    Gear := 2
+  else if Mph < 42 then
+    Gear := 3
+  else
+    Gear := 4;
+  Oss := Mph * 41; // 3.42 axle, 28 in tyres
+  Rpm := 700 + Oss * Ratios[Gear] * 0.68 + 1500 * Thr;
+  Maf := 2.5 + Rpm / 1000 * (1.5 + 30 * Thr);
+  Map := 28 + 70 * Thr;
+  if Thr > 0.65 then
+    Knock := 4 * (Thr - 0.65) / 0.35 * (0.5 + 0.5 * Sin(T * 3))
+  else
+    Knock := 0;
+  if Thr > 0.7 then
+    O2 := 880 // power enrichment: rich
+  else
+    O2 := 450 + 380 * Sin(T * 7.5); // closed loop: switching
   case Pid of
-    $000C: Raw := (800 + 2600 * (0.5 + 0.5 * Sin(T * 0.6))) * 4;  // engine speed, rpm * 4
-    $0005: Raw := 88 + 4 * Sin(T * 0.05) + 40;                      // coolant, C + 40
-    $000F: Raw := 30 + 3 * Sin(T * 0.03) + 40;                      // intake air, C + 40
+    $000C: Raw := Rpm * 4;
+    $0005: Raw := 88 + 4 * Sin(T * 0.05) + 40;           // coolant, C + 40
+    $000F: Raw := 30 + 3 * Sin(T * 0.03) + 40;           // intake air
+    $1940: Raw := 82 + 3 * Sin(T * 0.02) + 40;           // transmission fluid
+    $0004: Raw := (18 + 75 * Thr) * 2.55;                // calculated load %
+    $0011: Raw := Thr * 100 * 2.55;                      // throttle %
+    $1143: Raw := (0.6 + 3.8 * Thr) * 51;                // throttle sensor V
+    $0006: Raw := 128 + 4 * Sin(T * 1.9) * 1.28;         // short term trim %
+    $0007: Raw := 128 + (2.3 + 0.5 * Sin(T * 0.02)) * 1.28;
+    $000B: Raw := Map;
+    $000D: Raw := Mph * 1.609;
+    $000E: Raw := (14 + 22 * (1 - Thr) - Knock + 64) * 2; // spark advance
+    $0010: Raw := Maf * 100;                             // g/s
+    $1250: Raw := (1500 + 75 * Maf) * 2.048;             // MAF frequency, Hz
+    $1141: Raw := (14.2 + 0.15 * Sin(T * 0.5)) * 10;     // ignition volts
+    $1145: Raw := O2 / 4.34;                             // mV
+    $1146: Raw := (640 + 40 * Sin(T * 0.7)) / 4.34;
+    $0014, $0015:                                        // SAE O2: volts in the first byte
+      begin
+        if Pid = $0014 then
+          Raw := O2 / 1000 / 0.005
+        else
+          Raw := (640 + 40 * Sin(T * 0.7)) / 1000 / 0.005;
+        if Size = 2 then
+          Raw := Round(Raw) * 256 + 255;
+      end;
+    $0003: if Size = 2 then Raw := 2 * 256 else Raw := 2; // closed loop
+    $11A6: Raw := Knock * 256 / 22.5;
+    $1193: Raw := (1.8 + 9 * Thr) * 65.535;              // injector ms
+    $119E: Raw := IfThen(Thr > 0.7, 12.6, 14.7) * 10;    // commanded AFR
+    $199A: Raw := Gear;
+    $19A1: Raw := Ratios[Gear] / 0.01563;
+    $1192: Raw := 700 / 12.5;                            // desired idle
+    $1172: Raw := 38 + 6 * Sin(T * 0.4);                 // IAC counts
+    $1190: Raw := Min(20, Rpm / 400 + Map / 20);         // fuel trim cell
+    $1941: Raw := (Oss * Ratios[Gear] + IfThen(Gear = 4, 30, 120)) / 0.125; // input speed
+    $1942: Raw := Oss / 0.125;
+    $1991: Raw := IfThen(Gear = 4, 25 + 30 * Thr, 150) / 0.125; // TCC slip
+    $1970: Raw := IfThen(Gear = 4, 100, 0) * 2.55;       // TCC duty
+    $1972: Raw := (30 + 20 * Thr) * 2.55;                // pressure control duty
+    $199E, $199F: Raw := (0.6 + 0.3 * Thr) / 0.0195;     // pressure control amps
+    $1992..$1995: Raw := 0.45 * 40;                      // shift times, s
+    $1997..$1999: Raw := 0.05 * 40;
+    $12C5: Raw := 62 / 0.01953125;                       // fuel level %
+    $19DE: Raw := (30 + 330 * Thr) / 0.33895;            // torque Nm
+    $11A1: Raw := T;                                     // run time s
+    $119F: Raw := 72 * 2.55;                             // oil life %
+    $002C: Raw := 10 * (1 - Thr) * 2.55;                 // commanded EGR %
+    $002D: Raw := 100 / 0.78125;                         // EGR error 0 %
+    $11C1: Raw := 128;
+    $160C: Raw := 100 * 256 / 5;                         // traction: all the torque
+    $1175: Raw := 0;
+    // nothing wrong: no misfires, injector or pump faults
+    $1200..$1208, $11EA, $11EB, $11F8, $11F9, $1227, $1228, $1114, $1115, $111C..$1121, $112B..$1131:
+      Raw := 0;
+    // switches and lamps
+    $1100: Raw := 4;                                     // range: drive
+    $1101:
+      begin
+        Raw := 0;
+        if (Thr < 0.05) and (Sin(T * 0.31) < -0.5) then
+          Raw := Raw + 1;                                // brake
+        if Gear in [1, 4] then
+          Raw := Raw + $20;                              // shift solenoid A
+        if Gear in [1, 2] then
+          Raw := Raw + $40;                              // shift solenoid B
+      end;
+    $1102: Raw := $20;                                   // cruise enabled
+    $1103: Raw := IfThen(Sin(T * 0.05) > 0.5, $40, 0);   // low speed fans when hot
+    $1104: Raw := $20;                                   // fuel pump relay on
+    $1105: Raw := IfThen(Thr > 0.7, 0, 8);               // closed loop
+    $1106: Raw := IfThen(Thr > 0.7, 4, IfThen((Thr < 0.05) and (Mph > 25), 8, 0)); // enrichment, decel
+    $1107: Raw := 2;                                     // cam signal present
+    $110C: Raw := 0;
   else
     Raw := (0.5 + 0.45 * Sin(T * (0.2 + (Pid mod 7) * 0.1) + Pid)) * (Power(256, Size) - 1);
   end;
@@ -459,8 +570,11 @@ begin
   end;
   if FAnalogOn and (NowMs >= FNextAnalogMs) then
   begin
-    A := 0.5 + 0.4 * Sin(Seconds * 0.8);
-    Emit(BytesOf([$64, $58, Byte(Round(A * 255)), Byte(Round((1 - A) * 255)), 128]));
+    // A wideband (AFR about 14.6) and a pressure sender (fuel, about 43 PSI)
+    // on the first two inputs, as the default catalog's AFR and pressure PIDs read them.
+    A := Seconds;
+    Emit(BytesOf([$64, $58, Byte(Round((2.4 + 0.25 * Sin(A * 1.1)) * 51)),
+      Byte(Round((1.65 + 0.1 * Sin(A * 0.4)) * 51)), 128]));
     FNextAnalogMs := NowMs + 100;
   end;
 end;

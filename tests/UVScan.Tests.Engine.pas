@@ -37,6 +37,7 @@ type
     [Test] procedure RejectsScanWithNothingSelected;
     [Test] procedure SmallScanAfterLargeScanDoesNotReviveOldDpids;
     [Test] procedure DiscoversSupportedPids;
+    [Test] procedure SimulatorValuesAreBelievable;
     [Test] procedure DeviceControlsShareAPacket;
     [Test] procedure DeviceControlRefusalIsReported;
     [Test] procedure StopsEverythingWhenAwayTooLong;
@@ -199,7 +200,7 @@ begin
   Ect := ValueOf(S, IdEct);
   Duty := ValueOf(S, IdDuty);
   Run := ValueOf(S, IdRuntime);
-  Assert.IsTrue(InRange(Rpm, 790, 3410), 'rpm ' + FloatToStr(Rpm));
+  Assert.IsTrue(InRange(Rpm, 600, 6000), 'rpm ' + FloatToStr(Rpm));
   Assert.IsTrue(InRange(Ect, 80, 96), 'ect ' + FloatToStr(Ect));
   Assert.IsFalse(IsNan(Duty), 'calculated PID not computed');
   Assert.IsTrue(Run > 0, 'runtime');
@@ -486,6 +487,59 @@ begin
   Assert.AreEqual(48, Done.Total);
   Assert.AreEqual(48, Done.Progress);
   Assert.IsTrue(WaitUntil(function: Boolean begin Result := FState = esConnected end));
+end;
+
+{ The simulator's values, read with the default catalog's formulas, stay
+  where a running engine's would (they are shown in the docs and demos). }
+procedure TEngineTests.SimulatorValuesAreBelievable;
+
+  function N(Pid: Word; Size: Byte; T: Double): Integer;
+  var
+    B: TBytes;
+    I: Integer;
+  begin
+    B := TSimulatedAvt.RawValue(Pid, Size, T);
+    Assert.AreEqual(Integer(Size), Integer(Length(B)), Format('$%.4x size', [Pid]));
+    Result := 0;
+    for I := 0 to High(B) do
+      Result := Result shl 8 + B[I];
+  end;
+
+  procedure Check(const What: string; V, Lo, Hi: Double);
+  begin
+    Assert.IsTrue(InRange(V, Lo, Hi), Format('%s %.2f not in %.1f..%.1f', [What, V, Lo, Hi]));
+  end;
+
+var
+  T, Tp, MaxTp, MaxKnock: Double;
+  Step: Integer;
+begin
+  MaxTp := 0;
+  MaxKnock := 0;
+  for Step := 0 to 1200 do // ten minutes
+  begin
+    T := Step * 0.5;
+    Check('rpm', N($000C, 2, T) * 0.25, 650, 4500);
+    Check('mph', N($000D, 1, T) / 1.609, 5, 80);
+    Check('map', N($000B, 1, T), 25, 100);
+    Tp := N($0011, 1, T) / 2.55;
+    Check('tps', Tp, 0, 100);
+    MaxTp := Max(MaxTp, Tp);
+    Check('volts', N($1141, 1, T) / 10, 13.5, 14.6);
+    Check('o2 mV', 4.34 * N($1145, 1, T), 50, 950);
+    Check('spark', N($000E, 1, T) / 2 - 64, 5, 40);
+    Check('maf g/s', N($0010, 2, T) / 100, 2, 150);
+    Check('maf Hz', N($1250, 2, T) / 2.048, 1500, 12000);
+    Check('stft', (N($0006, 1, T) - 128) / 1.28, -6, 6);
+    Check('ect', N($0005, 1, T) - 40, 80, 96);
+    Check('gear', N($199A, 1, T), 1, 4);
+    Check('ipw', N($1193, 2, T) / 65.535, 1, 12);
+    MaxKnock := Max(MaxKnock, 22.5 * N($11A6, 1, T) / 256);
+    Check('misfires', N($1201, 2, T), 0, 0);
+  end;
+  // it does get driven: the throttle opens wide and the knock sensor shows it
+  Check('max tps', MaxTp, 70, 100);
+  Check('max knock', MaxKnock, 1, 5);
 end;
 
 procedure TEngineTests.RejectsScanWithNothingSelected;
