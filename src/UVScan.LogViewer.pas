@@ -126,6 +126,7 @@ type
     FNarrow: Boolean;
     FShort: Boolean; // narrow layout on a short, wide window (a phone held sideways)
     FMainHeight: Single; // pnlMain's height when last laid out: the chart keeps its share of it
+    FWideChartShare: Single; // the wide chart's share of pnlMain when the window went narrow
     FLaidOut: Boolean;
     FTopBar: TRectangle;
     FTitle: TLabel;
@@ -291,8 +292,12 @@ begin
     WindowState := TWindowState.wsMaximized;
     KeepInSafeArea(Self);
   end
-  else if WindowState = TWindowState.wsMinimized then
-    WindowState := TWindowState.wsNormal;
+  else
+  begin
+    if WindowState = TWindowState.wsMinimized then
+      WindowState := TWindowState.wsNormal;
+    FitToScreen(Self);
+  end;
   Show;
   Activate;
   if IsMobile then
@@ -682,6 +687,18 @@ end;
 
 procedure TLogViewerForm.FormKeyUp(Sender: TObject; var Key: Word; var KeyChar: WideChar; Shift: TShiftState);
 begin
+  // Esc (Windows): the menu or the channel page, not the window
+  if Key = vkEscape then
+  begin
+    if CloseActionMenu then
+      Key := 0
+    else if FChannelPage.Visible then
+    begin
+      Key := 0;
+      ChannelPageClose(nil);
+    end;
+    Exit;
+  end;
   if Key <> vkHardwareBack then
     Exit;
   Key := 0;
@@ -1301,6 +1318,8 @@ begin
   Narrow := FShort or (W < NarrowWidth);
   if Narrow then
   begin
+    if not FNarrow and FLaidOut and (pnlMain.Height > 100) then
+      FWideChartShare := layChart.Height / pnlMain.Height;
     FNarrow := True;
     LayoutNarrow;
   end
@@ -1310,6 +1329,10 @@ begin
     begin
       FNarrow := False;
       LayoutWide;
+      // the narrow layout's chart height is no use here: the share it had
+      // (of pnlMain's height as it is now; MainResized scales it to the new one)
+      if (FWideChartShare > 0) and (pnlMain.Height > 100) then
+        layChart.Height := Max(120, Round(pnlMain.Height * FWideChartShare));
     end;
     FlowWideBars;
     LayoutStatus;

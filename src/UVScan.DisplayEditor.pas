@@ -215,6 +215,8 @@ begin
   chkRepeat.TextSettings.WordWrap := True;
   rowSoundFile.Visible := False;
   btnBrowseSound.Visible := not IsMobile; // no file picker on a phone: type the path
+  if not IsMobile then
+    lblLevelsHelp.Text := StringReplace(lblLevelsHelp.Text, 'Tap a level', 'Click a level', []);
   ApplyPalette;
   FLoading := False;
 end;

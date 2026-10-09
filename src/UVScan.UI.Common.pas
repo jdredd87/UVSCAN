@@ -65,6 +65,12 @@ procedure AskText(const Title, Prompt, Default: string; const OnOK: TProc<string
   OnClose (may be nil) gets the modal result while the form still exists, so
   it can read the form's fields. }
 procedure ShowDialog(Form: TCommonCustomForm; const OnClose: TProc<TModalResult>);
+{ Windows: a window bigger than the screen it is on (a tablet turned upright is
+  narrower than a dialog made for landscape) is made smaller, and one partly
+  off it is moved back. Not shown yet, it is fitted to the main window's
+  screen, where it will open. A turned or changed screen fits every window
+  again by itself. Nothing on a phone. }
+procedure FitToScreen(Form: TCommonCustomForm);
 
 { Fills Combo with NamedColors (and "Default" = 0 first when AllowDefault). }
 procedure SetupColorCombo(Combo: TComboBox; AllowDefault: Boolean; const DefaultCaption: string = 'Default');
@@ -167,8 +173,14 @@ implementation
 uses
   System.Math, FMX.DialogService, FMX.Dialogs, FMX.Platform, FMX.TextLayout,
   FMX.Effects, UVScan.UI.Theme
+  {$IFDEF MSWINDOWS}, Winapi.Windows, Winapi.Messages{$ENDIF}
   {$IFDEF ANDROID}, Androidapi.Helpers, Androidapi.JNI.App, Androidapi.JNI.GraphicsContentViewText,
   Androidapi.JNIBridge, FMX.Helpers.Android, FMX.VirtualKeyboard{$ENDIF};
+
+{$IFDEF MSWINDOWS}
+type
+  TBitmap = FMX.Graphics.TBitmap; // not Winapi.Windows' one
+{$ENDIF}
 
 {$IFDEF ANDROID}
 // Not declared by Delphi's units (Androidapi.JNI.App has them commented out).
@@ -653,6 +665,8 @@ end;
 
 procedure TPageChrome.KeyUp(Sender: TObject; var Key: Word; var KeyChar: WideChar; Shift: TShiftState);
 begin
+  if Key = vkEscape then // Windows: as the back key
+    Key := vkHardwareBack;
   if (Key = vkHardwareBack) and CloseActionMenu then
   begin
     Key := 0;
@@ -967,12 +981,94 @@ begin
     end);
 end;
 
+procedure FitToScreen(Form: TCommonCustomForm);
+var
+  Ref: TCommonCustomForm;
+  Area: TRectF;
+  W, H, X, Y: Single;
+begin
+  if IsMobile or (Form.WindowState <> TWindowState.wsNormal) or (Screen.DisplayCount = 0) then
+    Exit;
+  Ref := Form;
+  if not Form.Visible and (Application.MainForm <> nil) and Application.MainForm.Visible then
+    Ref := Application.MainForm;
+  Area := Screen.DisplayFromForm(Ref).Workarea;
+  W := Min(Form.Width, Area.Width);
+  H := Min(Form.Height, Area.Height);
+  X := Form.Left;
+  Y := Form.Top;
+  X := EnsureRange(X, Area.Left, Area.Right - W);
+  Y := EnsureRange(Y, Area.Top, Area.Bottom - H);
+  if (W < Form.Width) or (H < Form.Height) or (X <> Form.Left) or (Y <> Form.Top) then
+    Form.SetBoundsF(X, Y, W, H);
+end;
+
+{$IFDEF MSWINDOWS}
+type
+  { Windows tells every top-level window when a screen turns or changes, or
+    the taskbar moves; FMX passes none of it on to its forms. }
+  TScreenWatch = class
+  private
+    FWnd: HWND;
+    procedure WndProc(var Msg: TMessage);
+  public
+    constructor Create;
+    destructor Destroy; override;
+  end;
+
+var
+  ScreenWatch: TScreenWatch;
+
+constructor TScreenWatch.Create;
+begin
+  inherited;
+  FWnd := AllocateHWnd(WndProc);
+end;
+
+destructor TScreenWatch.Destroy;
+begin
+  DeallocateHWnd(FWnd);
+  inherited;
+end;
+
+procedure TScreenWatch.WndProc(var Msg: TMessage);
+begin
+  if (Msg.Msg = WM_DISPLAYCHANGE) or ((Msg.Msg = WM_SETTINGCHANGE) and (Msg.WParam = SPI_SETWORKAREA)) then
+    // once FMX has read the new screens too
+    TThread.ForceQueue(nil,
+      procedure
+      var
+        I: Integer;
+      begin
+        if Application = nil then
+          Exit;
+        Screen.UpdateDisplayInformation;
+        for I := 0 to Screen.FormCount - 1 do
+          if Screen.Forms[I].Visible then
+            FitToScreen(Screen.Forms[I]);
+      end);
+  Msg.Result := DefWindowProc(FWnd, Msg.Msg, Msg.WParam, Msg.LParam);
+end;
+{$ENDIF}
+
 procedure ShowDialog(Form: TCommonCustomForm; const OnClose: TProc<TModalResult>);
 begin
   if IsMobile then
   begin
     Form.WindowState := TWindowState.wsMaximized;
     KeepInSafeArea(Form);
+  end
+  else
+  begin
+    FitToScreen(Form);
+    // Once shown: FMX centres it over the main window, which with more than
+    // one screen can leave it across two.
+    TThread.ForceQueue(nil,
+      procedure
+      begin
+        if Form.Visible then
+          FitToScreen(Form);
+      end);
   end;
   Form.ShowModal(
     procedure(R: TModalResult)
@@ -1129,5 +1225,13 @@ function WithAlpha(C: TAlphaColor; Alpha: Byte): TAlphaColor;
 begin
   Result := (C and $00FFFFFF) or (TAlphaColor(Alpha) shl 24);
 end;
+
+{$IFDEF MSWINDOWS}
+initialization
+  ScreenWatch := TScreenWatch.Create;
+
+finalization
+  ScreenWatch.Free;
+{$ENDIF}
 
 end.

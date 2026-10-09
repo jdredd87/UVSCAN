@@ -1226,6 +1226,11 @@ end;
 
 procedure TMainForm.FormKeyUp(Sender: TObject; var Key: Word; var KeyChar: WideChar; Shift: TShiftState);
 begin
+  if (Key = vkEscape) and CloseActionMenu then // Windows
+  begin
+    Key := 0;
+    Exit;
+  end;
   if Key <> vkHardwareBack then
     Exit;
   // Android back: an open menu closes; out of a More page, then back to Live;
@@ -1943,6 +1948,9 @@ begin
   FillLists(FSettings.ActiveList);
   if FSettings.Window.Saved and not IsMobile then
   begin
+    // Designed: where it was saved, even at the form's own 0,0 (Default lets
+    // Windows cascade it then, maybe past the bottom of the screen)
+    Position := TFormPosition.Designed;
     SetBounds(FSettings.Window.Left, FSettings.Window.Top, FSettings.Window.Width, FSettings.Window.Height);
     // Keep the window on a screen that still exists.
     if (Left > Screen.Width - 100) or (Top > Screen.Height - 100) or (Left + Width < 100) or (Top < -20) then
@@ -1950,11 +1958,17 @@ begin
       Left := 40;
       Top := 40;
     end;
+    FitToScreen(Self); // the screen turned upright since (a tablet), or a smaller one
     FNormalBounds := TRect.Create(Left, Top, Left + Width, Top + Height);
     if FSettings.Window.Maximized then
       WindowState := TWindowState.wsMaximized;
     if FSettings.Window.PidPanelWidth > 0 then
       pnlPids.Width := FSettings.Window.PidPanelWidth;
+  end
+  else if not IsMobile then
+  begin
+    FitToScreen(Self); // a first run on a screen smaller than the designed window
+    Position := TFormPosition.ScreenCenter;
   end;
 end;
 
