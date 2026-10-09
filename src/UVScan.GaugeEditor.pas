@@ -712,6 +712,8 @@ begin
   if (Key = vkHardwareBack) or (Key = vkEscape) then
   begin
     Key := 0;
+    if CloseActionMenu then
+      Exit;
     if pnlPicker.Visible then
       ShowPicker(False)
     else

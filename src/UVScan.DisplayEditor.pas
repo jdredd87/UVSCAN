@@ -784,6 +784,8 @@ begin
   if (Key = vkHardwareBack) or (Key = vkEscape) then
   begin
     Key := 0;
+    if CloseActionMenu then // the presets menu first
+      Exit;
     if pnlLevel.Visible then
       CloseLevel
     else

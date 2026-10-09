@@ -57,6 +57,7 @@ type
     FAdded: TArray<Integer>;
     FFound: Integer;
     FSideBox: TVertScrollBox; // short window: the search scrolls in a column beside the results
+    FBottomWidth: Single;     // pnlBottom's width its buttons were flowed for
     procedure ResultsGetText(Sender: TObject; Col, Row: Integer; var Text: string);
     procedure ResultsGetChecked(Sender: TObject; Row: Integer; var Checked: Boolean);
     procedure ResultsToggleCheck(Sender: TObject; Row: Integer);
@@ -65,6 +66,7 @@ type
     procedure UpdateTicked;
     function DefinedAs(Pid: Word): string;
     procedure FormResize(Sender: TObject);
+    procedure BottomResized(Sender: TObject);
   public
     { The window while it is open (nil otherwise): the main form passes it
       every engine event. }
@@ -187,7 +189,8 @@ begin
     TThread.ForceQueue(nil,
       procedure
       begin
-        Realign;
+        if Current = Self then // not closed (and freed) meanwhile
+          Realign;
       end);
   if Short or (InnerWidth(Self) < 440) then
     gbSearch.Text := 'PIDs to ask about (read only)' // the long caption is cut short
@@ -252,6 +255,19 @@ begin
   Y := Y + lblStatus.Height + 8;
   gbSearch.Height := Y;
   FlowControls(pnlBottom, [btnTickNew, btnUntickAll, lblTicked], 90, 40);
+  FBottomWidth := pnlBottom.Width;
+  pnlBottom.OnResized := BottomResized;
+end;
+
+{ The bottom bar gets its new width after FormResize (a turn): flow its
+  buttons again for it. }
+procedure TPidDiscoveryForm.BottomResized(Sender: TObject);
+begin
+  if Abs(pnlBottom.Width - FBottomWidth) > 0.5 then
+  begin
+    FBottomWidth := pnlBottom.Width;
+    FlowControls(pnlBottom, [btnTickNew, btnUntickAll, lblTicked], 90, 40);
+  end;
 end;
 
 destructor TPidDiscoveryForm.Destroy;

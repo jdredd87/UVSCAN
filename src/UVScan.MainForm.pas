@@ -1588,7 +1588,7 @@ begin
     H := WrappedTextHeight(lblStatus, pnlStatus.Width - lblStatus.Position.X - lblStatus.Margins.Right);
     // A short screen keeps its height for the pages: one line, cut short
     // (tap the strip for the Connect page with all of it).
-    if FRail or (InnerHeight(Self) < 700) then
+    if FRail or (IsMobile and (InnerHeight(Self) < 700)) then
     begin
       H := WrappedTextHeight(lblStatus, 100000);
       lblStatus.WordWrap := False;
@@ -1724,7 +1724,10 @@ begin
   Fit(pnlDashBar, pnlDashBar, 0);
   Fit(pnlCtlBar, pnlCtlBar, 0);
   Fit(flPidButtons, pnlPidFooter, lblBudget.Height);
-  Fit(flCtlRun, pnlCtlRun, lblCtlName.Height + lblCtlNotes.Height + pnlCtlRun.Padding.Top + pnlCtlRun.Padding.Bottom);
+  // (beside the list it is as tall as the page: setting its height would only
+  // resize it back and start this again)
+  if pnlCtlRun.Align = TAlignLayout.Bottom then
+    Fit(flCtlRun, pnlCtlRun, lblCtlName.Height + lblCtlNotes.Height + pnlCtlRun.Padding.Top + pnlCtlRun.Padding.Bottom);
 end;
 
 { Same switches as legacy UVSCAN: -connect [-scan [-log]], plus -port <name>. }

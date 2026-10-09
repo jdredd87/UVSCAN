@@ -285,6 +285,7 @@ end;
 
 procedure TLogViewerForm.Present;
 begin
+  CloseActionMenu; // one left on this (hidden, not closed) window or the main one
   if IsMobile then
   begin
     WindowState := TWindowState.wsMaximized;
@@ -1069,7 +1070,8 @@ begin
   begin
     cbRecent.Width := Min(140, Max(80, btnDemo.Position.X - 8 - L));
     FTitle.Margins.Left := cbRecent.Position.X + cbRecent.Width + 10 - 48;
-    FTitle.Margins.Right := Max(0, FTopBar.Width - btnDemo.Position.X + 8 - FMenuButton.Width);
+    // (the bar's own width may still be the old one after a turn)
+    FTitle.Margins.Right := Max(0, InnerWidth(Self) - btnDemo.Position.X + 8 - FMenuButton.Width);
   end
   else
     cbRecent.Width := Max(80, btnDemo.Position.X - 8 - L);
@@ -1273,6 +1275,13 @@ end;
   (a tablet turned), rather than the grid taking all of the change. }
 procedure TLogViewerForm.MainResized(Sender: TObject);
 begin
+  // Narrow (upright phone): the chart is its share of the height, worked out
+  // again now that the height is known (after a turn it was the old one).
+  if FNarrow and not FShort and (pnlMain.Height > 100) then
+  begin
+    layChart.Height := Max(150, Round((pnlMain.Height - 60) * 0.45));
+    FTabs.Position.Y := layChart.Height + 1;
+  end;
   if not FNarrow and (FMainHeight > 100) and (pnlMain.Height > 100) and
     (Abs(pnlMain.Height - FMainHeight) > 1) then
     layChart.Height := Max(120, Min(pnlMain.Height - 80, Round(layChart.Height * pnlMain.Height / FMainHeight)));

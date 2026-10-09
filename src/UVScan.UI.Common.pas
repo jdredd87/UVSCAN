@@ -498,8 +498,14 @@ var
   RowH, Y, Room: Single;
 begin
   // Android repeats a long press while the finger stays down: one menu only.
-  if (Length(Items) = 0) or (OpenMenu <> nil) then
+  // A menu left open on another form (one hidden, not closed) gives way.
+  if Length(Items) = 0 then
     Exit;
+  if OpenMenu <> nil then
+    if OpenMenu.FForm = Form then
+      Exit
+    else
+      OpenMenu.Close;
   P := Palette;
   M := TActionMenu.Create(Form);
   OpenMenu := M;
