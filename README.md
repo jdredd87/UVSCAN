@@ -25,9 +25,21 @@ It is a rewrite of the 2008 UVSCAN (Delphi 2007, kept in [`legacy/`](legacy) for
 | ![Real-time controls](docs/images/controls.png) | ![PID editor](docs/images/pid-editor.png) |
 | ![Log viewer, overlay](docs/images/log-viewer-overlay.png) | ![Log viewer, lanes](docs/images/log-viewer-lanes.png) |
 
+On a phone, upright and sideways, and on a tablet:
+
+<p>
+<img src="docs/images/phone-live.png" width="180" alt="Live data on a phone">
+<img src="docs/images/phone-dashboard.png" width="180" alt="Dashboard on a phone">
+<img src="docs/images/phone-log-viewer.png" width="180" alt="Log viewer on a phone">
+<img src="docs/images/phone-land-dashboard.png" width="370" alt="Dashboard, phone sideways">
+</p>
+
+Short clips of it at work, on both platforms, are on the **[wiki](https://github.com/jdredd87/UVSCAN/wiki/Demos)**.
+
 ## Documentation
 
-- **[User guide](docs/user-guide.md)** — every tab, dialog and setting, with screenshots.
+- **[User guide](docs/user-guide.md)** — every tab, dialog and setting, with screenshots and clips.
+- **[Wiki](https://github.com/jdredd87/UVSCAN/wiki)** — demo clips, getting started on Windows and Android, phones and tablets.
 - **[Data files](docs/data-files.md)** — the JSON files in `C:\ProgramData\UVScan` and the CSV log format.
 - **[Protocol notes](docs/protocol.md)** — AVT framing, Class 2, DPID streaming and device control, as measured on a bench PCM.
 - **[Development](docs/development.md)** — building, tests, simulator, the bench tool and the source layout.

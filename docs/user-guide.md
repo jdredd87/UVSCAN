@@ -3,6 +3,7 @@
 UVScan reads live data, trouble codes and vehicle information from GM vehicles on the **Class 2 / J1850 VPW** bus through an **AVT‑841** (or 838 / 842) interface, logs it to CSV, shows it as a grid or as gauges with alerts, and can send real‑time control commands. It was written for the 1996‑2005 GM V6s (3100 / 3400 / 3800) but works with any Class 2 PCM.
 
 - [The main window](#the-main-window)
+- [Phones and tablets](#phones-and-tablets)
 - [Connecting](#connecting)
 - [Choosing PIDs and scan lists](#choosing-pids-and-scan-lists)
 - [Live data](#live-data)
@@ -22,7 +23,7 @@ UVScan reads live data, trouble codes and vehicle information from GM vehicles o
 - [Where things are stored](#where-things-are-stored)
 - [Troubleshooting](#troubleshooting)
 
-All screenshots were taken with the built‑in **Simulator**, so the values are made up.
+All screenshots and clips were taken with the built‑in **Simulator**, so the values are made up (it drives a pretend car, so they behave like real ones). The clips are short animations; click one to open it as a video you can pause and scrub. More of them, for both platforms, are on the [wiki](https://github.com/jdredd87/UVSCAN/wiki/Demos).
 
 ---
 
@@ -46,6 +47,34 @@ A phone works upright or sideways. Held sideways (a short, wide screen) the tab 
 Everything fits the width it has: on a phone or a narrow window the grids drop or narrow their less important columns and wrap long names onto more lines, a number too long for its cell is drawn smaller rather than cut short, and a grid whose columns still do not fit scrolls sideways (drag it with a finger, or Shift + mouse wheel). The editors (gauges, *Display & alerts*, PIDs, real‑time controls, PID search) open as pages with the same top bar: the back arrow cancels, the button on the right saves.
 
 **Themes** (*More → Settings → Theme*): **System default** follows the light / dark setting of Windows or the phone; or pick **Light** or **Dark**. They are Delphi's own styles (Win10Modern on Windows, the Android styles on a phone). **Keep the screen on while UVScan is open** (same page, on by default) stops the phone or PC from going to sleep or blanking the screen.
+
+## Phones and tablets
+
+The layout follows the room it has, not the platform: a narrow Windows window looks like a phone, a tablet held sideways like the desktop.
+
+<p>
+<img src="images/phone-live.png" width="200" alt="Live data on a phone">
+<img src="images/phone-dashboard.png" width="200" alt="Dashboard on a phone">
+<img src="images/phone-menu.png" width="200" alt="The page menu on a phone">
+<img src="images/phone-log-viewer.png" width="200" alt="Log viewer on a phone">
+</p>
+
+Held sideways the tabs go down the left side and the pages keep their height:
+
+<p>
+<img src="images/phone-land-dashboard.png" width="410" alt="Dashboard, phone sideways">
+<img src="images/phone-land-log-viewer.png" width="410" alt="Log viewer, phone sideways">
+</p>
+
+[![Turning the phone](media/phone-rotate.webp)](media/phone-rotate.mp4)
+
+A tablet held sideways keeps the PID list docked beside the pages:
+
+<img src="images/tablet-land-live.png" width="820" alt="Tablet sideways">
+
+**Windows tablets** turn too: UVScan lays out for the new shape, and a window that no longer fits the screen (the log viewer and the PID editor are big) is made to fit, as it is whenever one opens. **Esc** does what the back button does on a phone — closes an open **⋮** menu, or leaves an editor (asking first if you changed something).
+
+[![One window from wide to narrow to short](media/win-resize.webp)](media/win-resize.mp4)
 
 ## Connecting
 
@@ -74,11 +103,15 @@ Press **Start scan**. Each ticked PID gets a row with its current value, units a
 
 ![Live data zoomed, without min / max](images/live-zoom.png)
 
+[![Live data while scanning](media/win-live.webp)](media/win-live.mp4)
+
 ## Live chart
 
 The chart button in the top bar of *Live* and *Gauges* (or **⋮ → Live chart**) shows the running scan as a line chart — the [log viewer](#log-viewer)'s chart, fed by the scan instead of a file. It also charts the [test display](#test-display), so you can try it without a car. On Windows it is a window of its own, so you can keep it beside the live grid; on a phone it is a page (back returns to *Live*).
 
 ![Live chart](images/live-chart.png)
+
+[![The live chart scrolling](media/win-live-chart.webp)](media/win-live-chart.mp4)
 
 - The newest values are on the right and the chart scrolls as they come in. The box after the buttons sets how much it shows: 15 s, 30 s, 1, 2, 5 or 10 minutes (remembered).
 - Every update of the scan is charted (about 10 a second with up to 4 DPIDs), and the last 15 minutes are kept while you scan, so you can open the chart after something happened and still see it.
@@ -124,13 +157,18 @@ Big gauges for the PIDs you care about most:
 - **Bar** — a horizontal bar with the value on the right,
 - **Big number** — just the value, large.
 
-Each comes in small, medium or large and has its own scale. Gauges wrap to fit the window. On a phone small gauges sit two to a row (six dials fit on the screen), medium ones keep their size, large ones fill the width and bars take the width; held sideways, two rows of small gauges fit the screen.
+Each comes in small, medium or large and has its own scale. Gauges are laid out in rows to fit the window, and a gauge shorter than its row goes under the one before it when both fit (two small dials beside a large one). On a phone small gauges sit two to a row (six dials fit on the screen), medium ones keep their size, large ones fill the width and bars take the width; held sideways, two rows of small gauges fit the screen.
 
 They follow the **same alert levels** as the grid: the scale shows the levels as coloured bands, the value arc takes the colour of the band it is in (or the PID's normal colour), and while a level is active the whole card takes the level's colours, flashes and sounds.
 
 - **Add gauge…** or right‑click a PID → **Add to dashboard…**
 - Right‑click a gauge → **Edit gauge…**, **Display & alerts…**, **Move earlier / later**, **Remove from dashboard**. Double‑click edits.
 - **Tick these PIDs** ticks the dashboard's PIDs in the PID list, ready to scan.
+
+<table><tr>
+<td valign="top"><a href="media/win-dashboard.mp4"><img src="media/win-dashboard.webp" width="560" alt="Dashboard on Windows"></a></td>
+<td valign="top" width="250"><a href="media/phone-dashboard.mp4"><img src="media/phone-dashboard.webp" width="240" alt="Dashboard on a phone"></a></td>
+</tr></table>
 
 ![Gauge editor](images/gauge-editor.png)
 
@@ -175,9 +213,16 @@ While scanning, **Start log (F8)** writes every update to a CSV file named `UVSc
 
 ![Selecting a stretch](images/log-viewer-selection.png)
 
+[![Selecting a pull, zooming to it and playing it back](media/win-log-viewer.webp)](media/win-log-viewer.mp4)
+
 **Image…** saves the chart as a PNG (for forum posts or a tuner). You can also drop a log file onto the viewer to open it, and after you stop logging, **F7** opens the log you just recorded.
 
 **On a phone or a narrow window** the viewer is a page: the recent logs and **Demo** at the top, the playback buttons, then the chart above **Channels | Data** (one at a time). The selected channel's colour, scale and alert levels are on a page of their own — **Colour, scale, alerts: …** under the list. **⋮** holds the view set‑ups (pick, **Save view…**, **Delete view**), the chart mode, **Save chart picture** (saved next to the logs), **Follow the cursor**, **Level bands** and **Levels from Display & alerts**. Select a stretch by long‑pressing the chart (or **Select range**) and dragging. The back key (or arrow) leaves the channel page, then the viewer.
+
+<p>
+<a href="media/phone-log-viewer.mp4"><img src="media/phone-log-viewer.webp" width="240" alt="Log viewer on a phone"></a>
+<img src="images/phone-log-viewer-selection.png" width="240" alt="A selected stretch on a phone">
+</p>
 
 **Playback:** **Play** (or Space) runs the cursor through the log in real time — or at 0.25× to 20× — with the chart following (**Follow cursor**), the grid scrolling along and the values on the left updating, like watching the drive again. **|<** and **>|** jump to the start and end; the slider scrubs.
 
@@ -281,6 +326,8 @@ Formulas use `+ - * /`, `<< >>`, `& |`, comparisons and `? :` (e.g. `N0 > 127 ? 
 
 ![PID search](images/pid-search.png)
 
+[![Searching the PCM for PIDs](media/win-pid-search.webp)](media/win-pid-search.mp4)
+
 Each PID that answers is listed with its size, raw value and what it is already defined as. Tick the new ones and press **Add** (top right): they are added as `PID $xxxx` (category *Other*) and the PID editor opens filtered to them so you can name them and give them a formula — for example after logging them with the engine running to see what they follow.
 
 ## Messages
@@ -298,6 +345,7 @@ Everything UVScan does is written here with a timestamp: connection steps, PCM a
 | Ctrl + mouse wheel | Zoom the live grid |
 | Space (log viewer) | Play / pause (live chart: pause / back to now) |
 | ← → Home End (log viewer chart) | Step through the log |
+| Esc | Close an open **⋮** menu; leave an editor (asking first if you changed something); in the log viewer chart, clear the selection |
 
 ```
 UVScan.exe -port COM9 -connect -scan -log
