@@ -6,7 +6,7 @@ interface
 
 uses
   System.SysUtils, System.Classes, System.Math, System.Diagnostics, System.IOUtils,
-  System.Generics.Collections, DUnitX.TestFramework,
+  System.Generics.Collections, System.Net.Socket, DUnitX.TestFramework,
   UVScan.Serial, UVScan.Pids, UVScan.Engine, UVScan.Simulator, UVScan.Class2, UVScan.Hex;
 
 type
@@ -46,6 +46,7 @@ type
     [Test] procedure ConnectsAndScansOverTcp;
     [Test] procedure ReportsRefusedTcpConnection;
     [Test] procedure ReportsLostTcpConnection;
+    [Test] procedure ReportsSilentNetworkDevice;
   end;
 
 implementation
@@ -274,6 +275,36 @@ begin
   end;
   Assert.IsTrue(WaitUntil(function: Boolean begin Result := HasEvent(eeError) end, 8000), 'loss not reported');
   Assert.IsTrue(WaitUntil(function: Boolean begin Result := FState = esDisconnected end, 8000), 'not disconnected');
+end;
+
+{ Something at the address takes the connection but never answers (the AVT
+  is off behind its network module, or it is another device): reported as
+  that, naming the address, not as a baud rate problem. }
+procedure TEngineTests.ReportsSilentNetworkDevice;
+var
+  Listener: System.Net.Socket.TSocket;
+  Port: Word;
+  Cmd: TEngineCommand;
+  Ev: TEngineEvent;
+begin
+  Listener := System.Net.Socket.TSocket.Create(TSocketType.TCP);
+  try
+    Listener.Listen('127.0.0.1', '', 0); // the system completes connections; nobody reads
+    Port := Listener.LocalPort;
+    Cmd := Command(ecConnect);
+    Cmd.Factory :=
+      function: ISerialPort
+      begin
+        Result := TTcpSerialPort.Create('127.0.0.1', Port);
+      end;
+    FEngine.Post(Cmd);
+    Assert.IsTrue(WaitUntil(function: Boolean begin Result := HasEvent(eeError) end, 15000), 'no error');
+    Assert.IsTrue(FindEvent(eeError, Ev));
+    Assert.Contains(Ev.Text, Format('127.0.0.1:%d accepted the connection', [Port]));
+    Assert.IsTrue(WaitUntil(function: Boolean begin Result := FState = esDisconnected end), 'not disconnected');
+  finally
+    FreeSocket(Listener);
+  end;
 end;
 
 procedure TEngineTests.ConnectsAndReadsVehicleInfo;

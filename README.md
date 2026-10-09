@@ -44,6 +44,7 @@ Short clips of it at work, on both platforms, are on the **[wiki](https://github
 - **[Data files](docs/data-files.md)** — the JSON files in `C:\ProgramData\UVScan` and the CSV log format.
 - **[Protocol notes](docs/protocol.md)** — AVT framing, Class 2, DPID streaming and device control, as measured on a bench PCM.
 - **[Development](docs/development.md)** — building, tests, simulator, the bench tool and the source layout.
+- **[Testing with a network AVT](docs/network-avt-testing.md)** — a checklist for anyone with an AVT on Ethernet (not yet tried on a real one).
 
 ## Quick start
 
@@ -64,7 +65,7 @@ build.cmd
 build.cmd android [install]
 ```
 
-Builds the app and the DUnitX tests, runs the tests, and builds the bench tool (`tools\Win32\UVScanProbe.exe`). See [development](docs/development.md).
+Builds the app and the DUnitX tests, runs the tests, and builds the console tools (`tools\Win32\UVScanProbe.exe`, the bench tool, and `tools\Win32\UVScanSimServer.exe`, the simulator on the network). See [development](docs/development.md).
 
 ## Status
 

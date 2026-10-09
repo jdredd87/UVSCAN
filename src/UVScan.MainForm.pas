@@ -2059,7 +2059,8 @@ begin
 end;
 
 { A network AVT has an address instead of a baud rate (the interface's
-  serial side has its own). }
+  serial side has its own), and no port list to refresh (the page menu
+  still has Refresh ports). }
 procedure TMainForm.PortChanged(Sender: TObject);
 var
   Network: Boolean;
@@ -2071,6 +2072,7 @@ begin
     Exit;
   edtTcpAddress.Visible := Network;
   cbBaud.Visible := not Network;
+  btnRefreshPorts.Visible := not Network;
   FlowBoxResized(nil); // the row's height may change
 end;
 

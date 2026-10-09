@@ -717,7 +717,13 @@ begin
   end;
   if not Ok then
   begin
-    EmitText(eeError, 'No response from the AVT interface. Check the port, baud rate and power.');
+    if (FPort as TObject) is TTcpSerialPort then
+      // The connection opened, so something is at that address: the AVT is
+      // off, or the address is another device's.
+      EmitText(eeError, Format('%s accepted the connection but no AVT answered. ' +
+        'Check the AVT has power and that this is its address and port.', [FPort.Description]))
+    else
+      EmitText(eeError, 'No response from the AVT interface. Check the port, baud rate and power.');
     DoDisconnect;
     Exit;
   end;

@@ -80,7 +80,7 @@ A tablet held sideways keeps the PID list docked beside the pages:
 
 1. Plug the AVT into the PC and the vehicle (key on).
 2. On the *Connect* page pick its COM port, or on Android its USB adapter (**Refresh** re‑reads the list), and the baud rate (115200 for the AVT‑841). Choose **Simulator** to try UVScan without hardware.
-   An AVT with an **Ethernet port** (or any AVT behind a serial‑to‑network adapter) is **Network (TCP/IP)**: type its address and port in the box that appears, e.g. `192.168.2.99:10001` (port 10001 if you leave it out). It works the same from a PC or a phone on the same network. UVScan gives up after 5 seconds if nothing answers.
+   An AVT with an **Ethernet port** (or any AVT behind a serial‑to‑network adapter) is **Network (TCP/IP)**: type its address and port in the box that appears, e.g. `192.168.2.99:10001` (port 10001 if you leave it out). It works the same from a PC or a phone on the same network. UVScan gives up after 5 seconds if nothing answers. (So far this has been tried only against the simulator; [testing with a network AVT](network-avt-testing.md) is a checklist for anyone who has one.)
 3. Press **Connect** (on the page or in the top bar). UVScan initialises the AVT, reads its firmware version, the VIN and the PCM operating system ID (shown in the status strip and under *Vehicle* on the *Connect* page).
 
 Everything that talks to the AVT runs on a background thread, so the window stays responsive while the PCM is busy.
@@ -364,6 +364,7 @@ Everything UVScan reads or writes, apart from CSV logs, is in **`C:\ProgramData\
 |---|---|
 | *Could not open COM…* | Another program (or another UVScan) has the port. Close it, check the port in Device Manager. |
 | *No answer from …* / *Could not connect to …* (network) | The AVT is off, on another network, or at another address or port. Check it answers from this PC or phone (same Wi‑Fi). |
+| *… accepted the connection but no AVT answered* (network) | Something is at that address but it isn't answering as an AVT: the AVT is off behind its network module, or the address is another device's. |
 | Connect works but no data | Key on? The status strip's update rate stays at 0 and a notice says *No data from the PCM*. Check the AVT's vehicle connection. |
 | *Selected PIDs need N bytes; the limit is 48* | Untick some PIDs; the PCM cannot stream more than 48 bytes. |
 | A PID shows *rejected* | The PCM refused it in a DPID. Use **Test PIDs**, or remove it. |
