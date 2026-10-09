@@ -979,14 +979,6 @@ begin
     pnlNav.Align := TAlignLayout.MostLeft; // the whole height, beside the top bar too
     pnlNav.Width := RailWidth;
     pnlNav.Sides := [TSide.Right];
-    if edtSearch.Parent <> pnlListBar then
-    begin
-      edtSearch.Parent := pnlListBar;
-      edtSearch.Align := TAlignLayout.Right;
-      edtSearch.Position.X := pnlListBar.Width + 100; // right of Save as
-      edtSearch.Margins.Rect := TRectF.Create(8, 2, 0, 2);
-    end;
-    edtSearch.Width := Min(240, Round(W * 0.3));
     // Controls: the selected control beside the list
     if pnlCtlRun.Align = TAlignLayout.Bottom then
       FCtlRunHeight := pnlCtlRun.Height;
@@ -999,19 +991,32 @@ begin
     pnlNav.Position.Y := ClientHeight + 100; // under the status strip
     pnlNav.Height := 56;
     pnlNav.Sides := [TSide.Top];
-    if edtSearch.Parent <> pnlPids then
-    begin
-      edtSearch.Parent := pnlPids;
-      edtSearch.Align := TAlignLayout.Top;
-      edtSearch.Position.Y := pnlListBar.Position.Y + pnlListBar.Height + 1;
-      edtSearch.Margins.Rect := TRectF.Create(0, 4, 0, 4);
-    end;
     if pnlCtlRun.Align <> TAlignLayout.Bottom then
     begin
       pnlCtlRun.Align := TAlignLayout.Bottom;
       pnlCtlRun.Position.Y := tiControls.Height + 100;
       pnlCtlRun.Height := FCtlRunHeight; // FitFlowHeights keeps it when no control is selected
     end;
+  end;
+  // The PID search beside the scan list when short - on the PIDs page, not in
+  // the docked list (too narrow for both).
+  if FRail and not Wide then
+  begin
+    if edtSearch.Parent <> pnlListBar then
+    begin
+      edtSearch.Parent := pnlListBar;
+      edtSearch.Align := TAlignLayout.Right;
+      edtSearch.Position.X := pnlListBar.Width + 100; // right of Save as
+      edtSearch.Margins.Rect := TRectF.Create(8, 2, 0, 2);
+    end;
+    edtSearch.Width := Min(240, Round(W * 0.3));
+  end
+  else if edtSearch.Parent <> pnlPids then
+  begin
+    edtSearch.Parent := pnlPids;
+    edtSearch.Align := TAlignLayout.Top;
+    edtSearch.Position.Y := pnlListBar.Position.Y + pnlListBar.Height + 1;
+    edtSearch.Margins.Rect := TRectF.Create(0, 4, 0, 4);
   end;
   LayoutNav;
   OrderAppBar;

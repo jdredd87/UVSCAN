@@ -752,8 +752,13 @@ begin
                 TTextAlign.Trailing);
               ValueAtCursor(Ch, V, VText);
               if not IsNan(V) then
-                Bubble(VText + ' ' + FData.Channels[Ch].Units, X_(FCursor),
-                  Y_(EnsureRange(V, Lo, Hi), Lo, Hi, LaneTop + 3, LaneH - 6), FStyles[Ch].Color);
+              begin
+                Y := Y_(EnsureRange(V, Lo, Hi), Lo, Hi, LaneTop + 3, LaneH - 6);
+                // under the lane's name (top right) when it would cover it
+                if X_(FCursor) > FPlot.Left + FPlot.Width / 2 then
+                  Y := Max(Y, LaneTop + 28); // (its box starts 9 above Y; the name ends at +18)
+                Bubble(VText + ' ' + FData.Channels[Ch].Units, X_(FCursor), Y, FStyles[Ch].Color);
+              end;
             end;
           end;
 
