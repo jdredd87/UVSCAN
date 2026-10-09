@@ -146,6 +146,10 @@ procedure KeepInSafeArea(Form: TCommonCustomForm);
   the system buttons at its sides. Layouts choose by these, not ClientWidth. }
 function InnerWidth(Form: TCustomForm): Single;
 function InnerHeight(Form: TCustomForm): Single;
+{ An FMX track bar resized (the phone turned) keeps its filled part at the
+  old size until the value changes: this moves it and back. Call it from the
+  track bar's OnResized. }
+procedure RefreshTrackBar(T: TTrackBar);
 
 { Android 16+: apps built for it no longer get the back key; the system
   closes them instead. This takes the back gesture / button again and gives
@@ -352,6 +356,28 @@ begin
   Result := Form.ClientHeight - Form.Padding.Top - Form.Padding.Bottom;
 end;
 
+procedure RefreshTrackBar(T: TTrackBar);
+var
+  V: Single;
+  Change, Tracking: TNotifyEvent;
+begin
+  Change := T.OnChange;
+  Tracking := T.OnTracking;
+  T.OnChange := nil;
+  T.OnTracking := nil;
+  try
+    V := T.Value;
+    if V < T.Max then
+      T.Value := T.Max
+    else
+      T.Value := T.Min;
+    T.Value := V;
+  finally
+    T.OnChange := Change;
+    T.OnTracking := Tracking;
+  end;
+end;
+
 procedure KeepInSafeArea(Form: TCommonCustomForm);
 var
   Svc: IFMXWindowSafeAreaService;
@@ -378,7 +404,13 @@ type
   private
     FOverlay: TRectangle;
     FItems: TArray<TActionItem>;
+    FForm: TCustomForm;
+    FSize: TSizeF; // the form's when the menu opened
+    FBox: TVertScrollBox;
+    FDownY: Single; // the rows' scroll position when a finger went down
+    procedure RowMouseDown(Sender: TObject; Button: TMouseButton; Shift: TShiftState; X, Y: Single);
     procedure OverlayClick(Sender: TObject);
+    procedure OverlayResized(Sender: TObject);
     procedure ItemClick(Sender: TObject);
     procedure Close;
   public
@@ -419,10 +451,25 @@ begin
   Close;
 end;
 
+{ The form changed size (the phone turned): the menu would be in the wrong
+  place, so it closes. (The overlay also resizes once as it fills the form.) }
+procedure TActionMenu.OverlayResized(Sender: TObject);
+begin
+  if (OpenMenu = Self) and ((Abs(FForm.ClientWidth - FSize.cx) > 1) or (Abs(FForm.ClientHeight - FSize.cy) > 1)) then
+    Close;
+end;
+
+procedure TActionMenu.RowMouseDown(Sender: TObject; Button: TMouseButton; Shift: TShiftState; X, Y: Single);
+begin
+  FDownY := FBox.ViewportPosition.Y;
+end;
+
 procedure TActionMenu.ItemClick(Sender: TObject);
 var
   Item: TActionItem;
 begin
+  if Abs(FBox.ViewportPosition.Y - FDownY) > 4 then
+    Exit; // the finger scrolled the menu, it did not pick this row
   Item := FItems[TControl(Sender).Tag];
   Close;
   if Assigned(Item.OnClick) then
@@ -440,11 +487,12 @@ var
   M: TActionMenu;
   P: TPalette;
   Panel, Row, Line: TRectangle;
+  Box: TVertScrollBox;
   L: TLabel;
   Check: TPath;
   Shadow: TShadowEffect;
   I: Integer;
-  RowH, Y: Single;
+  RowH, Y, Room: Single;
 begin
   // Android repeats a long press while the finger stays down: one menu only.
   if (Length(Items) = 0) or (OpenMenu <> nil) then
@@ -453,6 +501,8 @@ begin
   M := TActionMenu.Create(Form);
   OpenMenu := M;
   M.FItems := Items;
+  M.FForm := Form;
+  M.FSize := TSizeF.Create(Form.ClientWidth, Form.ClientHeight);
   M.FOverlay := TRectangle.Create(M);
   M.FOverlay.Parent := Form;
   M.FOverlay.Align := TAlignLayout.Contents;
@@ -461,6 +511,7 @@ begin
   M.FOverlay.HitTest := True;
   M.FOverlay.OnClick := M.OverlayClick;
   M.FOverlay.BringToFront;
+  M.FOverlay.OnResized := M.OverlayResized;
 
   Panel := TRectangle.Create(M);
   Panel.Parent := M.FOverlay;
@@ -474,6 +525,11 @@ begin
   Shadow.Opacity := 0.4;
   Shadow.Distance := 2;
   Shadow.Softness := 0.3;
+  // the rows scroll when the menu is taller than the window (a phone held sideways)
+  Box := TVertScrollBox.Create(M);
+  Box.Parent := Panel;
+  Box.Align := TAlignLayout.Client;
+  M.FBox := Box;
 
   if IsMobile then
     RowH := 52
@@ -485,7 +541,7 @@ begin
     if Items[I].Text = '-' then
     begin
       Line := TRectangle.Create(M);
-      Line.Parent := Panel;
+      Line.Parent := Box;
       Line.HitTest := False;
       Line.Stroke.Kind := TBrushKind.None;
       Line.Fill.Color := P.BarLine;
@@ -494,7 +550,7 @@ begin
       Continue;
     end;
     Row := TRectangle.Create(M);
-    Row.Parent := Panel;
+    Row.Parent := Box;
     Row.SetBounds(4, Y, MenuWidth - 8, RowH);
     Row.Fill.Color := TAlphaColors.Null;
     Row.Stroke.Kind := TBrushKind.None;
@@ -504,6 +560,7 @@ begin
     Row.Cursor := crHandPoint;
     Row.Tag := I;
     Row.OnClick := M.ItemClick;
+    Row.OnMouseDown := M.RowMouseDown;
     L := TLabel.Create(M);
     L.Parent := Row;
     L.Align := TAlignLayout.Client;
@@ -539,7 +596,8 @@ begin
     Y := Y + RowH;
   end;
   Panel.Width := MenuWidth;
-  Panel.Height := Y + 6;
+  Room := Form.ClientHeight - Form.Padding.Top - Form.Padding.Bottom - 16;
+  Panel.Height := Min(Y + 6, Max(RowH * 2, Room));
   // inside the safe area
   Panel.Position.X := EnsureRange(At.X, Form.Padding.Left + 8,
     Max(Form.Padding.Left + 8, Form.ClientWidth - Form.Padding.Right - MenuWidth - 8));
@@ -620,7 +678,7 @@ begin
   Bar := TRectangle.Create(Form);
   Bar.Parent := Form;
   Bar.Stored := False;
-  Bar.Align := TAlignLayout.Top;
+  Bar.Align := TAlignLayout.MostTop; // above a page's own full-height side column too
   Bar.Position.Y := -100; // above every other top-aligned control
   Bar.Height := 52;
   Bar.Sides := [TSide.Bottom];
@@ -704,6 +762,9 @@ begin
   for I := 0 to High(Captions) do
   begin
     Captions[I].WordWrap := False;
+    // Top aligned (narrow) a caption is as wide as its row: measure it free
+    // (else turning to wide made every caption row wide and hid the fields).
+    Captions[I].Align := TAlignLayout.None;
     FitTextWidth(Captions[I]);
     W := Max(W, Captions[I].Width);
   end;

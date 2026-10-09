@@ -56,6 +56,7 @@ type
     FSearching: Boolean;
     FAdded: TArray<Integer>;
     FFound: Integer;
+    FSideBox: TVertScrollBox; // short window: the search scrolls in a column beside the results
     procedure ResultsGetText(Sender: TObject; Col, Row: Integer; var Text: string);
     procedure ResultsGetChecked(Sender: TObject; Row: Integer; var Checked: Boolean);
     procedure ResultsToggleCheck(Sender: TObject; Row: Integer);
@@ -143,14 +144,59 @@ end;
 procedure TPidDiscoveryForm.FormResize(Sender: TObject);
 var
   W, Y, X: Single;
-  Narrow: Boolean;
+  Narrow, Short, Moved: Boolean;
 begin
   if lvResults = nil then
     Exit;
+  // A short, wide window (a phone held sideways): the search in a column
+  // beside the results (scrolling: it is taller than the screen), so they
+  // keep the height.
+  Short := (InnerHeight(Self) < 480) and (InnerWidth(Self) > InnerHeight(Self));
+  if Short then
+  begin
+    if FSideBox = nil then
+    begin
+      FSideBox := TVertScrollBox.Create(Self);
+      FSideBox.Parent := Self;
+      FSideBox.Align := TAlignLayout.MostLeft; // down to the bottom: the buttons bar is beside it
+    end;
+    FSideBox.Width := Round(InnerWidth(Self) * 0.42);
+    FSideBox.Visible := True;
+    Moved := gbSearch.Parent = Self;
+    gbSearch.Align := TAlignLayout.None;
+    gbSearch.Parent := FSideBox;
+    gbSearch.SetBounds(0, 0, FSideBox.Width - 6, gbSearch.Height);
+  end
+  else
+  begin
+    Moved := gbSearch.Parent <> Self;
+    if Moved then
+    begin
+      gbSearch.Parent := Self;
+      gbSearch.Position.Y := 0;
+    end;
+    gbSearch.Align := TAlignLayout.Top;
+    // its width now, for the layout below (the form realigns after this)
+    gbSearch.Width := InnerWidth(Self) - gbSearch.Margins.Left - gbSearch.Margins.Right;
+    if FSideBox <> nil then
+      FSideBox.Visible := False;
+  end;
+  // This runs inside the form's realign, which does not see the search box
+  // moving: the results would keep their old place (below the screen).
+  if Moved then
+    TThread.ForceQueue(nil,
+      procedure
+      begin
+        Realign;
+      end);
+  if Short or (InnerWidth(Self) < 440) then
+    gbSearch.Text := 'PIDs to ask about (read only)' // the long caption is cut short
+  else
+    gbSearch.Text := 'Which PIDs to ask the PCM about (read only)';
   W := gbSearch.Width - 28;
   if W < 100 then
     Exit;
-  Narrow := InnerWidth(Self) < 600;
+  Narrow := Short or (InnerWidth(Self) < 600);
   Y := 26;
   for var C in [chkSae, chkGm] do
   begin
@@ -168,7 +214,17 @@ begin
   FitTextWidth(lblMore);
   FitTextWidth(btnStart, 90);
   FitTextWidth(btnStop, 80);
-  if Narrow then
+  if Short then
+  begin
+    // the column is short: the caption beside its box
+    lblMore.SetBounds(14, Y + 4, lblMore.Width, 38);
+    edtMore.SetBounds(14 + lblMore.Width + 6, Y + 4, W - lblMore.Width - 6, 38);
+    Y := Y + 46;
+    btnStart.SetBounds(14, Y, btnStart.Width, 40);
+    btnStop.SetBounds(14 + btnStart.Width + 8, Y, btnStop.Width, 40);
+    Y := Y + 50;
+  end
+  else if Narrow then
   begin
     lblMore.SetBounds(14, Y + 4, W, 24);
     Y := Y + 30;

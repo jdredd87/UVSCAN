@@ -108,6 +108,7 @@ type
     procedure LayoutWideDetail;
     procedure SetDetailMode(Value: Boolean);
     procedure DetailBackClick(Sender: TObject);
+    procedure DetailResized(Sender: TObject);
     procedure FormKeyUp(Sender: TObject; var Key: Word; var KeyChar: WideChar; Shift: TShiftState);
     procedure ListGetText(Sender: TObject; Col, Row: Integer; var Text: string);
     procedure ListSelect(Sender: TObject);
@@ -145,7 +146,7 @@ const
   ColorGrey = $FF808080;
   ColorWarn = $FFE07000;
   ColorGood = $FF008000;
-  NarrowWidth = 760;
+  NarrowWidth = 900; // the list (480) and the details side by side need this (a tablet upright is 800)
 
 procedure SetLabelColor(L: TLabel; C: TAlphaColor);
 begin
@@ -332,6 +333,12 @@ var
   C: TPidCategory;
 begin
   FWork := TPidCatalog.Create;
+  sbDetail.OnResized := DetailResized;
+  if IsMobile then // their fixed size suits Windows; a phone's style text is bigger
+  begin
+    edtFormula.StyledSettings := edtFormula.StyledSettings + [TStyledSetting.Size];
+    lblTestResult.StyledSettings := lblTestResult.StyledSettings + [TStyledSetting.Size];
+  end;
   lvList := TDataGrid.Create(Self);
   lvList.Parent := pnlGrid;
   lvList.Align := TAlignLayout.Client;
@@ -415,6 +422,14 @@ end;
 { Wide window: caption left of each field, all captions as wide as the
   widest; two short fields share a line. Sizes follow the active style's text
   (Win10Modern's fields are taller than the design's). }
+{ Wide: the details are placed by the panel's width, which is only known
+  after the form realigns (a turn from the narrow pages). }
+procedure TPidEditorForm.DetailResized(Sender: TObject);
+begin
+  if not FNarrow and (FDetailBar <> nil) and sbDetail.Visible then
+    LayoutWideDetail;
+end;
+
 procedure TPidEditorForm.LayoutWideDetail;
 var
   H, X, R, Y, Half, CapW: Single;

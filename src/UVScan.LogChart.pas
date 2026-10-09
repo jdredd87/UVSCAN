@@ -720,8 +720,9 @@ begin
     begin
       X := X_(Tick);
       Line(X, FPlot.Top, X, FPlot.Bottom, 1, GridColor);
-      if Abs(X - X_(FCursor)) > 50 then
-        Txt(FormatLogTime(Tick), X - 40, FPlot.Bottom + 3, 80, 18, 11, DimText, TTextAlign.Center);
+      // (both kept inside at the right edge, so compare where they are drawn)
+      if Abs(Min(X - 40, Width - 82) - Min(X_(FCursor) - 40, Width - 82)) > 70 then
+        Txt(FormatLogTime(Tick), Min(X - 40, Width - 82), FPlot.Bottom + 3, 80, 18, 11, DimText, TTextAlign.Center);
       Tick := Tick + Step;
     end;
 
@@ -828,7 +829,8 @@ begin
     if (X >= FPlot.Left) and (X <= FPlot.Right) then
     begin
       Line(X, FPlot.Top, X, FPlot.Bottom, 1.2, CursorColor, 200);
-      Txt(FormatLogTime(FCursor), X - 40, FPlot.Bottom + 3, 80, 18, 11, CursorColor, TTextAlign.Center, True);
+      Txt(FormatLogTime(FCursor), Min(X - 40, Width - 82), FPlot.Bottom + 3, 80, 18, 11, CursorColor,
+        TTextAlign.Center, True); // kept inside at the right edge
       // overlay / shared: one box with every value at the cursor
       if (FMode <> cmLanes) and (N > 0) then
       begin

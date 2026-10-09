@@ -82,6 +82,10 @@ type
     procedure ApplyPalette;
     function AddChips(Parent: TLayout; const Captions: array of string; OnClick: TNotifyEvent): TArray<TRectangle>;
     procedure LayoutChips(const Chips: TArray<TRectangle>; Parent: TLayout);
+    procedure ChipRowResized(Sender: TObject);
+    procedure PidBoxResized(Sender: TObject);
+    procedure PreviewResized(Sender: TObject);
+    procedure TrackResized(Sender: TObject);
     procedure StyleChipClick(Sender: TObject);
     procedure SizeChipClick(Sender: TObject);
     procedure SuggestForPid;
@@ -122,6 +126,7 @@ const
   StyleChipCaptions: array[TGaugeStyle] of string = ('Dial', 'Bar', 'Number');
   SizeChipCaptions: array[TGaugeSize] of string = ('Small', 'Medium', 'Large');
   ChipGap = 8;
+  MaxChipWidth = 170;
 
 procedure SuggestScale(P: TPidDef; Settings: TDisplaySettings; out MinValue, MaxValue: Double);
 var
@@ -271,7 +276,17 @@ begin
   for Z := Low(TGaugeSize) to High(TGaugeSize) do
     Caps := Caps + [SizeChipCaptions[Z]];
   FSizeChips := AddChips(lySize, Caps, SizeChipClick);
+  // Laid out again whenever their sizes change (the phone turned, the preview
+  // moved beside the fields).
+  lyStyle.OnResized := ChipRowResized;
+  pnlPid.OnResized := PidBoxResized;
+  lblAlerts.OnResized := PidBoxResized;
+  lySize.OnResized := ChipRowResized;
+  pnlPreview.OnResized := PreviewResized;
+  tbPreview.OnResized := TrackResized;
 
+  pnlPreview.Parent := Self; // see FitLayout
+  pnlPreview.Position.Y := pnlBar.Height + 1;
   FGaugeView := TGaugeView.Create(Self);
   FGaugeView.Parent := pnlPreview;
   FGaugeView.HitTest := False;
@@ -358,9 +373,47 @@ var
 begin
   if (Length(Chips) = 0) or (Parent.Width < 20) then
     Exit;
-  W := (Parent.Width - ChipGap * (Length(Chips) - 1)) / Length(Chips);
+  W := Min(MaxChipWidth, (Parent.Width - ChipGap * (Length(Chips) - 1)) / Length(Chips)); // not huge on a tablet
   for I := 0 to High(Chips) do
     Chips[I].SetBounds(I * (W + ChipGap), 0, W, Parent.Height);
+end;
+
+procedure TGaugeEditorForm.ChipRowResized(Sender: TObject);
+begin
+  LayoutChips(FStyleChips, lyStyle);
+  LayoutChips(FSizeChips, lySize);
+end;
+
+{ The PID name and the alert summary wrap: as tall as they need at their
+  width now (the form's resize sees the old width after a turn). }
+procedure TGaugeEditorForm.PidBoxResized(Sender: TObject);
+var
+  H: Single;
+begin
+  if pnlPid.Width > 50 then
+  begin
+    H := Max(52, WrappedTextHeight(lblPidName, pnlPid.Width - 50) + 20);
+    if Abs(pnlPid.Height - H) > 0.5 then
+      pnlPid.Height := H;
+  end;
+  // the alert summary wraps the same way
+  if lblAlerts.Width > 50 then
+  begin
+    H := WrappedTextHeight(lblAlerts, lblAlerts.Width) + 4;
+    if Abs(lblAlerts.Height - H) > 0.5 then
+      lblAlerts.Height := H;
+  end;
+end;
+
+procedure TGaugeEditorForm.PreviewResized(Sender: TObject);
+begin
+  if FGaugeView <> nil then
+    UpdatePreview;
+end;
+
+procedure TGaugeEditorForm.TrackResized(Sender: TObject);
+begin
+  RefreshTrackBar(tbPreview);
 end;
 
 procedure TGaugeEditorForm.UpdateChips;
@@ -432,29 +485,24 @@ begin
     pnlPid.Height := Max(52, WrappedTextHeight(lblPidName, pnlPid.Width - 50) + 20);
   if lblAlerts.Width > 50 then
     lblAlerts.Height := WrappedTextHeight(lblAlerts, lblAlerts.Width) + 4;
+  // The preview stays in sight above the fields, or beside them on a short,
+  // wide window. (It is on the form, not in the scroll box: moving it in and
+  // out of the box as the phone turned left the fields a sliver wide.)
   W := InnerWidth(Self);
   H := InnerHeight(Self);
   if (H < 480) and (W > H) then
   begin
-    if pnlPreview.Parent <> Self then
-    begin
-      pnlPreview.Parent := Self;
-      pnlPreview.Align := TAlignLayout.Left;
-      pnlPreview.Margins.Bottom := 8;
-    end;
+    pnlPreview.Align := TAlignLayout.Left;
+    pnlPreview.Margins.Bottom := 8;
     // sized here too: the preview is fitted to it before the form realigns
-    pnlPreview.SetBounds(pnlPreview.Position.X, pnlPreview.Position.Y, Round(W * 0.4), H - pnlBar.Height - 16);
+    pnlPreview.SetBounds(0, pnlBar.Height, Round(W * 0.4), H - pnlBar.Height - 16);
   end
   else
   begin
-    if pnlPreview.Parent <> sbBody then
-    begin
-      pnlPreview.Parent := sbBody;
-      pnlPreview.Align := TAlignLayout.Top;
-      pnlPreview.Position.Y := -10; // first
-      pnlPreview.Margins.Bottom := 0;
-    end;
-    pnlPreview.Height := EnsureRange(ClientHeight * 0.36, 180, 300);
+    pnlPreview.Align := TAlignLayout.Top;
+    pnlPreview.Position.Y := pnlBar.Height + 1; // under the bar
+    pnlPreview.Margins.Bottom := 0;
+    pnlPreview.Height := EnsureRange(H * 0.32, 160, 300);
   end;
   UpdatePreview;
 end;

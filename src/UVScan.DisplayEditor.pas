@@ -102,6 +102,7 @@ type
     FPid: TPidDef;
     FDisplay: TPidDisplay;
     FLoading: Boolean;
+    FFitting: Boolean;
     FFlashOn: Boolean;
     FEditing: Integer;               // level shown on the level page, -1 = none
     FCards: TArray<TRectangle>;
@@ -118,6 +119,7 @@ type
     function PreviewValue: Double;
     procedure SetValueValid(Valid: Boolean);
     procedure FitLayout;
+    procedure LevelListResized(Sender: TObject);
     procedure ApplyPalette;
     procedure FormKeyUp(Sender: TObject; var Key: Word; var KeyChar: WideChar; Shift: TShiftState);
   public
@@ -174,6 +176,7 @@ var
   N: Integer;
   L: TLabel;
 begin
+  lytLevelList.OnResized := LevelListResized;
   FLoading := True; // filling the boxes fires their OnChange
   FEditing := -1;
   FDisplay := TPidDisplay.Create(0);
@@ -247,8 +250,10 @@ var
   W: Single;
   C: TCheckBox;
 begin
-  if lblPid = nil then
+  if (lblPid = nil) or FFitting then
     Exit;
+  FFitting := True;
+  try
   Caps := [lblPreviewValue, lblFontSize, lblTextColor, lblRowColor];
   W := 0;
   for L in Caps do
@@ -277,6 +282,16 @@ begin
     if C.Width > 80 then
       C.Height := Max(40, WrappedTextHeight(C, C.Width - 40) + 12); // the box takes about 40
   BuildCards;
+  finally
+    FFitting := False;
+  end;
+end;
+
+{ The form's resize comes before its contents have their new widths (the
+  first layout on a phone, a turn): the list's own resize lays out again. }
+procedure TDisplayEditorForm.LevelListResized(Sender: TObject);
+begin
+  FitLayout;
 end;
 
 procedure TDisplayEditorForm.LoadAll;

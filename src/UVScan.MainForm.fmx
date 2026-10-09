@@ -1170,7 +1170,9 @@ object MainForm: TMainForm
                   Size.Height = 22.000000000000000000
                   Size.PlatformDefault = False
                   TextSettings.FontColor = xFF707070
-                  Text = 'Find PIDs this PCM answers and add them to define'
+                  Text =
+                    'Asks the PCM which PIDs it answers, so you can add the ones you ' +
+                    'want and define them in the PID editor.'
                 end
               end
             end

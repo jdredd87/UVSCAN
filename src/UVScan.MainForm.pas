@@ -340,6 +340,8 @@ type
     procedure NavClick(Sender: TObject);
     procedure NavPaint(Sender: TObject; Canvas: TCanvas; const ARect: TRectF);
     procedure NavResized(Sender: TObject);
+    procedure OrderAppBar;
+    procedure AppBarResized(Sender: TObject);
     procedure LayoutNav;
     procedure AddPageMenuItem(const Text: string; Handler: TNotifyEvent; Enabled: Boolean = True;
       Checked: Boolean = False);
@@ -523,6 +525,9 @@ begin
   lblVin.TextSettings.Font.Style := [TFontStyle.fsBold];
   lblOsid.TextSettings.Font.Style := [TFontStyle.fsBold];
   lblFirmware.TextSettings.Font.Style := [TFontStyle.fsBold];
+  if IsMobile then // their fixed size suits Windows; a phone's style text is bigger
+    for var L in [lblVin, lblOsid, lblFirmware] do
+      L.StyledSettings := L.StyledSettings + [TStyledSetting.Size];
   lblCtlName.TextSettings.Font.Style := [TFontStyle.fsBold];
   pnlNotice.Visible := False;
   CreateGrids;
@@ -842,6 +847,11 @@ begin
   btnChart.Hint := 'Live chart';
   btnChart.ShowHint := True;
   btnChart.OnClick := LiveChartClick;
+  // OrderAppBar places the right side of the bar
+  for var C in TArray<TControl>.Create(btnAction, btnMenu, btnChart) do
+    C.Align := TAlignLayout.None;
+  btnAction.Height := 36;
+  pnlAppBar.OnResized := AppBarResized;
   Icon := AddIcon(btnChart);
   Icon.Data.Data := 'M3 4 L3 20 L21 20 M6 15 L10 10 L14 13 L20 6';
   Icon.Fill.Kind := TBrushKind.None;
@@ -1004,6 +1014,7 @@ begin
     end;
   end;
   LayoutNav;
+  OrderAppBar;
 end;
 
 { The tab bar buttons share its width, or (down the side) are stacked in the middle. }
@@ -1097,8 +1108,41 @@ begin
     btnAction.Margins.Right := 4
   else
     btnAction.Margins.Right := 12;
+  OrderAppBar;
   for I := 0 to 4 do
     FNavButtons[I].Repaint;
+end;
+
+{ The top bar's right side, from the edge: menu, main button, chart - placed
+  here rather than right aligned (the alignment mixed their order up after a
+  turn with some of them hidden). The title gets the rest. }
+procedure TMainForm.OrderAppBar;
+var
+  R, H: Single;
+begin
+  if btnChart = nil then
+    Exit;
+  H := pnlAppBar.Height;
+  R := pnlAppBar.Width;
+  if btnMenu.Visible then
+  begin
+    btnMenu.SetBounds(R - btnMenu.Width, 0, btnMenu.Width, H);
+    R := R - btnMenu.Width;
+  end;
+  R := R - btnAction.Margins.Right;
+  btnAction.SetBounds(R - btnAction.Width, Round((H - btnAction.Height) / 2), btnAction.Width, btnAction.Height);
+  R := btnAction.Position.X - 4;
+  if btnChart.Visible then
+  begin
+    btnChart.SetBounds(R - btnChart.Width, 0, btnChart.Width, H);
+    R := R - btnChart.Width;
+  end;
+  lblTitle.Margins.Right := pnlAppBar.Width - R + 4;
+end;
+
+procedure TMainForm.AppBarResized(Sender: TObject);
+begin
+  OrderAppBar;
 end;
 
 procedure TMainForm.CtlWarnClick(Sender: TObject);
@@ -1542,6 +1586,14 @@ begin
     lblStatus.WordWrap := True;
     lblStatus.TextSettings.Trimming := TTextTrimming.None;
     H := WrappedTextHeight(lblStatus, pnlStatus.Width - lblStatus.Position.X - lblStatus.Margins.Right);
+    // A short screen keeps its height for the pages: one line, cut short
+    // (tap the strip for the Connect page with all of it).
+    if FRail or (InnerHeight(Self) < 700) then
+    begin
+      H := WrappedTextHeight(lblStatus, 100000);
+      lblStatus.WordWrap := False;
+      lblStatus.TextSettings.Trimming := TTextTrimming.Character;
+    end;
     pnlStatus.Height := Max(28, H + 8);
   end;
   if pnlNotice.Width > 50 then
@@ -4338,10 +4390,11 @@ begin
     // the screen, a whole medium or large one.
     if (FDisplay.Gauges[I].Style <> gsBar) and (sbDash.Height > 100) then
     begin
+      // (not so small its scale cannot be read: a small phone gets one row)
       if FDisplay.Gauges[I].Size = gzSmall then
-        Cap := Floor((sbDash.Height - 3 * Gap) / 2)
+        Cap := Max(120, Floor((sbDash.Height - 3 * Gap) / 2))
       else
-        Cap := Floor(sbDash.Height - 2 * Gap);
+        Cap := Max(160, Floor(sbDash.Height - 2 * Gap));
       if Sz.cy > Cap then
         Sz := TSizeF.Create(Round(Sz.cx * Cap / Sz.cy), Cap);
     end;

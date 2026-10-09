@@ -191,10 +191,11 @@ begin
   end;
   ArrangeCaptionRows([pairName, pairGroup, rowModule, rowOn, rowOff, rowConfirm],
     [lblName, lblGroup, lblModule, lblOn, lblOff, lblConfirm], Narrow);
+  // (pairName's own height is the row's while it is left aligned)
   if Narrow then
-    rowName.Height := pairName.Height * 2
+    rowName.Height := 2 * (26 + 36 + 6)
   else
-    rowName.Height := pairName.Height;
+    rowName.Height := 36 + 6;
   ArrangeCaptionRows([rowNotes], [lblNotes], Narrow, 80);
   lblSends.WordWrap := True;
   H := Max(30, WrappedTextHeight(lblSends, Max(100, lblSends.Width)) + 6);
