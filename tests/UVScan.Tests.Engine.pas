@@ -476,6 +476,12 @@ begin
       Found := Found + [Ev.PidId];
   // Simulator answers $04-$11 (14) and $1100-$110F except $1107/$110F (every 8th) and $1108 (refused): 13
   Assert.AreEqual(27, Integer(Length(Found)));
+  // the answer's size, as the PID search shows it: engine speed is 2 bytes, coolant 1
+  for Ev in FEvents do
+    if (Ev.Kind = eePidFound) and (Ev.PidId = $000C) then
+      Assert.AreEqual(2, Ev.DataBytes, '$000C bytes')
+    else if (Ev.Kind = eePidFound) and (Ev.PidId = $0005) then
+      Assert.AreEqual(1, Ev.DataBytes, '$0005 bytes');
   Assert.IsTrue(FindEvent(eePidSearchDone, Done));
   Assert.AreEqual(48, Done.Total);
   Assert.AreEqual(48, Done.Progress);

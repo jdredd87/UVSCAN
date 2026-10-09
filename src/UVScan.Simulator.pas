@@ -197,6 +197,24 @@ begin
       Result := Result + Chr(B[I]);
 end;
 
+{ How many data bytes a mode $22 read of Pid answers with: the SAE sizes
+  (engine speed and air flow are 2 bytes), and a mix for the GM PIDs, as a
+  real PCM's PID search shows. }
+function ReadSize(Pid: Word): Byte;
+begin
+  case Pid of
+    $000C, $0010:
+      Result := 2;
+    $1100..$13FF:
+      if Pid and $0F in [$0, $4] then
+        Result := 2
+      else
+        Result := 1;
+  else
+    Result := 1;
+  end;
+end;
+
 procedure TSimulatedAvt.HandleBusMessage(const Msg: TClass2Message);
 var
   Pid: Word;
@@ -268,7 +286,7 @@ begin
           EmitBus(BytesOf([PriorityRequest, Msg.Source, $10, ModeNegativeResponse, ModeReadPid, Msg.Data[0], Msg.Data[1], $31]))
         else
           EmitBus(ConcatBytes(BytesOf([PriorityRequest, Msg.Source, $10, ModeReadPid + PositiveOffset,
-            Msg.Data[0], Msg.Data[1]]), PidValue(Pid, 1)));
+            Msg.Data[0], Msg.Data[1]]), PidValue(Pid, ReadSize(Pid))));
       end;
 
     ModeDefineDpid:
