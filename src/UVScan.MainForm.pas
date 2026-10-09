@@ -316,6 +316,8 @@ type
     FMorePages: TArray<TTabItem>;    // lbMore row -> page (nil = log viewer)
     FPageMenu: TPopupMenu;
     FPidsDocked: Boolean;            // wide window: the PID list sits beside the pages
+    FRail: Boolean;                  // short window (a phone held sideways): the tabs go down the left side
+    FCtlRunHeight: Single;           // the control panel's height under the list, while it is beside it
     FChromeReady: Boolean;
     FThemeSub: TMessageSubscriptionId;
     FAddGauge: TCircle;              // the round + on the Gauges page
@@ -337,6 +339,8 @@ type
     procedure CtlWarnClick(Sender: TObject);
     procedure NavClick(Sender: TObject);
     procedure NavPaint(Sender: TObject; Canvas: TCanvas; const ARect: TRectF);
+    procedure NavResized(Sender: TObject);
+    procedure LayoutNav;
     procedure AddPageMenuItem(const Text: string; Handler: TNotifyEvent; Enabled: Boolean = True;
       Checked: Boolean = False);
     procedure ToggleMinMaxClick(Sender: TObject);
@@ -538,8 +542,9 @@ begin
   FChromeReady := True;
   // A box of wrapping buttons fits its rows again whenever its width changes
   // (also when a page hidden during a resize is shown and laid out).
+  // The same for wrapped text (a page hidden while the phone turned is laid out later).
   for var C in TArray<TControl>.Create(gbAdapter, gbScan, gbLogRec, pnlLiveFooter, pnlDashBar, pnlCtlBar,
-    pnlPidFooter, pnlCtlRun) do
+    pnlPidFooter, pnlCtlRun, pnlCtlWarn, pnlNotice, gbDiscover) do
     C.OnResized := FlowBoxResized;
   ArrangeLayout;
   UpdateControls;
@@ -703,7 +708,7 @@ var
   Compact: Boolean;
   G: TDataGrid;
 begin
-  Compact := ClientWidth < 700;
+  Compact := InnerWidth(Self) < 700;
   if FPageGridsSet and (Compact = FPageGridsCompact) then
     Exit;
   FPageGridsSet := True;
@@ -756,6 +761,8 @@ const
       'M17.6 11 L16.5 12.1',
     '');
   WideLayoutWidth = 980; // Windows: from this client width the PID list sits beside the pages
+  RailHeight = 480;      // below this height (and wider than tall) the tabs go down the left side
+  RailWidth = 76;
 
 procedure TMainForm.BuildChrome;
 
@@ -803,9 +810,7 @@ begin
     Btn := TRectangle.Create(Self);
     Btn.Parent := pnlNav;
     Btn.Stored := False;
-    Btn.Align := TAlignLayout.Left;
-    Btn.Position.X := I * 100;
-    Btn.Width := 100;
+    Btn.SetBounds(I * 100, 0, 100, pnlNav.Height); // LayoutNav places them
     Btn.Fill.Color := TAlphaColors.Null;
     Btn.Stroke.Kind := TBrushKind.None;
     Btn.HitTest := True;
@@ -815,6 +820,7 @@ begin
     Btn.OnPaint := NavPaint;
     FNavButtons[I] := Btn;
   end;
+  pnlNav.OnResized := NavResized;
 
   btnBack.Text := '';
   Icon := AddIcon(btnBack);
@@ -920,12 +926,13 @@ end;
 procedure TMainForm.ArrangeLayout;
 var
   Wide: Boolean;
-  I, N: Integer;
-  W, X: Single;
+  W, H: Single;
 begin
   if not FChromeReady then
     Exit;
-  Wide := ClientWidth >= WideLayoutWidth; // a big window or a tablet held sideways
+  W := InnerWidth(Self);
+  H := InnerHeight(Self);
+  Wide := W >= WideLayoutWidth; // a big window or a tablet held sideways
   if Wide and (pnlPids.Parent <> Self) then
   begin
     pnlPids.Parent := Self;
@@ -954,20 +961,87 @@ begin
   pnlLiveFooter.Visible := Wide;
   pnlDashBar.Visible := Wide;
   pnlCtlBar.Visible := Wide;
-  // The tab bar buttons share the width.
+  // A short window (a phone held sideways): the tabs down the left side, and the
+  // PID search beside the scan list, so the pages keep their height.
+  FRail := (H < RailHeight) and (W > H);
+  if FRail then
+  begin
+    pnlNav.Align := TAlignLayout.MostLeft; // the whole height, beside the top bar too
+    pnlNav.Width := RailWidth;
+    pnlNav.Sides := [TSide.Right];
+    if edtSearch.Parent <> pnlListBar then
+    begin
+      edtSearch.Parent := pnlListBar;
+      edtSearch.Align := TAlignLayout.Right;
+      edtSearch.Position.X := pnlListBar.Width + 100; // right of Save as
+      edtSearch.Margins.Rect := TRectF.Create(8, 2, 0, 2);
+    end;
+    edtSearch.Width := Min(240, Round(W * 0.3));
+    // Controls: the selected control beside the list
+    if pnlCtlRun.Align = TAlignLayout.Bottom then
+      FCtlRunHeight := pnlCtlRun.Height;
+    pnlCtlRun.Align := TAlignLayout.Right;
+    pnlCtlRun.Width := Max(280, Round((W - RailWidth) * 0.42));
+  end
+  else
+  begin
+    pnlNav.Align := TAlignLayout.Bottom;
+    pnlNav.Position.Y := ClientHeight + 100; // under the status strip
+    pnlNav.Height := 56;
+    pnlNav.Sides := [TSide.Top];
+    if edtSearch.Parent <> pnlPids then
+    begin
+      edtSearch.Parent := pnlPids;
+      edtSearch.Align := TAlignLayout.Top;
+      edtSearch.Position.Y := pnlListBar.Position.Y + pnlListBar.Height + 1;
+      edtSearch.Margins.Rect := TRectF.Create(0, 4, 0, 4);
+    end;
+    if pnlCtlRun.Align <> TAlignLayout.Bottom then
+    begin
+      pnlCtlRun.Align := TAlignLayout.Bottom;
+      pnlCtlRun.Position.Y := tiControls.Height + 100;
+      pnlCtlRun.Height := FCtlRunHeight; // FitFlowHeights keeps it when no control is selected
+    end;
+  end;
+  LayoutNav;
+end;
+
+{ The tab bar buttons share its width, or (down the side) are stacked in the middle. }
+procedure TMainForm.LayoutNav;
+var
+  I, N: Integer;
+  S, P: Single;
+begin
   N := 0;
   for I := 0 to 4 do
     if FNavButtons[I].Visible then
       Inc(N);
-  W := ClientWidth / Max(1, N);
-  X := 0;
+  N := Max(1, N);
+  if FRail then
+  begin
+    S := Min(64, pnlNav.Height / N);
+    P := Max(0, (pnlNav.Height - S * N) / 2);
+  end
+  else
+  begin
+    S := pnlNav.Width / N;
+    P := 0;
+  end;
   for I := 0 to 4 do
     if FNavButtons[I].Visible then
     begin
-      FNavButtons[I].Position.X := X;
-      FNavButtons[I].Width := W;
-      X := X + W;
+      if FRail then
+        FNavButtons[I].SetBounds(0, P, pnlNav.Width, S)
+      else
+        FNavButtons[I].SetBounds(P, 0, S, pnlNav.Height);
+      P := P + S;
     end;
+end;
+
+procedure TMainForm.NavResized(Sender: TObject);
+begin
+  if FChromeReady then
+    LayoutNav;
 end;
 
 { Navigation }
@@ -1053,18 +1127,19 @@ var
   P: TPalette;
   Color: TAlphaColor;
   Path: TPathData;
-  Cx: Single;
+  Cx, Y: Single;
   D: Integer;
 begin
   I := TControl(Sender).Tag;
   P := Palette;
   Cx := (ARect.Left + ARect.Right) / 2;
+  Y := ARect.Top + Max(0, (ARect.Height - 56) / 2); // a taller button (down the side): in its middle
   if FNavPages[I] = tcMain.ActiveTab then
   begin
     Color := P.Accent;
     Canvas.Fill.Kind := TBrushKind.Solid;
     Canvas.Fill.Color := WithAlpha(P.Accent, $30);
-    Canvas.FillRect(TRectF.Create(Cx - 28, 4, Cx + 28, 32), 14, 14, AllCorners, 1);
+    Canvas.FillRect(TRectF.Create(Cx - 28, Y + 4, Cx + 28, Y + 32), 14, 14, AllCorners, 1);
   end
   else
     Color := P.Muted;
@@ -1075,7 +1150,7 @@ begin
         Path.AddEllipse(TRectF.Create(12 + D * 6 - 2, 10, 12 + D * 6 + 2, 14))
     else
       Path.Data := NavIcons[I];
-    Path.Translate(Cx - 12, 6);
+    Path.Translate(Cx - 12, Y + 6);
     Canvas.Stroke.Kind := TBrushKind.Solid;
     Canvas.Stroke.Color := Color;
     Canvas.Stroke.Thickness := 2;
@@ -1091,7 +1166,7 @@ begin
     Path.Free;
   end;
   Canvas.Font.Size := 12;
-  Canvas.FillText(TRectF.Create(ARect.Left, 33, ARect.Right, ARect.Bottom - 2), NavCaptions[I], False, 1, [],
+  Canvas.FillText(TRectF.Create(ARect.Left, Y + 33, ARect.Right, Y + 54), NavCaptions[I], False, 1, [],
     TTextAlign.Center, TTextAlign.Center);
 end;
 
@@ -1104,9 +1179,11 @@ procedure TMainForm.FormKeyUp(Sender: TObject; var Key: Word; var KeyChar: WideC
 begin
   if Key <> vkHardwareBack then
     Exit;
-  // Android back: out of a More page, then back to Live; from Live, to the
-  // background like Home (the scan carries on for a while, see AppEvent).
-  if btnBack.Visible then
+  // Android back: an open menu closes; out of a More page, then back to Live;
+  // from Live, to the background like Home (the scan carries on for a while,
+  // see AppEvent).
+  if CloseActionMenu then
+  else if btnBack.Visible then
     btnBackClick(nil)
   else if CurrentPage <> tiLive then
     ShowPage(tiLive)

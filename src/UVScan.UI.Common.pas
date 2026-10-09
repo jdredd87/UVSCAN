@@ -93,6 +93,8 @@ type
 procedure ShowActionMenu(Form: TCustomForm; const Items: TArray<TActionItem>; const At: TPointF);
 { ShowActionMenu with the visible items of a TPopupMenu. }
 procedure ShowMenuAsActions(Form: TCustomForm; Menu: TPopupMenu; const At: TPointF);
+{ Closes the open action menu, if any (the back key does): True if there was one. }
+function CloseActionMenu: Boolean;
 
 const
   IconBack = 'M15 4 L7 12 L15 20';
@@ -140,6 +142,10 @@ function IsMobile: Boolean;
 { Keeps Form's content clear of the phone's status and navigation bars
   (Android draws apps edge to edge). Does nothing on a desktop. }
 procedure KeepInSafeArea(Form: TCommonCustomForm);
+{ The room inside Form's safe area: a phone held sideways has the camera and
+  the system buttons at its sides. Layouts choose by these, not ClientWidth. }
+function InnerWidth(Form: TCustomForm): Single;
+function InnerHeight(Form: TCustomForm): Single;
 
 { Android 16+: apps built for it no longer get the back key; the system
   closes them instead. This takes the back gesture / button again and gives
@@ -217,6 +223,8 @@ begin
   if Form = nil then
     Form := Application.MainForm;
   if Form = nil then
+    Exit;
+  if CloseActionMenu then
     Exit;
   Key := vkHardwareBack;
   Ch := #0;
@@ -319,9 +327,29 @@ type
   end;
 
 class procedure TSafeArea.Changed(Sender: TObject; const AInsets: TRectF);
+var
+  F: TCustomForm;
 begin
-  if Sender is TCustomForm then
-    TCustomForm(Sender).Padding.Rect := AInsets;
+  if not (Sender is TCustomForm) then
+    Exit;
+  F := TCustomForm(Sender);
+  if F.Padding.Rect = AInsets then
+    Exit;
+  F.Padding.Rect := AInsets;
+  // The insets move when the phone turns (the system buttons go to a side), and
+  // layouts work from the room inside them.
+  if Assigned(F.OnResize) then
+    F.OnResize(F);
+end;
+
+function InnerWidth(Form: TCustomForm): Single;
+begin
+  Result := Form.ClientWidth - Form.Padding.Left - Form.Padding.Right;
+end;
+
+function InnerHeight(Form: TCustomForm): Single;
+begin
+  Result := Form.ClientHeight - Form.Padding.Top - Form.Padding.Bottom;
 end;
 
 procedure KeepInSafeArea(Form: TCommonCustomForm);
@@ -353,10 +381,31 @@ type
     procedure OverlayClick(Sender: TObject);
     procedure ItemClick(Sender: TObject);
     procedure Close;
+  public
+    destructor Destroy; override;
   end;
+
+var
+  OpenMenu: TActionMenu; // one at a time
+
+destructor TActionMenu.Destroy;
+begin
+  if OpenMenu = Self then
+    OpenMenu := nil; // freed with its form
+  inherited;
+end;
+
+function CloseActionMenu: Boolean;
+begin
+  Result := OpenMenu <> nil;
+  if Result then
+    OpenMenu.Close;
+end;
 
 procedure TActionMenu.Close;
 begin
+  if OpenMenu = Self then
+    OpenMenu := nil;
   FOverlay.Visible := False;
   TThread.ForceQueue(nil,
     procedure
@@ -397,10 +446,12 @@ var
   I: Integer;
   RowH, Y: Single;
 begin
-  if Length(Items) = 0 then
+  // Android repeats a long press while the finger stays down: one menu only.
+  if (Length(Items) = 0) or (OpenMenu <> nil) then
     Exit;
   P := Palette;
   M := TActionMenu.Create(Form);
+  OpenMenu := M;
   M.FItems := Items;
   M.FOverlay := TRectangle.Create(M);
   M.FOverlay.Parent := Form;
@@ -489,8 +540,11 @@ begin
   end;
   Panel.Width := MenuWidth;
   Panel.Height := Y + 6;
-  Panel.Position.X := EnsureRange(At.X, 8, Max(8, Form.ClientWidth - MenuWidth - 8));
-  Panel.Position.Y := EnsureRange(At.Y, 8, Max(8, Form.ClientHeight - Panel.Height - 8));
+  // inside the safe area
+  Panel.Position.X := EnsureRange(At.X, Form.Padding.Left + 8,
+    Max(Form.Padding.Left + 8, Form.ClientWidth - Form.Padding.Right - MenuWidth - 8));
+  Panel.Position.Y := EnsureRange(At.Y, Form.Padding.Top + 8,
+    Max(Form.Padding.Top + 8, Form.ClientHeight - Form.Padding.Bottom - Panel.Height - 8));
 end;
 
 procedure ShowMenuAsActions(Form: TCustomForm; Menu: TPopupMenu; const At: TPointF);
@@ -506,7 +560,7 @@ begin
     M := Menu.Items[I];
     if not M.Visible then
       Continue;
-    It.Text := M.Text.Replace('&&', '&');
+    It.Text := M.Text; // && stays: the menu's labels show it as one &
     It.Enabled := M.Enabled;
     It.Checked := M.IsChecked;
     It.OnClick := M.OnClick;
@@ -532,6 +586,11 @@ end;
 
 procedure TPageChrome.KeyUp(Sender: TObject; var Key: Word; var KeyChar: WideChar; Shift: TShiftState);
 begin
+  if (Key = vkHardwareBack) and CloseActionMenu then
+  begin
+    Key := 0;
+    Exit;
+  end;
   // The form first (it may use the back key itself, e.g. to leave a sub-page).
   if Assigned(FOldKeyUp) then
     FOldKeyUp(Sender, Key, KeyChar, Shift);

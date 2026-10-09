@@ -529,7 +529,7 @@ var
 begin
   W := sbDetail.Width - 40;
   if W < 100 then
-    W := ClientWidth - 40;
+    W := InnerWidth(Self) - 40;
   Pairs := [Pair(lblId, edtId), Pair(nil, chkEnabled), Pair(lblName, edtName), Pair(lblShortName, edtShortName),
     Pair(lblUnits, edtUnits), Pair(lblDescription, edtDescription), Pair(lblKind, cbKind),
     Pair(lblCategory, cbCategory), Pair(lblPid, edtPid), Pair(lblBytes, cbBytes), Pair(lblChannel, cbChannel),
@@ -645,7 +645,7 @@ var
 begin
   if (pnlList = nil) or (FDetailBar = nil) then
     Exit;
-  Narrow := ClientWidth < NarrowWidth;
+  Narrow := InnerWidth(Self) < NarrowWidth;
   if not Narrow then
     FDetailMode := False;
   FNarrow := Narrow;

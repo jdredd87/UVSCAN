@@ -418,8 +418,11 @@ end;
 
 { Sizes that depend on the width: chips, the wrapped PID name and alert
   summary, and the preview (as tall as a medium gauge, or less on a small
-  window). }
+  window). A short, wide window (a phone held sideways) has the preview beside
+  the fields, so it stays in sight while they scroll. }
 procedure TGaugeEditorForm.FitLayout;
+var
+  W, H: Single;
 begin
   if FGaugeView = nil then
     Exit;
@@ -429,7 +432,30 @@ begin
     pnlPid.Height := Max(52, WrappedTextHeight(lblPidName, pnlPid.Width - 50) + 20);
   if lblAlerts.Width > 50 then
     lblAlerts.Height := WrappedTextHeight(lblAlerts, lblAlerts.Width) + 4;
-  pnlPreview.Height := EnsureRange(ClientHeight * 0.36, 180, 300);
+  W := InnerWidth(Self);
+  H := InnerHeight(Self);
+  if (H < 480) and (W > H) then
+  begin
+    if pnlPreview.Parent <> Self then
+    begin
+      pnlPreview.Parent := Self;
+      pnlPreview.Align := TAlignLayout.Left;
+      pnlPreview.Margins.Bottom := 8;
+    end;
+    // sized here too: the preview is fitted to it before the form realigns
+    pnlPreview.SetBounds(pnlPreview.Position.X, pnlPreview.Position.Y, Round(W * 0.4), H - pnlBar.Height - 16);
+  end
+  else
+  begin
+    if pnlPreview.Parent <> sbBody then
+    begin
+      pnlPreview.Parent := sbBody;
+      pnlPreview.Align := TAlignLayout.Top;
+      pnlPreview.Position.Y := -10; // first
+      pnlPreview.Margins.Bottom := 0;
+    end;
+    pnlPreview.Height := EnsureRange(ClientHeight * 0.36, 180, 300);
+  end;
   UpdatePreview;
 end;
 

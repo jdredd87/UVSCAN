@@ -124,6 +124,7 @@ type
     // Narrow window (phone): a top bar with a menu, the chart above either the
     // channel list or the data, and the channel settings as a page of their own.
     FNarrow: Boolean;
+    FShort: Boolean; // narrow layout on a short, wide window (a phone held sideways)
     FLaidOut: Boolean;
     FTopBar: TRectangle;
     FTitle: TLabel;
@@ -141,6 +142,7 @@ type
     procedure SaveBounds(const Ctls: array of TControl);
     procedure RestoreBounds;
     procedure LayoutNarrow;
+    procedure PutLogRow(InTopBar: Boolean);
     procedure LayoutWide;
     procedure FlowWideBars;
     procedure LayoutChannelWide;
@@ -247,6 +249,7 @@ const
   ColAvg = 3;
   ColMax = 4;
   NarrowWidth = 700;
+  ShortHeight = 480; // below this height (and wider than tall): the short layout
   StatsColor = TAlphaColor($FF0060B0);  // selection statistics stand out
   CursorRowColor = TAlphaColor($FFC8E6F5);
   LiveSpans: array[0..5] of Double = (15, 30, 60, 120, 300, 600);
@@ -675,7 +678,8 @@ begin
   if Key <> vkHardwareBack then
     Exit;
   Key := 0;
-  if FChannelPage.Visible then
+  if CloseActionMenu then
+  else if FChannelPage.Visible then
     ChannelPageClose(nil)
   else
     BackClick(nil);
@@ -784,7 +788,7 @@ var
 begin
   W := FChannelBox.Width - 2 * 12 - 2 * 12;
   if W < 100 then
-    W := ClientWidth - 48;
+    W := InnerWidth(Self) - 48;
   gbChannel.Width := W + 24;
   gbChannel.Text := '';
   Half := (W - 12) / 2;
@@ -830,8 +834,33 @@ var
 begin
   if not FNarrow then
     Exit;
-  W := ClientWidth - 16;
+  W := InnerWidth(Self) - 16;
   H := 0;
+  if FShort then
+  begin
+    // One line: what the log is, then the hint, cut short.
+    for L in [lblStatus0, lblStatus1, lblStatus2] do
+    begin
+      L.Visible := (L.Text <> '') and ((L <> lblStatus0) or (FData.Count = 0));
+      L.WordWrap := False;
+      L.TextSettings.Trimming := TTextTrimming.Character;
+      L.Margins.Rect := TRectF.Create(8, 0, 8, 0);
+      if L = lblStatus2 then
+        L.Align := TAlignLayout.Client
+      else
+      begin
+        L.Align := TAlignLayout.Left;
+        FitTextWidth(L);
+        L.Width := Min(L.Width, W / 2);
+      end;
+      if L.Visible then
+        H := Max(H, WrappedTextHeight(L, 10000));
+    end;
+    lblStatus0.Position.X := 0;
+    lblStatus1.Position.X := lblStatus0.Width + 20;
+    sbLog.Height := H + 8;
+    Exit;
+  end;
   for L in [lblStatus0, lblStatus1, lblStatus2] do
   begin
     // with a log open its name is in the top bar and the log box already
@@ -840,6 +869,7 @@ begin
       Continue;
     L.Align := TAlignLayout.Top;
     L.WordWrap := True;
+    L.TextSettings.Trimming := TTextTrimming.None;
     L.Margins.Rect := TRectF.Create(8, 2, 8, 0);
     L.Height := WrappedTextHeight(L, W) + 2;
     L.Position.Y := H + 1;
@@ -858,52 +888,80 @@ end;
 
 procedure TLogViewerForm.LayoutNarrow;
 var
-  W, X: Single;
+  W, X, L: Single;
   S: string;
 begin
-  W := ClientWidth;
+  W := InnerWidth(Self);
   FTopBar.Visible := True;
   FTopBar.Position.Y := -100; // above the log row
   FMenuButton.Visible := True;
-  // The log row: the recent logs and the demo.
+  // The log row: the recent logs and the demo. A short window has them in the
+  // top bar, between back and the menu.
   ShowControls([btnOpen, lblView, cbView, btnSaveView, btnDeleteView, lblMode, cbMode, btnImage], False);
-  pnlBar.Height := 52;
+  PutLogRow(FShort);
   btnDemo.Text := 'Demo';
   btnLive.Text := 'Live';
   FitTextWidth(btnDemo, 72);
   FitTextWidth(btnLive, 64);
-  btnLive.SetBounds(W - 12 - btnLive.Width, 8, btnLive.Width, 36);
+  if FShort then
+  begin
+    X := W - FMenuButton.Width - 4;
+    L := 56;
+  end
+  else
+  begin
+    pnlBar.Height := 52;
+    X := W - 12;
+    L := 12;
+  end;
+  btnLive.SetBounds(X - btnLive.Width, 8, btnLive.Width, 36);
   btnDemo.SetBounds(btnLive.Position.X - 8 - btnDemo.Width, 8, btnDemo.Width, 36);
-  cbRecent.SetBounds(12, 8, Max(80, btnDemo.Position.X - 8 - 12), 36);
-  // Playback: the buttons, then the position and time.
+  cbRecent.SetBounds(L, 8, Max(80, btnDemo.Position.X - 8 - L), 36);
+  // Playback: the buttons, then the position and time (one row when short).
   ShowControls([chkFollow, chkBands, chkUseDisplay], False);
-  pnlPlay.Height := 96;
   btnStart.SetBounds(12, 6, 48, 38);
   btnPlay.SetBounds(68, 6, 84, 38);
   btnEnd.SetBounds(160, 6, 48, 38);
   cbSpeed.SetBounds(216, 6, 84, 38);
-  X := 12; // where the slider starts
-  if btnSelect.Visible then
-  begin
-    FitTextWidth(btnSelect, 90);
-    if W - 12 - 308 >= btnSelect.Width then
-      btnSelect.SetBounds(W - 12 - btnSelect.Width, 6, btnSelect.Width, 38)
-    else
-    begin
-      // a small phone: first on the slider's line
-      btnSelect.SetBounds(12, 52, btnSelect.Width, 38);
-      X := 12 + btnSelect.Width + 8;
-    end;
-  end;
   lblTime.WordWrap := False;
   lblTime.TextSettings.HorzAlign := TTextAlign.Trailing;
   S := lblTime.Text; // as wide as the longest time it will show
   lblTime.Text := '00:00.0 / 00:00.0';
   FitTextWidth(lblTime, 100);
   lblTime.Text := S;
-  lblTime.SetBounds(W - 12 - lblTime.Width, 52, lblTime.Width, 38);
-  tbPos.SetBounds(X, 52, Max(60, W - 20 - lblTime.Width - X), 38);
-  // The chart, then Channels | Data.
+  if FShort then
+  begin
+    pnlPlay.Height := 50;
+    X := 308; // where the slider starts
+    if btnSelect.Visible then
+    begin
+      FitTextWidth(btnSelect, 90);
+      btnSelect.SetBounds(X, 6, btnSelect.Width, 38);
+      X := X + btnSelect.Width + 8;
+    end;
+    lblTime.SetBounds(W - 12 - lblTime.Width, 6, lblTime.Width, 38);
+    tbPos.SetBounds(X, 6, Max(60, W - 20 - lblTime.Width - X), 38);
+  end
+  else
+  begin
+    pnlPlay.Height := 96;
+    X := 12; // where the slider starts
+    if btnSelect.Visible then
+    begin
+      FitTextWidth(btnSelect, 90);
+      if W - 12 - 308 >= btnSelect.Width then
+        btnSelect.SetBounds(W - 12 - btnSelect.Width, 6, btnSelect.Width, 38)
+      else
+      begin
+        // a small phone: first on the slider's line
+        btnSelect.SetBounds(12, 52, btnSelect.Width, 38);
+        X := 12 + btnSelect.Width + 8;
+      end;
+    end;
+    lblTime.SetBounds(W - 12 - lblTime.Width, 52, lblTime.Width, 38);
+    tbPos.SetBounds(X, 52, Max(60, W - 20 - lblTime.Width - X), 38);
+  end;
+  // The chart, then Channels | Data (beside it when short).
   splLeft.Visible := False;
   splChart.Visible := False;
   gbChannel.Parent := FChannelBox;
@@ -912,11 +970,20 @@ begin
   pnlLeft.Parent := pnlMain;
   pnlLeft.Align := TAlignLayout.Client;
   pnlLeft.Padding.Rect := TRectF.Create(6, 0, 0, 4);
-  layChart.Align := TAlignLayout.Top;
-  layChart.Position.Y := 0;
-  layChart.Height := Max(150, Round((pnlMain.Height - 60) * 0.45));
+  if FShort then
+  begin
+    layChart.Align := TAlignLayout.MostLeft; // the whole height; the tabs and lists beside it
+    layChart.Width := Round(W * 0.58);
+    FTabs.Position.Y := 0;
+  end
+  else
+  begin
+    layChart.Align := TAlignLayout.Top;
+    layChart.Position.Y := 0;
+    layChart.Height := Max(150, Round((pnlMain.Height - 60) * 0.45));
+    FTabs.Position.Y := layChart.Height + 1;
+  end;
   FTabs.Visible := True;
-  FTabs.Position.Y := layChart.Height + 1;
   PaintTabs;
   pnlLeft.Visible := not FDataTab;
   layGrid.Visible := FDataTab;
@@ -927,6 +994,28 @@ begin
   LayoutStatus;
 end;
 
+{ A short window has the log row in the top bar, in place of the title (the
+  log box names the log too). }
+procedure TLogViewerForm.PutLogRow(InTopBar: Boolean);
+var
+  Bar: TFmxObject;
+  C: TControl;
+begin
+  if InTopBar then
+    Bar := FTopBar
+  else
+    Bar := sbBar;
+  for C in TArray<TControl>.Create(cbRecent, btnDemo, btnLive) do
+    if C.Parent <> Bar then
+      C.Parent := Bar;
+  FTitle.Visible := not InTopBar;
+  if pnlBar.Visible = InTopBar then
+  begin
+    pnlBar.Position.Y := pnlPlay.Position.Y - 1; // back above the playback row
+    pnlBar.Visible := not InTopBar;
+  end;
+end;
+
 procedure TLogViewerForm.LayoutWide;
 begin
   FTopBar.Visible := IsMobile; // a phone or tablet window has no caption to close it by
@@ -934,6 +1023,7 @@ begin
   FChannelPage.Visible := False;
   FTabs.Visible := False;
   FChannelButton.Visible := False;
+  PutLogRow(False);
   RestoreBounds;
   btnOpen.Visible := not IsMobile;
   ShowControls([lblView, cbView, btnSaveView, btnDeleteView, lblMode, cbMode, btnImage, chkFollow, chkBands,
@@ -1061,9 +1151,9 @@ begin
   cbMode.Width := 210;
   cbSpeed.Width := 84; // "10 min" too
   pnlBar.Height := Flow([Ctls([btnOpen, cbRecent, btnDemo, btnLive]), Ctls([lblView, cbView, btnSaveView, btnDeleteView]),
-    Ctls([lblMode, cbMode, btnImage])], ClientWidth);
+    Ctls([lblMode, cbMode, btnImage])], InnerWidth(Self));
   pnlPlay.Height := Flow([Ctls([btnStart, btnPlay, btnEnd, cbSpeed]), Ctls([tbPos, lblTime]), Ctls([chkFollow, chkBands]),
-    Ctls([chkUseDisplay]), Ctls([btnSelect])], ClientWidth);
+    Ctls([chkUseDisplay]), Ctls([btnSelect])], InnerWidth(Self));
 end;
 
 { Wide: the channel box under the list, captions as wide as their text. }
@@ -1122,10 +1212,14 @@ end;
 procedure TLogViewerForm.FormResize(Sender: TObject);
 var
   Narrow: Boolean;
+  W, H: Single;
 begin
   if FTopBar = nil then
     Exit;
-  Narrow := ClientWidth < NarrowWidth;
+  W := InnerWidth(Self);
+  H := InnerHeight(Self);
+  FShort := (H < ShortHeight) and (W > H);
+  Narrow := FShort or (W < NarrowWidth);
   if Narrow then
   begin
     FNarrow := True;

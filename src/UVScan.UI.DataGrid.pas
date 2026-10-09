@@ -1080,7 +1080,7 @@ begin
             Fore := FSelTextColor
           else if St.Fore <> 0 then
             Fore := St.Fore
-          else if St.Back <> 0 then
+          else if (St.Back <> 0) and not Sel then // (the selection colour hides St.Back)
             Fore := ContrastColor(St.Back) // a coloured cell keeps readable text in either theme
           else
             Fore := FTextColor;

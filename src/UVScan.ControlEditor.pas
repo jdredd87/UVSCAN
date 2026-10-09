@@ -176,7 +176,7 @@ var
   L: TLabel;
   Pairs: TArray<TLayout>;
 begin
-  Narrow := ClientWidth < NarrowWidth;
+  Narrow := InnerWidth(Self) < NarrowWidth;
   // Name and group: side by side on a wide window, one under the other on a phone.
   if Narrow then
   begin
@@ -207,7 +207,7 @@ begin
     else
       L.Margins.Left := lblOn.Width + 8;
     L.WordWrap := True;
-    L.Height := Max(20, WrappedTextHeight(L, Max(100, ClientWidth - L.Margins.Left - L.Margins.Right - 30)) + 4);
+    L.Height := Max(20, WrappedTextHeight(L, Max(100, InnerWidth(Self) - L.Margins.Left - L.Margins.Right - 30)) + 4);
   end;
   // Value boxes: the captions as wide as the widest, the boxes wrap; the group
   // as tall as the rows they need.

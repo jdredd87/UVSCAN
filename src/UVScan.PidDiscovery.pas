@@ -150,7 +150,7 @@ begin
   W := gbSearch.Width - 28;
   if W < 100 then
     Exit;
-  Narrow := ClientWidth < 600;
+  Narrow := InnerWidth(Self) < 600;
   Y := 26;
   for var C in [chkSae, chkGm] do
   begin
