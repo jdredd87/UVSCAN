@@ -124,7 +124,7 @@ Big gauges for the PIDs you care about most:
 - **Bar** — a horizontal bar with the value on the right,
 - **Big number** — just the value, large.
 
-Each comes in small, medium or large and has its own scale. Gauges wrap to fit the window.
+Each comes in small, medium or large and has its own scale. Gauges wrap to fit the window. On a phone small gauges sit two to a row (six dials fit on the screen), medium ones keep their size, large ones fill the width and bars take the width; held sideways, two rows of small gauges fit the screen.
 
 They follow the **same alert levels** as the grid: the scale shows the levels as coloured bands, the value arc takes the colour of the band it is in (or the PID's normal colour), and while a level is active the whole card takes the level's colours, flashes and sounds.
 

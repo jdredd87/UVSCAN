@@ -4270,12 +4270,15 @@ begin
   RefreshDashboard;
 end;
 
-{ Left to right, wrapping to the width of the dashboard. }
+{ Left to right, wrapping to the width of the dashboard. On a narrow one (a
+  phone) the sizes stay apart: small gauges shrink so two fit a row, medium
+  ones keep their size, large ones fill the width; bars take the width at
+  their size's height. }
 procedure TMainForm.LayoutDashboard;
 var
   View: TGaugeView;
   I: Integer;
-  X, Y, RowH, Avail, K: Single;
+  X, Y, RowH, Avail, K, Cap: Single;
   Sz: TSizeF;
   Row: TArray<TGaugeView>;
 const
@@ -4311,15 +4314,36 @@ begin
   begin
     View := FGaugeViews[I];
     Sz := TGaugeView.PreferredSize(FDisplay.Gauges[I].Style, FDisplay.Gauges[I].Size);
-    // Room for one column only (a phone, a narrow window): scale the gauge up
-    // to the width (at most double on a desktop, where it gets huge).
-    if (Sz.cx * 2 + 3 * Gap > Avail) and (Sz.cx > 0) then
+    if (Sz.cx > 0) and (Sz.cx * 2 + 3 * Gap > Avail) and (FDisplay.Gauges[I].Style = gsBar) then
+      Sz := TSizeF.Create(Floor(Avail - 2 * Gap), Sz.cy) // a bar is wide anyway: the width, its size's height
+    else if (Sz.cx > 0) and (Sz.cx * 2 + 3 * Gap > Avail) then
     begin
-      K := (Avail - 2 * Gap) / Sz.cx;
-      if not IsMobile then
-        K := Min(K, 2);
-      if K > 1 then
-        Sz := TSizeF.Create(Sz.cx * K, Sz.cy * K);
+      K := 1;
+      case FDisplay.Gauges[I].Size of
+        gzSmall:
+          K := Floor((Avail - 3 * Gap) / 2) / Sz.cx; // two to a row
+        gzLarge:
+          begin
+            // the whole width (at most double on a desktop, where it gets huge)
+            K := Floor(Avail - 2 * Gap) / Sz.cx;
+            if not IsMobile then
+              K := Min(K, 2);
+          end;
+      end;
+      // never wider than the dashboard
+      K := Min(K, Floor(Avail - 2 * Gap) / Sz.cx);
+      Sz := TSizeF.Create(Round(Sz.cx * K), Round(Sz.cy * K));
+    end;
+    // A short dashboard (a phone held sideways): two rows of small gauges to
+    // the screen, a whole medium or large one.
+    if (FDisplay.Gauges[I].Style <> gsBar) and (sbDash.Height > 100) then
+    begin
+      if FDisplay.Gauges[I].Size = gzSmall then
+        Cap := Floor((sbDash.Height - 3 * Gap) / 2)
+      else
+        Cap := Floor(sbDash.Height - 2 * Gap);
+      if Sz.cy > Cap then
+        Sz := TSizeF.Create(Round(Sz.cx * Cap / Sz.cy), Cap);
     end;
     if (X > Gap) and (X + Sz.cx + Gap > Avail) then
     begin
