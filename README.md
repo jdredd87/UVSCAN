@@ -1,6 +1,6 @@
 # UVScan
 
-A data logger and scan tool for GM vehicles on **J1850 VPW (GM Class 2)**, using an **AVT‑841** (or 838 / 842) interface on a serial port. Written for the 1996‑2005 GM V6s (3100 / 3400 / 3800), it works with any Class 2 PCM.
+A data logger and scan tool for GM vehicles on **J1850 VPW (GM Class 2)**, using an **AVT‑841** (or 838 / 842) interface on a serial port, USB, or the network (an AVT with an Ethernet port). Written for the 1996‑2005 GM V6s (3100 / 3400 / 3800), it works with any Class 2 PCM.
 
 It is a rewrite of the 2008 UVSCAN (Delphi 2007, kept in [`legacy/`](legacy) for reference) for **Delphi 13 FireMonkey (FMX)**, with no third‑party components. It runs on Windows (Win32) and builds for **Android** (64‑bit); the last VCL version is git tag `vcl-final`.
 
@@ -17,6 +17,7 @@ It is a rewrite of the 2008 UVSCAN (Delphi 2007, kept in [`legacy/`](legacy) for
 - **Vehicle & codes** — VIN, PCM OS ID, AVT firmware; trouble codes from every module, clear codes.
 - **Real‑time controls** — GM device control (mode $AE): lamps, cooling fan, EVAP vent and fuel trim reset found and checked on a bench PCM, plus your own commands (on / off, hold to run, value, one‑shot).
 - **PID tools** — PID editor with live formula check, import of old `PIDS.csv`, named scan lists, PID support test, and a search of the PCM for every PID it answers.
+- **Network AVT** — an AVT with an Ethernet port (or behind a serial‑to‑network adapter) over TCP/IP, from Windows or a phone.
 - **Simulator** — choose port *Simulator* to use everything without hardware.
 
 | | |
@@ -48,7 +49,7 @@ Short clips of it at work, on both platforms, are on the **[wiki](https://github
 
 1. Build `UVScan.exe` (below).
 2. Connect the AVT to the PC and the vehicle, key on.
-3. Pick the COM port, **Connect**, tick PIDs on the left, **Start scan**.
+3. Pick the COM port (or **Network (TCP/IP)** and the AVT's address), **Connect**, tick PIDs on the left, **Start scan**.
 
 Everything UVScan stores lives in `C:\ProgramData\UVScan` and is created from built‑in defaults on first run, so the exe needs nothing else. Installer note: grant Users modify rights on that folder (a folder created there by one user is read‑only for others).
 

@@ -7,7 +7,7 @@ unit UVScan.Simulator;
 interface
 
 uses
-  System.SysUtils, System.Classes, System.Math, System.Diagnostics,
+  System.SysUtils, System.Classes, System.Math, System.Diagnostics, System.Net.Socket,
   System.Generics.Collections, UVScan.Serial, UVScan.Avt, UVScan.Class2, UVScan.Hex;
 
 type
@@ -65,6 +65,28 @@ type
       drive: believable values, the inverse of the default catalog's formula,
       for the PIDs it knows; a slow sweep of the whole range for the rest. }
     class function RawValue(Pid: Word; Size: Byte; T: Double): TBytes; static;
+  end;
+
+  { The simulator on the network, as an AVT with an Ethernet port: each
+    connection to Port gets a simulated AVT and PCM of its own. For trying
+    the network connection without the hardware (tools\UVScanSimServer, the
+    tests). }
+  TSimulatorServer = class
+  private
+    FListener: System.Net.Socket.TSocket;
+    FPort: Word;
+    FStop: Boolean;
+    FThreads: TList<TThread>;
+    FOnLog: TProc<string>;
+    procedure Log(const S: string);
+    procedure Serve(Client: System.Net.Socket.TSocket);
+  public
+    { Listens on Address (default all of this machine's) and Port (0: one
+      the system picks; see Port). OnLog (any thread) gets connections and
+      disconnections. }
+    constructor Create(Port: Word; const Address: string = '0.0.0.0'; const OnLog: TProc<string> = nil);
+    destructor Destroy; override;
+    property Port: Word read FPort;
   end;
 
 const
@@ -577,6 +599,114 @@ begin
       Byte(Round((1.65 + 0.1 * Sin(A * 0.4)) * 51)), 128]));
     FNextAnalogMs := NowMs + 100;
   end;
+end;
+
+{ TSimulatorServer }
+
+constructor TSimulatorServer.Create(Port: Word; const Address: string; const OnLog: TProc<string>);
+var
+  T: TThread;
+begin
+  inherited Create;
+  FOnLog := OnLog;
+  FThreads := TList<TThread>.Create;
+  FListener := System.Net.Socket.TSocket.Create(TSocketType.TCP);
+  FListener.Listen(Address, '', Port);
+  FPort := FListener.LocalPort;
+  T := TThread.CreateAnonymousThread(
+    procedure
+    var
+      Client: System.Net.Socket.TSocket;
+    begin
+      while not FStop do
+      begin
+        try
+          Client := FListener.Accept(200);
+        except
+          Client := nil;
+          if not FStop then
+            Sleep(200);
+        end;
+        if Client <> nil then
+          Serve(Client);
+      end;
+    end);
+  T.FreeOnTerminate := False;
+  FThreads.Add(T);
+  T.Start;
+end;
+
+destructor TSimulatorServer.Destroy;
+var
+  T: TThread;
+begin
+  FStop := True;
+  // the accept thread first (it adds the others), then the connections
+  for T in FThreads.ToArray do
+    T.WaitFor;
+  for T in FThreads do
+  begin
+    T.WaitFor;
+    T.Free;
+  end;
+  FThreads.Free;
+  FreeSocket(FListener);
+  inherited;
+end;
+
+procedure TSimulatorServer.Log(const S: string);
+begin
+  if Assigned(FOnLog) then
+    FOnLog(S);
+end;
+
+{ One connection: the bytes from the client go to its own simulated AVT,
+  the AVT's go back, until either end stops. }
+procedure TSimulatorServer.Serve(Client: System.Net.Socket.TSocket);
+var
+  T: TThread;
+begin
+  T := TThread.CreateAnonymousThread(
+    procedure
+    var
+      Avt: ISerialPort;
+      Buf: array[0..4095] of Byte;
+      N: Integer;
+      Who: string;
+      Data: TBytes;
+    begin
+      Who := Client.RemoteAddress;
+      Log('Connected: ' + Who);
+      Avt := TSimulatedAvt.Create;
+      Avt.Open;
+      try
+        try
+          while not FStop do
+          begin
+            if SocketReadable(Client, 2) then
+            begin
+              N := SocketReceive(Client, Buf, SizeOf(Buf));
+              if N <= 0 then
+                Break; // the client closed
+              SetLength(Data, N);
+              Move(Buf[0], Data[0], N);
+              Avt.Write(Data);
+            end;
+            N := Avt.Read(Buf, SizeOf(Buf), 0);
+            if (N > 0) and (SocketSend(Client, Buf, N) <= 0) then
+              Break;
+          end;
+        except
+          // the client went away mid-send
+        end;
+      finally
+        FreeSocket(Client);
+        Log('Disconnected: ' + Who);
+      end;
+    end);
+  T.FreeOnTerminate := False;
+  FThreads.Add(T);
+  T.Start;
 end;
 
 function TSimulatedAvt.Read(var Buffer; Count: Integer; TimeoutMs: Cardinal): Integer;

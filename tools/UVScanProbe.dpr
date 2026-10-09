@@ -6,7 +6,9 @@ program UVScanProbe;
       Sends the AVT init frames and dumps raw bytes.
   UVScanProbe <port> run <seconds> <pidIds,...> [-notest] [-nodtc] [-speed 4|3|2]
       Connect, vehicle info, PID test, scan for <seconds>, read DTCs.
-      Read-only: never writes VIN, clears codes, or sends device control. }
+      Read-only: never writes VIN, clears codes, or sends device control.
+
+  <port> is a COM port (COM9) or an AVT on the network (192.168.2.99:10001). }
 
 {$APPTYPE CONSOLE}
 
@@ -56,7 +58,7 @@ var
   Port: ISerialPort;
   F: string;
 begin
-  Port := TWin32SerialPort.Create(PortName, Baud, Flow);
+  Port := CreatePort(PortName, Baud, Flow);
   Port.Open;
   Say(Format('Opened %s', [Port.Description]));
   Say('Listening 500 ms for unsolicited data...');
@@ -77,7 +79,7 @@ var
   Port: ISerialPort;
   F: string;
 begin
-  Port := TWin32SerialPort.Create(PortName, 115200, fcRtsCts);
+  Port := CreatePort(PortName, 115200, fcRtsCts);
   Port.Open;
   Say(Format('Opened %s', [Port.Description]));
   for F in ['E1 33', 'B0',
@@ -116,7 +118,7 @@ var
   Fr: TAvtFrame;
   Notes: string;
 begin
-  Port := TWin32SerialPort.Create(PortName, 115200, fcRtsCts);
+  Port := CreatePort(PortName, 115200, fcRtsCts);
   Parser := TAvtFrameParser.Create;
   try
     Port.Open;
@@ -199,7 +201,7 @@ var
 var
   Pattern, Line, Notes, Leftover, Counted: string;
 begin
-  Port := TWin32SerialPort.Create(PortName, 115200, fcRtsCts);
+  Port := CreatePort(PortName, 115200, fcRtsCts);
   Parser := TAvtFrameParser.Create;
   try
     Port.Open;
@@ -254,7 +256,7 @@ var
   Parts: TArray<string>;
   Done: Boolean;
 begin
-  Port := TWin32SerialPort.Create(PortName, 115200, fcRtsCts);
+  Port := CreatePort(PortName, 115200, fcRtsCts);
   Parser := TAvtFrameParser.Create;
   try
     Port.Open;
@@ -347,7 +349,7 @@ var
   Reply: string;
   Counts: TStringList;
 begin
-  Port := TWin32SerialPort.Create(PortName, 115200, fcRtsCts);
+  Port := CreatePort(PortName, 115200, fcRtsCts);
   Parser := TAvtFrameParser.Create;
   Counts := TStringList.Create;
   try
@@ -380,7 +382,7 @@ var
   Cpid, N: Integer;
   Data: TArray<Byte>;
 begin
-  Port := TWin32SerialPort.Create(PortName, 115200, fcRtsCts);
+  Port := CreatePort(PortName, 115200, fcRtsCts);
   Parser := TAvtFrameParser.Create;
   try
     Port.Open;
@@ -458,7 +460,7 @@ begin
     Lines.Free;
   end;
   Say(Format('%d PIDs to watch', [Length(Pids)]));
-  Port := TWin32SerialPort.Create(PortName, 115200, fcRtsCts);
+  Port := CreatePort(PortName, 115200, fcRtsCts);
   Parser := TAvtFrameParser.Create;
   try
     Port.Open;
@@ -568,7 +570,7 @@ var
 begin
   for S in PidList.Split([',']) do
     Pids := Pids + [Word(StrToInt('$' + S))];
-  Port := TWin32SerialPort.Create(PortName, 115200, fcRtsCts);
+  Port := CreatePort(PortName, 115200, fcRtsCts);
   Parser := TAvtFrameParser.Create;
   try
     Port.Open;
@@ -734,7 +736,7 @@ begin
       Cmd.Factory :=
         function: ISerialPort
         begin
-          Result := TWin32SerialPort.Create(PortName, 115200, fcRtsCts);
+          Result := CreatePort(PortName, 115200, fcRtsCts);
         end;
       Engine.Post(Cmd);
       Pump(500);
@@ -808,6 +810,7 @@ begin
   try
     if ParamCount < 2 then
     begin
+      Writeln('<port>: COM9, or host:port for an AVT on the network');
       Writeln('UVScanProbe <port> raw [baud] [rtscts|none]');
       Writeln('UVScanProbe <port> run <seconds> <pidIds,...> [-notest] [-nodtc] [-speed 4|3|2]');
       Writeln('UVScanProbe <port> rawscan | rates | multi');

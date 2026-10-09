@@ -277,6 +277,7 @@ type
     FForceClose: Boolean;
     FAutoScan: Boolean;
     FAutoLog: Boolean;
+    edtTcpAddress: TEdit; // the network AVT's host:port (port NetworkPort)
     FSettings: TAppSettings;
     FLists: TPidLists;
     FPendingLog: TStringList;   // message lines waiting for the next timer tick
@@ -431,6 +432,7 @@ type
     procedure SettingsChanged;
     function AppEvent(AAppEvent: TApplicationEvent; AContext: TObject): Boolean;
     procedure FillPorts(const Select: string);
+    procedure PortChanged(Sender: TObject);
     procedure FillPidList;
     procedure SetSelected(Id: Integer; Checked: Boolean);
     procedure UpdateBudget;
@@ -464,6 +466,7 @@ const
 
 const
   SimulatorPort = 'Simulator';
+  NetworkPort = 'Network (TCP/IP)'; // an AVT with an Ethernet port, at the address in edtTcpAddress
   ColName = 0;
   ColValue = 1;
   ColUnits = 2;
@@ -917,6 +920,19 @@ begin
   lblAway.Visible := IsMobile;
   cbAway.Visible := IsMobile;
   tiConnect.Text := 'Connection';
+
+  // Connection: the address of an AVT on the network, when that is the port.
+  edtTcpAddress := TEdit.Create(Self);
+  edtTcpAddress.Stored := False;
+  edtTcpAddress.Parent := flAdapter;
+  edtTcpAddress.Index := cbPort.Index + 1;
+  edtTcpAddress.Size.Size := TSizeF.Create(230, cbPort.Height);
+  edtTcpAddress.TextPrompt := Format('e.g. 192.168.2.99:%d', [DefaultTcpPort]);
+  edtTcpAddress.Hint := Format('The interface''s IP address or name, and its port (%d if left out)', [DefaultTcpPort]);
+  edtTcpAddress.ShowHint := True;
+  edtTcpAddress.KeyboardType := TVirtualKeyboardType.URL;
+  edtTcpAddress.Visible := False;
+  cbPort.OnChange := PortChanged;
 
   // The controls warning hides with a tap (it takes a lot of a phone's screen).
   pnlCtlWarn.HitTest := True;
@@ -1747,9 +1763,16 @@ var
 begin
   if FindCmdLineSwitch('port', PortName, True, [clstValueNextParam]) then
   begin
+    if IsTcpAddress(PortName) then
+    begin
+      // -port 192.168.2.99:10001 (or tcp:...): the network AVT at that address
+      edtTcpAddress.Text := PortName;
+      PortName := NetworkPort;
+    end;
     if cbPort.Items.IndexOf(PortName) < 0 then
       cbPort.Items.Insert(0, PortName);
     cbPort.ItemIndex := cbPort.Items.IndexOf(PortName);
+    PortChanged(nil);
   end;
   if not FindCmdLineSwitch('connect') then
     Exit;
@@ -1928,6 +1951,7 @@ begin
     ShowNotice('Last time ' + FSettings.PendingNotice, False);
     FSettings.PendingNotice := '';
   end;
+  edtTcpAddress.Text := FSettings.TcpAddress;
   FillPorts(FSettings.Port);
   cbBaud.ItemIndex := Max(0, cbBaud.Items.IndexOf(IntToStr(FSettings.Baud)));
   edtLogFolder.Text := FSettings.LogFolder;
@@ -1976,6 +2000,7 @@ procedure TMainForm.SaveSettings;
 begin
   FSettings.Port := ComboText(cbPort);
   FSettings.Baud := StrToIntDef(ComboText(cbBaud), 115200);
+  FSettings.TcpAddress := Trim(edtTcpAddress.Text);
   FSettings.LogFolder := edtLogFolder.Text;
   if cbAway.ItemIndex >= 0 then
     FSettings.BackgroundStop := AwayChoices[cbAway.ItemIndex];
@@ -2022,6 +2047,7 @@ begin
     cbPort.Items.Clear;
     for P in ListSerialPorts do
       cbPort.Items.Add(P);
+    cbPort.Items.Add(NetworkPort);
     cbPort.Items.Add(SimulatorPort);
   finally
     cbPort.Items.EndUpdate;
@@ -2029,6 +2055,23 @@ begin
   cbPort.ItemIndex := cbPort.Items.IndexOf(Select);
   if cbPort.ItemIndex < 0 then
     cbPort.ItemIndex := 0;
+  PortChanged(nil);
+end;
+
+{ A network AVT has an address instead of a baud rate (the interface's
+  serial side has its own). }
+procedure TMainForm.PortChanged(Sender: TObject);
+var
+  Network: Boolean;
+begin
+  if edtTcpAddress = nil then
+    Exit;
+  Network := ComboText(cbPort) = NetworkPort;
+  if (edtTcpAddress.Visible = Network) and (cbBaud.Visible = not Network) then
+    Exit;
+  edtTcpAddress.Visible := Network;
+  cbBaud.Visible := not Network;
+  FlowBoxResized(nil); // the row's height may change
 end;
 
 procedure TMainForm.btnRefreshPortsClick(Sender: TObject);
@@ -2459,8 +2502,9 @@ end;
 procedure TMainForm.btnConnectClick(Sender: TObject);
 var
   Cmd: TEngineCommand;
-  PortName: string;
+  PortName, Host: string;
   Baud: Cardinal;
+  TcpPort: Word;
 begin
   PortName := ComboText(cbPort);
   if PortName = '' then
@@ -2481,7 +2525,23 @@ begin
       end);
   {$ENDIF}
   Cmd := Command(ecConnect);
-  if PortName = SimulatorPort then
+  if PortName = NetworkPort then
+  begin
+    if not ParseTcpAddress(edtTcpAddress.Text, Host, TcpPort) then
+    begin
+      ShowNotice(Format('Type the interface''s address, e.g. 192.168.2.99:%d', [DefaultTcpPort]), True);
+      if edtTcpAddress.CanFocus then
+        edtTcpAddress.SetFocus;
+      Exit;
+    end;
+    Cmd.Factory :=
+      function: ISerialPort
+      begin
+        Result := TTcpSerialPort.Create(Host, TcpPort);
+      end;
+    PortName := Format('%s:%d', [Host, TcpPort]);
+  end
+  else if PortName = SimulatorPort then
     Cmd.Factory :=
       function: ISerialPort
       begin
@@ -2697,6 +2757,7 @@ begin
   Idle := FState = esConnected;
   cbPort.Enabled := FState = esDisconnected;
   cbBaud.Enabled := FState = esDisconnected;
+  edtTcpAddress.Enabled := FState = esDisconnected;
   btnRefreshPorts.Enabled := FState = esDisconnected;
   btnConnect.Enabled := FState = esDisconnected;
   btnDisconnect.Enabled := Connected;

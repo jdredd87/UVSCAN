@@ -10,7 +10,7 @@ Open `UVScan.dproj` in the IDE, or from a command prompt:
 build.cmd
 ```
 
-That builds the app (`Win32\Debug\UVScan.exe`), builds and runs the DUnitX tests (`tests\UVScanTests.dproj`), and builds the bench tool (`tools\Win32\UVScanProbe.exe`). It stops at the first failure.
+That builds the app (`Win32\Debug\UVScan.exe`), builds and runs the DUnitX tests (`tests\UVScanTests.dproj`), and builds the console tools (`tools\Win32\UVScanProbe.exe`, the bench tool, and `tools\Win32\UVScanSimServer.exe`, the simulator on the network). It stops at the first failure.
 
 ### Android
 
@@ -51,9 +51,22 @@ The factory data in `data\` is compiled into the exe through `UVScan.Defaults.rc
 
 `UVScan.Simulator.pas` is an `ISerialPort` that behaves like an AVT‑841 with a PCM behind it, built from what the bench PCM actually did: AVT init answers, `01 60` transmit confirmations, DPID definition replies, the two stream slots and their rates, `2A 00` pausing, NRC codes for bad requests, mode $22 PIDs, trouble codes in several modules, VIN blocks, and mode $AE device control (CPIDs $01‑$04 with exactly 6 bytes, NRC $12 / $31 otherwise). Choose port **Simulator** in the app; the tests use it too. When the bench shows new behaviour, add it here.
 
+### Network AVT
+
+An AVT with an Ethernet port (as the old UVSCAN supported through AsyncPro's Winsock port) carries the same bytes over a raw TCP connection. `TTcpSerialPort` in `UVScan.Serial` is that `ISerialPort`, on `System.Net.Socket` (Windows and Android alike): it connects on a thread of its own and gives up after 5 s, turns Nagle off (the AVT's exchanges are a few bytes each), and on Android sends with `MSG_NOSIGNAL` so a dropped connection is an error, not a signal that ends the app. Port **Network (TCP/IP)** in the app, `host:port` on the command line and in the bench tool.
+
+`TSimulatorServer` (in `UVScan.Simulator`) serves the simulator on the network, a simulator per connection: the tests connect to it on `127.0.0.1`, and `tools\Win32\UVScanSimServer.exe [port] [address]` runs it for trying the network connection from the app:
+
+```
+UVScanSimServer 10001 127.0.0.1   this PC only (no firewall question)
+UVScanSimServer                   port 10001 on every network (Windows asks once about the firewall)
+```
+
+From an Android emulator the PC is `10.0.2.2`; a phone on USB can use `adb reverse tcp:10001 tcp:10001` and `127.0.0.1:10001`; a phone on the Wi‑Fi uses the PC's address.
+
 ## Bench tool
 
-`tools\UVScanProbe.dpr` is a console program for real hardware. Close UVScan first (only one program can open the COM port).
+`tools\UVScanProbe.dpr` is a console program for real hardware. Close UVScan first (only one program can open the COM port). Instead of `COM9` it takes an AVT on the network as `host:port`.
 
 ```
 UVScanProbe COM9 raw [baud] [rtscts|none]   AVT init frames, raw bytes
@@ -77,13 +90,13 @@ UVScanProbe COM9 cpidconfirm 01 1104,110C 3 repeat single-bit tests, keep effect
 
 | Path | Purpose |
 |---|---|
-| `src/UVScan.Serial.pas` | Win32 serial port (no AsyncPro), COM port list |
+| `src/UVScan.Serial.pas` | Win32 serial port (no AsyncPro), COM port list, the network AVT (TCP) |
 | `src/UVScan.Avt.pas` | AVT frame encoding / parsing (header = kind nibble + length nibble) |
 | `src/UVScan.Class2.pas` | GM Class 2 message builders and parsers, DTC formatting, NRC texts |
 | `src/UVScan.Dpid.pas` | Packs PIDs into DPIDs ($FE down, 6 data bytes each) and builds stream requests |
 | `src/UVScan.Formula.pas` | PID formula evaluator (replaces ArtFormula) |
 | `src/UVScan.Engine.pas` | Background thread that owns the port: connect, scan, log, codes, PID search, real‑time controls |
-| `src/UVScan.Simulator.pas` | Simulated AVT + PCM |
+| `src/UVScan.Simulator.pas` | Simulated AVT + PCM, and the simulator served on the network |
 | `src/UVScan.Pids.pas` | `TPidCatalog` (pids.json): load / save, validation, value formatting |
 | `src/UVScan.PidLists.pas` | `TPidLists` (lists.json) |
 | `src/UVScan.Display.pas` | `TDisplaySettings` (display.json): looks, alert levels, gauge zones |
@@ -110,6 +123,7 @@ UVScanProbe COM9 cpidconfirm 01 1104,110C 3 repeat single-bit tests, keep effect
 | `data/` | Factory defaults, compiled into the exe |
 | `tests/` | DUnitX tests |
 | `tools/UVScanProbe.dpr` | Console bench tool |
+| `tools/UVScanSimServer.dpr` | The simulator on the network, for the Network (TCP/IP) connection |
 | `tools/make_sample_log.py` | Writes the sample log (see above) |
 | `docs/` | This documentation and its screenshots |
 | `legacy/` | The original 2008 source, for reference only; not used by the new app |

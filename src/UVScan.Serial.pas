@@ -8,12 +8,16 @@ unit UVScan.Serial;
   (FTDI, CP210x, CH34x, CDC-ACM; see UVScan.Serial.Android). Other platforms
   have none: CreateSerialPort raises there and ListSerialPorts is empty, so
   only the Simulator connects. Another transport (Bluetooth, TCP) only has
-  to implement ISerialPort. }
+  to implement ISerialPort.
+
+  An AVT on the network (an AVT with a serial-to-Ethernet port, as the old
+  UVSCAN drove) is TTcpSerialPort: the same bytes over a raw TCP
+  connection, on every platform. }
 
 interface
 
 uses
-  {$IFDEF MSWINDOWS}Winapi.Windows,{$ENDIF} System.SysUtils, System.Classes;
+  {$IFDEF MSWINDOWS}Winapi.Windows,{$ENDIF} System.SysUtils, System.Classes, System.Net.Socket;
 
 type
   ESerialError = class(Exception);
@@ -56,6 +60,58 @@ type
   end;
 {$ENDIF}
 
+const
+  DefaultTcpPort = 10001; // the old UVSCAN's default: a serial server's raw TCP port
+
+type
+  { An AVT reached over the network: a raw TCP stream to Host:Port carrying
+    the AVT's bytes, as its serial port would. Open gives up after a few
+    seconds (an interface that is off or on another network). }
+  TTcpSerialPort = class(TInterfacedObject, ISerialPort)
+  private
+    FHost: string;
+    FPort: Word;
+    FSocket: System.Net.Socket.TSocket;
+    procedure CheckOpen;
+    procedure Lost(const Why: string);
+  public
+    constructor Create(const Host: string; Port: Word);
+    destructor Destroy; override;
+    procedure Open;
+    procedure Close;
+    function IsOpen: Boolean;
+    function Read(var Buffer; Count: Integer; TimeoutMs: Cardinal): Integer;
+    procedure Write(const Data: TBytes);
+    procedure Purge;
+    function Description: string;
+  end;
+
+{ 'host:port', 'host' (port DefaultTcpPort) or either after 'tcp:' / 'tcp://'.
+  False when it is not one (no host, a bad port). IPv4 or a host name. }
+function ParseTcpAddress(const Address: string; out Host: string; out Port: Word): Boolean;
+
+{ True when S has data to read (or the other end has closed) within
+  TimeoutMs (TSocket.WaitForData is not public). }
+function SocketReadable(S: System.Net.Socket.TSocket; TimeoutMs: Cardinal): Boolean;
+{ Closes S and frees it (S becomes nil). Without the graceful shutdown that
+  TSocket's own Close and destructor do, which raises when the other end has
+  already gone, or on a listening socket. }
+procedure FreeSocket(var S: System.Net.Socket.TSocket);
+{ Sends Count bytes of Buf on S; returns how many went (raises on an error).
+  On Android a connection the other end has closed is an error here, not a
+  signal that ends the app. (TSocket.Send with integer flags fails.) }
+function SocketSend(S: System.Net.Socket.TSocket; const Buf; Count: Integer): Integer;
+{ Up to Count bytes from S into Buf; 0 when the other end has closed. }
+function SocketReceive(S: System.Net.Socket.TSocket; var Buf; Count: Integer): Integer;
+
+{ True when Name is a network address rather than a serial port name: it
+  starts with 'tcp:', or has a dot or a colon (192.168.2.99, myavt:5000). }
+function IsTcpAddress(const Name: string): Boolean;
+
+{ The port Name stands for: a network address (TTcpSerialPort) or a serial
+  port (CreateSerialPort). Not opened yet. }
+function CreatePort(const Name: string; BaudRate: Cardinal; FlowControl: TFlowControl): ISerialPort;
+
 { The serial port called PortName (e.g. 'COM9'); raises ESerialError where
   this platform has none. Not opened yet. }
 function CreateSerialPort(const PortName: string; BaudRate: Cardinal; FlowControl: TFlowControl): ISerialPort;
@@ -73,9 +129,263 @@ function SerialPortDiagnostics: TArray<string>;
 implementation
 
 uses
-  {$IFDEF MSWINDOWS}System.Win.Registry,{$ENDIF}
+  {$IFDEF MSWINDOWS}System.Win.Registry, Winapi.Winsock2,{$ENDIF}
+  {$IFDEF POSIX}Posix.SysSocket, Posix.NetinetIn, Posix.NetinetTCP,{$ENDIF}
   {$IFDEF ANDROID}UVScan.Serial.Android,{$ENDIF}
-  System.Generics.Collections, System.Generics.Defaults;
+  System.Generics.Collections, System.Generics.Defaults, System.StrUtils, System.SyncObjs;
+
+{ TTcpSerialPort }
+
+const
+  TcpConnectTimeoutMs = 5000;
+
+type
+  { A connection being made, on a thread of its own (a connect to an address
+    nobody answers can take a minute or more, and cannot be cut short on
+    every platform). The port takes the socket if it connects in time;
+    otherwise it is left to the thread, and freed with this once both are
+    done with it. }
+  TTcpConnect = class(TInterfacedObject)
+  public
+    Socket: System.Net.Socket.TSocket;
+    Error: string;
+    Done: TEvent;
+    constructor Create;
+    destructor Destroy; override;
+  end;
+
+constructor TTcpConnect.Create;
+begin
+  inherited;
+  Done := TEvent.Create(nil, True, False, '');
+  Socket := System.Net.Socket.TSocket.Create(TSocketType.TCP);
+end;
+
+destructor TTcpConnect.Destroy;
+begin
+  FreeSocket(Socket); // nil once the port has it
+  Done.Free;
+  inherited;
+end;
+
+function ParseTcpAddress(const Address: string; out Host: string; out Port: Word): Boolean;
+var
+  S: string;
+  I, P: Integer;
+begin
+  S := Trim(Address);
+  if StartsText('tcp://', S) then
+    Delete(S, 1, 6)
+  else if StartsText('tcp:', S) then
+    Delete(S, 1, 4);
+  Port := DefaultTcpPort;
+  I := LastDelimiter(':', S);
+  if I > 0 then
+  begin
+    if not TryStrToInt(Trim(Copy(S, I + 1, MaxInt)), P) or (P < 1) or (P > 65535) then
+      Exit(False);
+    Port := P;
+    S := Copy(S, 1, I - 1);
+  end;
+  Host := Trim(S);
+  Result := (Host <> '') and (Host.IndexOfAny([' ', ':', '/']) < 0);
+end;
+
+function SocketReadable(S: System.Net.Socket.TSocket; TimeoutMs: Cardinal): Boolean;
+var
+  R: System.Net.Socket.TFDSet;
+begin
+  R := System.Net.Socket.TFDSet.Create(S);
+  Result := System.Net.Socket.TSocket.Select(@R, nil, nil, Int64(TimeoutMs) * 1000) = TWaitResult.wrSignaled;
+end;
+
+procedure FreeSocket(var S: System.Net.Socket.TSocket);
+begin
+  if S = nil then
+    Exit;
+  try
+    if TSocketState.Connected in S.State then
+      S.Close(True);
+  except
+    // the handle is gone already
+  end;
+  FreeAndNil(S);
+end;
+
+function SocketSend(S: System.Net.Socket.TSocket; const Buf; Count: Integer): Integer;
+begin
+  {$IFDEF POSIX}
+  {$WARN SYMBOL_PLATFORM OFF} // Linux and Android have it, which is where this runs
+  Result := Posix.SysSocket.send(S.Handle, Buf, Count, MSG_NOSIGNAL);
+  {$WARN SYMBOL_PLATFORM ON}
+  if Result < 0 then
+    raise ESerialError.CreateFmt('send failed (error %d)', [GetLastError]);
+  {$ELSE}
+  Result := S.Send(Buf, Count, []);
+  {$ENDIF}
+end;
+
+function SocketReceive(S: System.Net.Socket.TSocket; var Buf; Count: Integer): Integer;
+begin
+  Result := S.Receive(Buf, Count, []);
+end;
+
+function IsTcpAddress(const Name: string): Boolean;
+begin
+  Result := StartsText('tcp:', Trim(Name)) or (Name.IndexOfAny(['.', ':']) >= 0);
+end;
+
+function CreatePort(const Name: string; BaudRate: Cardinal; FlowControl: TFlowControl): ISerialPort;
+var
+  Host: string;
+  Port: Word;
+begin
+  if not IsTcpAddress(Name) then
+    Exit(CreateSerialPort(Name, BaudRate, FlowControl));
+  if not ParseTcpAddress(Name, Host, Port) then
+    raise ESerialError.CreateFmt('"%s" is not a network address (host:port, e.g. 192.168.2.99:%d)',
+      [Name, DefaultTcpPort]);
+  Result := TTcpSerialPort.Create(Host, Port);
+end;
+
+constructor TTcpSerialPort.Create(const Host: string; Port: Word);
+begin
+  inherited Create;
+  FHost := Host;
+  FPort := Port;
+end;
+
+destructor TTcpSerialPort.Destroy;
+begin
+  Close;
+  inherited;
+end;
+
+function TTcpSerialPort.Description: string;
+begin
+  Result := Format('%s:%d', [FHost, FPort]);
+end;
+
+function TTcpSerialPort.IsOpen: Boolean;
+begin
+  Result := FSocket <> nil;
+end;
+
+procedure TTcpSerialPort.CheckOpen;
+begin
+  if FSocket = nil then
+    raise ESerialError.Create('The network connection is not open');
+end;
+
+procedure TTcpSerialPort.Lost(const Why: string);
+begin
+  Close;
+  raise ESerialError.CreateFmt('Network connection to %s lost: %s', [Description, Why]);
+end;
+
+procedure TTcpSerialPort.Open;
+var
+  Job: TTcpConnect;
+  Keep: IInterface;
+  Host: string;
+  Port: Word;
+  Opt: Integer;
+begin
+  if IsOpen then
+    Exit;
+  Job := TTcpConnect.Create;
+  Keep := Job; // the thread holds it too
+  Host := FHost;
+  Port := FPort;
+  TThread.CreateAnonymousThread(
+    procedure
+    var
+      Mine: IInterface;
+    begin
+      Mine := Keep;
+      try
+        Job.Socket.Connect(Host, '', '', Port);
+      except
+        on E: Exception do
+          Job.Error := E.Message;
+      end;
+      Job.Done.SetEvent;
+    end).Start;
+  if Job.Done.WaitFor(TcpConnectTimeoutMs) <> TWaitResult.wrSignaled then
+    raise ESerialError.CreateFmt('No answer from %s within %d seconds. Is the interface on, and on this network?',
+      [Description, TcpConnectTimeoutMs div 1000]);
+  if Job.Error <> '' then
+    raise ESerialError.CreateFmt('Could not connect to %s: %s', [Description, Job.Error]);
+  FSocket := Job.Socket;
+  Job.Socket := nil;
+  // The AVT's requests and answers are a few bytes each: send each one at
+  // once rather than waiting to fill a packet (Nagle), which would add up to
+  // a couple of hundred ms to every exchange.
+  Opt := 1;
+  {$IFDEF MSWINDOWS}
+  Winapi.Winsock2.setsockopt(FSocket.Handle, IPPROTO_TCP, TCP_NODELAY, PAnsiChar(@Opt), SizeOf(Opt));
+  {$ELSE}
+  Posix.SysSocket.setsockopt(FSocket.Handle, IPPROTO_TCP, TCP_NODELAY, Opt, SizeOf(Opt));
+  {$ENDIF}
+end;
+
+procedure TTcpSerialPort.Close;
+begin
+  FreeSocket(FSocket);
+end;
+
+function TTcpSerialPort.Read(var Buffer; Count: Integer; TimeoutMs: Cardinal): Integer;
+begin
+  CheckOpen;
+  Result := 0;
+  if Count <= 0 then
+    Exit;
+  try
+    if not SocketReadable(FSocket, TimeoutMs) then
+      Exit;
+    Result := SocketReceive(FSocket, Buffer, Count);
+  except
+    on E: Exception do
+      Lost(E.Message);
+  end;
+  if Result <= 0 then // readable with nothing to read: the other end has closed
+    Lost('the interface closed it');
+end;
+
+procedure TTcpSerialPort.Write(const Data: TBytes);
+var
+  Sent, N: Integer;
+begin
+  CheckOpen;
+  Sent := 0;
+  while Sent < Length(Data) do
+  begin
+    N := 0;
+    try
+      N := SocketSend(FSocket, Data[Sent], Length(Data) - Sent);
+    except
+      on E: Exception do
+        Lost(E.Message);
+    end;
+    if N <= 0 then
+      Lost('could not send');
+    Inc(Sent, N);
+  end;
+end;
+
+procedure TTcpSerialPort.Purge;
+var
+  Scratch: array[0..1023] of Byte;
+begin
+  CheckOpen;
+  try
+    while SocketReadable(FSocket, 0) do
+      if SocketReceive(FSocket, Scratch, SizeOf(Scratch)) <= 0 then
+        Break; // closed: the next read says so
+  except
+    // the same
+  end;
+end;
 
 {$IF DEFINED(MSWINDOWS)}
 

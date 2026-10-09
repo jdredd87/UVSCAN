@@ -42,6 +42,10 @@ type
     [Test] procedure DeviceControlRefusalIsReported;
     [Test] procedure StopsEverythingWhenAwayTooLong;
     [Test] procedure CarriesOnWhenBackInTime;
+    [Test] procedure ParsesNetworkAddresses;
+    [Test] procedure ConnectsAndScansOverTcp;
+    [Test] procedure ReportsRefusedTcpConnection;
+    [Test] procedure ReportsLostTcpConnection;
   end;
 
 implementation
@@ -142,6 +146,134 @@ begin
     if S.PidIds[I] = PidId then
       Exit(S.Values[I]);
   Result := NaN;
+end;
+
+{ An AVT on the network: host:port, port 10001 when left out. }
+procedure TEngineTests.ParsesNetworkAddresses;
+
+  procedure Check(const S, Host: string; Port: Integer);
+  var
+    H: string;
+    P: Word;
+  begin
+    Assert.IsTrue(ParseTcpAddress(S, H, P), S);
+    Assert.AreEqual(Host, H, S);
+    Assert.AreEqual(Port, Integer(P), S);
+  end;
+
+var
+  H: string;
+  P: Word;
+begin
+  Check('192.168.2.99:5000', '192.168.2.99', 5000);
+  Check(' 192.168.2.99 ', '192.168.2.99', DefaultTcpPort);
+  Check('tcp://avt.local:10002', 'avt.local', 10002);
+  Check('tcp:10.0.2.2', '10.0.2.2', DefaultTcpPort);
+  Assert.IsFalse(ParseTcpAddress('', H, P));
+  Assert.IsFalse(ParseTcpAddress('192.168.2.99:', H, P));
+  Assert.IsFalse(ParseTcpAddress('192.168.2.99:70000', H, P));
+  Assert.IsFalse(ParseTcpAddress('my avt:10001', H, P));
+  Assert.IsTrue(IsTcpAddress('192.168.2.99:5000'));
+  Assert.IsTrue(IsTcpAddress('tcp:avt'));
+  Assert.IsFalse(IsTcpAddress('COM9'));
+end;
+
+{ The whole protocol through TTcpSerialPort, to the simulator served on the
+  network as an AVT with an Ethernet port would be. }
+procedure TEngineTests.ConnectsAndScansOverTcp;
+var
+  Server: TSimulatorServer;
+  Cmd: TEngineCommand;
+  Ev: TEngineEvent;
+  S: TLiveSnapshot;
+  Port: Word;
+begin
+  Server := TSimulatorServer.Create(0, '127.0.0.1');
+  try
+    Port := Server.Port;
+    Cmd := Command(ecConnect);
+    Cmd.Factory :=
+      function: ISerialPort
+      begin
+        Result := TTcpSerialPort.Create('127.0.0.1', Port);
+      end;
+    FEngine.Post(Cmd);
+    Assert.IsTrue(WaitUntil(function: Boolean begin Result := HasEvent(eeVehicleInfo) end), 'no vehicle info');
+    Assert.IsTrue(FindEvent(eeVehicleInfo, Ev));
+    Assert.AreEqual(SimulatedVin, Ev.Vehicle.Vin);
+    Assert.IsTrue(WaitUntil(function: Boolean begin Result := FState = esConnected end), 'not connected');
+
+    Cmd := Command(ecStartScan);
+    Cmd.PidIds := [IdRpm, IdEct];
+    FEngine.Post(Cmd);
+    Assert.IsTrue(WaitUntil(
+      function: Boolean
+      begin
+        S := FEngine.GetSnapshot;
+        Result := S.Cycles >= 10;
+      end), 'no scan cycles over TCP');
+    Assert.IsTrue(InRange(ValueOf(S, IdRpm), 600, 6000), 'rpm');
+    Assert.IsTrue(InRange(ValueOf(S, IdEct), 80, 96), 'ect');
+
+    FEngine.Post(Command(ecDisconnect));
+    Assert.IsTrue(WaitUntil(function: Boolean begin Result := FState = esDisconnected end), 'did not disconnect');
+    Assert.IsFalse(HasEvent(eeError));
+  finally
+    Server.Free;
+  end;
+end;
+
+{ Nothing listening: an error at once, not a hang, and still disconnected. }
+procedure TEngineTests.ReportsRefusedTcpConnection;
+var
+  Server: TSimulatorServer;
+  Port: Word;
+  Cmd: TEngineCommand;
+  Clock: TStopwatch;
+begin
+  Server := TSimulatorServer.Create(0, '127.0.0.1');
+  Port := Server.Port;
+  Server.Free; // a port nobody listens on now
+  Cmd := Command(ecConnect);
+  Cmd.Factory :=
+    function: ISerialPort
+    begin
+      Result := TTcpSerialPort.Create('127.0.0.1', Port);
+    end;
+  Clock := TStopwatch.StartNew;
+  FEngine.Post(Cmd);
+  Assert.IsTrue(WaitUntil(function: Boolean begin Result := HasEvent(eeError) end, 8000), 'no error');
+  Assert.IsTrue(Clock.ElapsedMilliseconds < 7000, 'took too long');
+  Assert.IsTrue(WaitUntil(function: Boolean begin Result := FState = esDisconnected end), 'not disconnected');
+end;
+
+{ The interface going away mid-scan (power, Wi-Fi): reported, disconnected. }
+procedure TEngineTests.ReportsLostTcpConnection;
+var
+  Server: TSimulatorServer;
+  Cmd: TEngineCommand;
+  Port: Word;
+begin
+  Server := TSimulatorServer.Create(0, '127.0.0.1');
+  try
+    Port := Server.Port;
+    Cmd := Command(ecConnect);
+    Cmd.Factory :=
+      function: ISerialPort
+      begin
+        Result := TTcpSerialPort.Create('127.0.0.1', Port);
+      end;
+    FEngine.Post(Cmd);
+    Assert.IsTrue(WaitUntil(function: Boolean begin Result := FState = esConnected end), 'not connected');
+    Cmd := Command(ecStartScan);
+    Cmd.PidIds := [IdRpm];
+    FEngine.Post(Cmd);
+    Assert.IsTrue(WaitUntil(function: Boolean begin Result := FEngine.GetSnapshot.Cycles >= 3 end), 'no scan');
+  finally
+    Server.Free; // closes the connection
+  end;
+  Assert.IsTrue(WaitUntil(function: Boolean begin Result := HasEvent(eeError) end, 8000), 'loss not reported');
+  Assert.IsTrue(WaitUntil(function: Boolean begin Result := FState = esDisconnected end, 8000), 'not disconnected');
 end;
 
 procedure TEngineTests.ConnectsAndReadsVehicleInfo;

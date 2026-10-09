@@ -3,7 +3,7 @@ unit UVScan.Settings;
 (* Application settings, stored as settings.json:
 
   { "version": 1,
-    "connection": { "port": "COM9", "baud": 115200 },
+    "connection": { "port": "COM9", "baud": 115200, "tcpAddress": "192.168.2.99:10001" },
     "scan":       { "selectedPids": [1, 3, 12], "activeList": "Misfires", "streamSpeed": "fast" },
     "logging":    { "folder": "C:\\Users\\me\\Documents\\UVScan Logs" },
     "advanced":   { "trace": false, "alertSounds": true },
@@ -33,6 +33,7 @@ type
   public
     Port: string;
     Baud: Integer;
+    TcpAddress: string;     // host:port of an AVT on the network (port 'Network (TCP/IP)')
     SelectedPids: TArray<Integer>;
     ActiveList: string;     // name of the scan list last chosen, '' if none
     StreamSpeed: TStreamSpeed;
@@ -104,6 +105,7 @@ procedure TAppSettings.ResetToDefaults;
 begin
   Port := '';
   Baud := 115200;
+  TcpAddress := '';
   SelectedPids := nil;
   ActiveList := '';
   StreamSpeed := ssFast;
@@ -131,6 +133,7 @@ begin
   Sec := TJSONObject.Create;
   Sec.AddPair('port', Port);
   Sec.AddPair('baud', TJSONNumber.Create(Baud));
+  Sec.AddPair('tcpAddress', TcpAddress);
   Result.AddPair('connection', Sec);
 
   Sec := TJSONObject.Create;
@@ -191,6 +194,7 @@ begin
   begin
     Port := JStr(Sec, 'port', Port);
     Baud := JInt(Sec, 'baud', Baud);
+    TcpAddress := JStr(Sec, 'tcpAddress', TcpAddress);
   end;
 
   Sec := JObj(Root, 'scan');
