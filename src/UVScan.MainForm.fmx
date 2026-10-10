@@ -730,13 +730,76 @@ object MainForm: TMainForm
           Viewport.Height = 548.000000000000000000
         end
       end
+      object tiVehicle: TTabItem
+        IsSelected = False
+        Size.Width = 110.000000000000000000
+        Size.Height = 26.000000000000000000
+        Size.PlatformDefault = False
+        StyleLookup = ''
+        TabOrder = 4
+        Text = 'Trouble codes'
+        object gbDtcs: TGroupBox
+          Align = Client
+          Margins.Left = 6.000000000000000000
+          Margins.Top = 6.000000000000000000
+          Margins.Right = 6.000000000000000000
+          Margins.Bottom = 6.000000000000000000
+          Padding.Left = 6.000000000000000000
+          Padding.Top = 22.000000000000000000
+          Padding.Right = 6.000000000000000000
+          Padding.Bottom = 6.000000000000000000
+          Size.Width = 759.000000000000000000
+          Size.Height = 446.000000000000000000
+          Size.PlatformDefault = False
+          Text = 'Trouble codes'
+          TabOrder = 1
+          object pnlDtcButtons: TLayout
+            Align = Bottom
+            Size.Width = 747.000000000000000000
+            Size.Height = 42.000000000000000000
+            Size.PlatformDefault = False
+            TabOrder = 0
+            object btnReadDtcs: TButton
+              Align = Left
+              Margins.Top = 6.000000000000000000
+              Margins.Right = 8.000000000000000000
+              Margins.Bottom = 6.000000000000000000
+              Size.Width = 120.000000000000000000
+              Size.Height = 30.000000000000000000
+              Size.PlatformDefault = False
+              TabOrder = 0
+              Text = 'Read codes'
+              OnClick = btnReadDtcsClick
+            end
+            object btnClearDtcs: TButton
+              Align = Left
+              Margins.Top = 6.000000000000000000
+              Margins.Bottom = 6.000000000000000000
+              Position.X = 128.000000000000000000
+              Size.Width = 120.000000000000000000
+              Size.Height = 30.000000000000000000
+              Size.PlatformDefault = False
+              TabOrder = 1
+              Text = 'Clear codes'
+              OnClick = btnClearDtcsClick
+            end
+          end
+          object lyDtcs: TLayout
+            Align = Client
+            Size.Width = 747.000000000000000000
+            Size.Height = 376.000000000000000000
+            Size.PlatformDefault = False
+            TabOrder = 1
+          end
+        end
+      end
       object tiMore: TTabItem
         IsSelected = False
         Size.Width = 70.000000000000000000
         Size.Height = 26.000000000000000000
         Size.PlatformDefault = False
         StyleLookup = ''
-        TabOrder = 4
+        TabOrder = 5
         Text = 'More'
         object tcMore: TTabControl
           Align = Client
@@ -977,69 +1040,6 @@ object MainForm: TMainForm
               Size.Height = 394.000000000000000000
               Size.PlatformDefault = False
               TabOrder = 3
-            end
-          end
-          object tiVehicle: TTabItem
-            IsSelected = False
-            Size.Width = 110.000000000000000000
-            Size.Height = 26.000000000000000000
-            Size.PlatformDefault = False
-            StyleLookup = ''
-            TabOrder = 2
-            Text = 'Trouble codes'
-            object gbDtcs: TGroupBox
-              Align = Client
-              Margins.Left = 6.000000000000000000
-              Margins.Top = 6.000000000000000000
-              Margins.Right = 6.000000000000000000
-              Margins.Bottom = 6.000000000000000000
-              Padding.Left = 6.000000000000000000
-              Padding.Top = 22.000000000000000000
-              Padding.Right = 6.000000000000000000
-              Padding.Bottom = 6.000000000000000000
-              Size.Width = 759.000000000000000000
-              Size.Height = 446.000000000000000000
-              Size.PlatformDefault = False
-              Text = 'Trouble codes'
-              TabOrder = 1
-              object pnlDtcButtons: TLayout
-                Align = Bottom
-                Size.Width = 747.000000000000000000
-                Size.Height = 42.000000000000000000
-                Size.PlatformDefault = False
-                TabOrder = 0
-                object btnReadDtcs: TButton
-                  Align = Left
-                  Margins.Top = 6.000000000000000000
-                  Margins.Right = 8.000000000000000000
-                  Margins.Bottom = 6.000000000000000000
-                  Size.Width = 120.000000000000000000
-                  Size.Height = 30.000000000000000000
-                  Size.PlatformDefault = False
-                  TabOrder = 0
-                  Text = 'Read codes'
-                  OnClick = btnReadDtcsClick
-                end
-                object btnClearDtcs: TButton
-                  Align = Left
-                  Margins.Top = 6.000000000000000000
-                  Margins.Bottom = 6.000000000000000000
-                  Position.X = 128.000000000000000000
-                  Size.Width = 120.000000000000000000
-                  Size.Height = 30.000000000000000000
-                  Size.PlatformDefault = False
-                  TabOrder = 1
-                  Text = 'Clear codes'
-                  OnClick = btnClearDtcsClick
-                end
-              end
-              object lyDtcs: TLayout
-                Align = Client
-                Size.Width = 747.000000000000000000
-                Size.Height = 376.000000000000000000
-                Size.PlatformDefault = False
-                TabOrder = 1
-              end
             end
           end
           object tiTools: TTabItem

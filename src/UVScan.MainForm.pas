@@ -312,9 +312,9 @@ type
     FZoom: Integer;                  // live grid zoom, percent
     FNormalBounds: TRect;            // window bounds when not maximized
     FStatus: array[TStatusPart] of string;
-    FNavButtons: array[0..4] of TRectangle;
-    FNavPages: array[0..4] of TTabItem;
-    FMorePages: TArray<TTabItem>;    // lbMore row -> page (nil = log viewer)
+    FNavButtons: array[0..6] of TRectangle;
+    FNavPages: array[0..6] of TTabItem; // nil: the log viewer (a window of its own)
+    FMorePages: TArray<TTabItem>;    // lbMore row -> page
     FPageMenu: TPopupMenu;
     FPidsDocked: Boolean;            // wide window: the PID list sits beside the pages
     FRail: Boolean;                  // short window (a phone held sideways): the tabs go down the left side
@@ -757,16 +757,18 @@ end;
   the pages show their tool bars instead of keeping them in the menu. }
 
 const
-  NavCaptions: array[0..4] of string = ('Connect', 'PIDs', 'Live', 'Gauges', 'More');
+  NavCaptions: array[0..6] of string = ('Connect', 'PIDs', 'Live', 'Gauges', 'Codes', 'Logs', 'More');
   AwayChoices: array[0..5] of Integer = (5, 10, 15, 30, 60, 120); // seconds, Settings > Logging
   // Tab bar icons on a 24 x 24 grid, drawn as 2 px lines (More: three dots).
-  NavIcons: array[0..4] of string = (
+  NavIcons: array[0..6] of string = (
     'M9 3 L9 8 M15 3 L15 8 M6 8 L18 8 L18 11 C18 14.3 15.3 17 12 17 C8.7 17 6 14.3 6 11 Z M12 17 L12 21',
     'M3.5 6 L5.5 8 L8.5 4.5 M12 6.5 L21 6.5 M3.5 12.5 L5.5 14.5 L8.5 11 M12 13 L21 13 ' +
       'M4 17.5 L8 17.5 L8 21.5 L4 21.5 Z M12 19.5 L21 19.5',
     'M2 12 L6 12 L9 5 L14 19 L17 12 L22 12',
     'M3 18 C3 11.4 7 6 12 6 C17 6 21 11.4 21 18 M12 18 L16.5 11 M12 8.5 L12 10 M6.4 11 L7.5 12.1 ' +
       'M17.6 11 L16.5 12.1',
+    'M12 3.5 L21.5 20 L2.5 20 Z M12 9.5 L12 14 M12 17 L12 17.1',
+    'M6 3 L14 3 L19 8 L19 21 L6 21 Z M14 3 L14 8 L19 8 M9 12.5 L16 12.5 M9 16.5 L16 16.5',
     '');
   WideLayoutWidth = 980; // Windows: from this client width the PID list sits beside the pages
   RailHeight = 480;      // below this height (and wider than tall) the tabs go down the left side
@@ -812,8 +814,10 @@ begin
   FNavPages[1] := tiPids;
   FNavPages[2] := tiLive;
   FNavPages[3] := tiDashboard;
-  FNavPages[4] := tiMore;
-  for I := 0 to 4 do
+  FNavPages[4] := tiVehicle;
+  FNavPages[5] := nil;
+  FNavPages[6] := tiMore;
+  for I := 0 to High(FNavButtons) do
   begin
     Btn := TRectangle.Create(Self);
     Btn.Parent := pnlNav;
@@ -860,8 +864,6 @@ begin
   Icon.Fill.Kind := TBrushKind.None;
 
   AddMore('Real-time controls', 'Switch outputs, hold values, reset learned values', tiControls);
-  AddMore('Trouble codes', 'Read and clear stored codes', tiVehicle);
-  AddMore('Log viewer', 'Open recorded logs as a chart and table', nil);
   AddMore('Tools', 'Write VIN, raw AVT frames, PID discovery', tiTools);
   AddMore('Settings', 'Theme, alert sounds, log folder, stream speed', tiSettings);
   AddMore('Messages', 'Connection log and raw traffic', tiMessages);
@@ -1045,7 +1047,7 @@ var
   S, P: Single;
 begin
   N := 0;
-  for I := 0 to 4 do
+  for I := 0 to High(FNavButtons) do
     if FNavButtons[I].Visible then
       Inc(N);
   N := Max(1, N);
@@ -1059,7 +1061,7 @@ begin
     S := pnlNav.Width / N;
     P := 0;
   end;
-  for I := 0 to 4 do
+  for I := 0 to High(FNavButtons) do
     if FNavButtons[I].Visible then
     begin
       if FRail then
@@ -1130,7 +1132,7 @@ begin
   else
     btnAction.Margins.Right := 12;
   OrderAppBar;
-  for I := 0 to 4 do
+  for I := 0 to High(FNavButtons) do
     FNavButtons[I].Repaint;
 end;
 
@@ -1183,7 +1185,10 @@ end;
 
 procedure TMainForm.NavClick(Sender: TObject);
 begin
-  ShowPage(FNavPages[TControl(Sender).Tag]);
+  if FNavPages[TControl(Sender).Tag] = nil then
+    btnLogViewerClick(nil)
+  else
+    ShowPage(FNavPages[TControl(Sender).Tag]);
 end;
 
 procedure TMainForm.NavPaint(Sender: TObject; Canvas: TCanvas; const ARect: TRectF);
@@ -1192,19 +1197,41 @@ var
   P: TPalette;
   Color: TAlphaColor;
   Path: TPathData;
-  Cx, Y: Single;
+  Cx, Y, PillTop, PillH, IconTop, TextTop, TextH, TextSize: Single;
   D: Integer;
 begin
   I := TControl(Sender).Tag;
   P := Palette;
   Cx := (ARect.Left + ARect.Right) / 2;
-  Y := ARect.Top + Max(0, (ARect.Height - 56) / 2); // a taller button (down the side): in its middle
-  if FNavPages[I] = tcMain.ActiveTab then
+  if ARect.Height >= 54 then
+  begin
+    Y := ARect.Top + Max(0, (ARect.Height - 56) / 2); // a taller button (down the side): in its middle
+    PillTop := Y + 4;
+    PillH := 28;
+    IconTop := Y + 6;
+    TextTop := Y + 33;
+    TextH := 21;
+    TextSize := 12;
+  end
+  else
+  begin
+    // Seven down the side of a small phone: tighter, the caption a little smaller.
+    Y := ARect.Top + Max(0, (ARect.Height - 43) / 2);
+    PillTop := Y + 1;
+    PillH := 25;
+    IconTop := Y + 1.5;
+    TextTop := Y + 26;
+    TextH := 17;
+    TextSize := 10.5;
+  end;
+  if (FNavPages[I] <> nil) and (FNavPages[I] = tcMain.ActiveTab) then
   begin
     Color := P.Accent;
     Canvas.Fill.Kind := TBrushKind.Solid;
     Canvas.Fill.Color := WithAlpha(P.Accent, $30);
-    Canvas.FillRect(TRectF.Create(Cx - 28, Y + 4, Cx + 28, Y + 32), 14, 14, AllCorners, 1);
+    // no wider than the button (seven of them on a phone)
+    Canvas.FillRect(TRectF.Create(Cx - Min(28, ARect.Width / 2 - 2), PillTop, Cx + Min(28, ARect.Width / 2 - 2),
+      PillTop + PillH), PillH / 2, PillH / 2, AllCorners, 1);
   end
   else
     Color := P.Muted;
@@ -1215,7 +1242,7 @@ begin
         Path.AddEllipse(TRectF.Create(12 + D * 6 - 2, 10, 12 + D * 6 + 2, 14))
     else
       Path.Data := NavIcons[I];
-    Path.Translate(Cx - 12, Y + 6);
+    Path.Translate(Cx - 12, IconTop);
     Canvas.Stroke.Kind := TBrushKind.Solid;
     Canvas.Stroke.Color := Color;
     Canvas.Stroke.Thickness := 2;
@@ -1230,8 +1257,8 @@ begin
   finally
     Path.Free;
   end;
-  Canvas.Font.Size := 12;
-  Canvas.FillText(TRectF.Create(ARect.Left, Y + 33, ARect.Right, Y + 54), NavCaptions[I], False, 1, [],
+  Canvas.Font.Size := TextSize;
+  Canvas.FillText(TRectF.Create(ARect.Left, TextTop, ARect.Right, TextTop + TextH), NavCaptions[I], False, 1, [],
     TTextAlign.Center, TTextAlign.Center);
 end;
 
@@ -1278,10 +1305,7 @@ begin
     procedure
     begin
       lbMore.ItemIndex := -1;
-      if Page = nil then
-        btnLogViewerClick(nil)
-      else
-        ShowPage(Page);
+      ShowPage(Page);
     end);
 end;
 
@@ -1456,7 +1480,7 @@ begin
     UpdateBudget;
   if FChromeReady then
     TThread.ForceQueue(nil, FitFlowHeights);
-  for I := 0 to 4 do
+  for I := 0 to High(FNavButtons) do
     if FNavButtons[I] <> nil then
       FNavButtons[I].Repaint;
 end;

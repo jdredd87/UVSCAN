@@ -36,9 +36,9 @@ Windows and Android share one layout:
 | Area | What it is |
 |---|---|
 | Top bar | The page's title, one main button that follows the connection (**Connect** → **Start scan** → **Stop**), and **⋮** with the page's other actions. Pages under *More* get a back arrow. On Android the back button or gesture does what the arrow does: it leaves an editor or sub‑page (asking first if there are unsaved changes), goes from a *More* page to the menu and from any page to *Live*; on *Live* it sends UVScan to the background like Home (a scan carries on for the time set in *Settings → Logging*). |
-| Pages | **Connect** (adapter, scan, logging, vehicle info), **PIDs** (the PID list with the **Scan list** row, the byte count — the PCM streams at most 48 — and **Test PIDs / Clear selection / Edit PIDs…**), **Live** (live data grid), **Gauges** (dashboard) and **More**: *Real‑time controls*, *Trouble codes*, *Log viewer*, *Tools*, *Settings*, *Messages*. A coloured notice line appears at the top when something needs your attention (tap or click it to dismiss). |
+| Pages | **Connect** (adapter, scan, logging, vehicle info), **PIDs** (the PID list with the **Scan list** row, the byte count — the PCM streams at most 48 — and **Test PIDs / Clear selection / Edit PIDs…**), **Live** (live data grid), **Gauges** (dashboard), **Codes** (trouble codes), **Logs** (opens the log viewer) and **More**: *Real‑time controls*, *Tools*, *Settings*, *Messages*. A coloured notice line appears at the top when something needs your attention (tap or click it to dismiss). |
 | Status strip | A dot — grey idle, blue connected, green scanning, red logging, amber paused — then state, port, VIN, OS ID, update rate and logging. Tap it to go to *Connect*. |
-| Tab bar | **Connect · PIDs · Live · Gauges · More** at the bottom (down the left side when the phone is held sideways). |
+| Tab bar | **Connect · PIDs · Live · Gauges · Codes · Logs · More** at the bottom (down the left side when the phone is held sideways). |
 
 On a wide window (about 1000 pixels and up — a big Windows window, or a tablet held sideways) the PID list stays docked on the left beside the pages (drag the splitter to size it) and the *Live* and *Gauges* pages show their buttons in a bar; on a phone or a narrow window those buttons are in the **⋮** menu.
 
@@ -187,7 +187,7 @@ While scanning, **Start log (F8)** writes every update to a CSV file named `UVSc
 
 ## Log viewer
 
-**Open logs** on the *Connect* page or *More → Log viewer* (or **F7**) opens your logs as a chart and a grid that follow one cursor. The first time it opens the newest log in the log folder; **Open log…** picks any file and the list next to it holds the 40 most recent. **Demo drive (made up)** opens a generated 10‑minute drive (cold start, city, highway, a hard pull with knock retard) to try everything without a log.
+**Logs** in the tab bar, **Open logs** on the *Connect* page (or **F7**) opens your logs as a chart and a grid that follow one cursor. The first time it opens the newest log in the log folder; **Open log…** picks any file and the list next to it holds the 40 most recent. **Demo drive (made up)** opens a generated 10‑minute drive (cold start, city, highway, a hard pull with knock retard) to try everything without a log.
 
 ![Log viewer, overlay](images/log-viewer-overlay.png)
 
@@ -234,7 +234,7 @@ While scanning, **Start log (F8)** writes every update to a CSV file named `UVSc
 ![Trouble codes](images/trouble-codes.png)
 
 - **Read vehicle info** (on the *Connect* page) — AVT firmware, VIN and PCM OS ID.
-- **Read codes** (*More → Trouble codes*) — trouble codes from every module that answers (PCM, TCM, ABS, BCM, …) with descriptions from `dtcs.json`.
+- **Read codes** (**Codes** in the tab bar) — trouble codes from every module that answers (PCM, TCM, ABS, BCM, …) with descriptions from `dtcs.json`.
 - **Clear codes** — asks first, then clears the PCM's codes (cycle the key and read again to confirm).
 
 ## Real‑time controls
