@@ -189,6 +189,18 @@ begin
     Exit(TryNext(Frame));
   end;
 
+  // The AVT's only kind 6 frame is its analog inputs, 58 and three values.
+  // One that isn't is the middle of a stream frame read two bytes late
+  // ("6C F1 10 6A ..." read as kind 6, length 12): it repeats frame after
+  // frame until something shifts it back. Seen through a Keyspan on Windows
+  // and Android, where it cost about 2 seconds of data each time.
+  if not FHostSide and (Header shr 4 = $6) and ((DataLen = 0) or (FBuffer[1] <> $58)) then
+  begin
+    Consume(1);
+    Inc(FResyncs);
+    Exit(TryNext(Frame));
+  end;
+
   // A frame with no data, or a bus message whose first byte is no Class 2
   // header (Class 2 always uses the 3-byte header form: bit 4 clear), means
   // the framing is off: a stray byte, or the AVT cut a frame short (it does

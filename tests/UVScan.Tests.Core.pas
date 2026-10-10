@@ -25,6 +25,7 @@ type
     [Test] procedure ResyncsAfterStrayHeaderByte;
     [Test] procedure ResyncsAfterTruncatedFrame;
     [Test] procedure ResyncsAfterHeaderWithoutData;
+    [Test] procedure ResyncsWhenReadingTwoBytesLate;
     [Test] procedure SkipsTailOfFrameAtConnect;
   end;
 
@@ -236,6 +237,38 @@ begin
     Assert.IsTrue(P.TryNext(F));
     Assert.AreEqual('6C F1 10 6A FD 68 80 7A 63 00 80', BytesToHex(F.BusMessage));
     Assert.AreEqual(1, P.Resyncs);
+  finally
+    P.Free;
+  end;
+end;
+
+procedure TAvtFramingTests.ResyncsWhenReadingTwoBytesLate;
+var
+  P: TAvtFrameParser;
+  F: TAvtFrame;
+  Good: Integer;
+begin
+  // Captured on a Galaxy S23 (AVT-841 + Keyspan USA-19H) with the bench PCM:
+  // stream frames read from their third byte, so "6C F1 ..." looked like a
+  // kind 6 frame of 12 bytes, again and again. Within a frame or two the
+  // parser must be back on the real frames.
+  P := TAvtFrameParser.Create;
+  try
+    P.Push(HexToBytes(
+      '6C F1 10 6A FE 00 00 01 08 00 80 ' +
+      '0C 00 6C F1 10 6A FE 00 00 01 08 00 80 ' +
+      '0C 00 6C F1 10 6A FE 00 00 01 08 00 80 ' +
+      '0C 00 6C F1 10 6A FE 00 00 01 08 00 80 ' +
+      '0C 00 6C F1 10 6A FE 00 00 01 08 00 80'));
+    Good := 0;
+    while P.TryNext(F) do
+    begin
+      Assert.AreNotEqual(Integer($6), Integer(F.Kind), 'still reading two bytes late: ' + F.ToHex);
+      if F.IsBusMessage and (BytesToHex(F.BusMessage) = '6C F1 10 6A FE 00 00 01 08 00 80') then
+        Inc(Good);
+    end;
+    Assert.IsTrue(Good >= 2, Format('only %d stream frames read', [Good]));
+    Assert.IsTrue(P.Resyncs > 0);
   finally
     P.Free;
   end;
