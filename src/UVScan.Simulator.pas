@@ -38,6 +38,7 @@ type
     FAnalogOn: Boolean;
     FNextAnalogMs: Int64;
     FRejectedPids: TList<Word>;
+    FResetPending: Boolean;
     procedure RebuildStreams;
     procedure Emit(const Frame: TBytes);
     procedure EmitBus(const Msg: TBytes);
@@ -61,6 +62,9 @@ type
     property RejectedPids: TList<Word> read FRejectedPids;
     { DPIDs currently being streamed. }
     function ActiveDpids: TArray<Byte>;
+    { The PCM resets, as when the engine is cranked: it forgets its DPIDs and
+      stops streaming. Any thread (it happens on the next read). }
+    procedure ResetPcm;
     { What the simulated PCM answers for Pid (Size bytes) T seconds into its
       drive: believable values, the inverse of the default catalog's formula,
       for the PIDs it knows; a slow sweep of the whole range for the rest. }
@@ -421,6 +425,11 @@ begin
     end;
 end;
 
+procedure TSimulatedAvt.ResetPcm;
+begin
+  FResetPending := True;
+end;
+
 function TSimulatedAvt.ActiveDpids: TArray<Byte>;
 var
   S: TSimStream;
@@ -571,6 +580,15 @@ var
   I: Integer;
   Stream: TSimStream;
 begin
+  if FResetPending then
+  begin
+    FResetPending := False;
+    FDpids.Clear;
+    FSlots[1] := nil;
+    FSlots[2] := nil;
+    FPaused := False;
+    FStreaming.Clear;
+  end;
   NowMs := FClock.ElapsedMilliseconds;
   for I := 0 to FStreaming.Count - 1 do
   begin

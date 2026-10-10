@@ -2672,6 +2672,12 @@ begin
         AddMessage('Error: ' + Ev.Text);
         ShowNotice(Ev.Text, True);
       end;
+    eeStreamBack:
+      begin
+        AddMessage(Ev.Text);
+        if lblNotice.Text.StartsWith('No data from the PCM') then
+          pnlNotice.Visible := False;
+      end;
     eeState:
       begin
         FState := Ev.State;

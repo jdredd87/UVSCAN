@@ -34,7 +34,8 @@ type
   TEngineEventKind = (eeLog, eeWarning, eeError, eeState, eeVehicleInfo, eeScanStarted,
     eePidRejected, eeDtcs, eePidTest, eeLogStarted, eeLogStopped,
     eePidFound, eePidSearchProgress, eePidSearchDone,
-    eeControl);                // Text = control name, Supported = accepted, Raw = details
+    eeControl,                 // Text = control name, Supported = accepted, Raw = details
+    eeStreamBack);             // the PCM streams again after a gap (Text says how long)
 
   TEngineEvent = record
     Kind: TEngineEventKind;
@@ -122,6 +123,7 @@ type
     FLastHeartbeat: TStopwatch;
     FLastData: TStopwatch;
     FNoDataWarned: Boolean;
+    FRestreamClock: TStopwatch; // since the last try at getting a silent PCM streaming again
     FHeld: TDictionary<string, THeldControl>; // active real-time controls by name
 
     // Current scan
@@ -186,6 +188,7 @@ type
     procedure DoStopScan;
     procedure ForgetScan;
     procedure StopStreaming;
+    procedure Restream;
     procedure ResetStreamSlots;
     procedure DoStartLog(const FileName: string);
     procedure DoStopLog;
@@ -236,6 +239,7 @@ const
   HeartbeatMs = 2000;
   ReplyTimeoutMs = 400;
   NoDataWarningMs = 3000;
+  RestreamMs = 3000;      // while the PCM is silent, set the scan up again this often
   SourceRuntime = -2;
   SourceLogTime = -3;
   SourceMissing = -1;
@@ -488,6 +492,9 @@ begin
       HandleDpidData(Msg)
     else if (Msg.Mode = $6A) and (Msg.Source = AddrPcm) then
       // stream data still in flight after a stop: nothing to do
+    else if (Msg.Target <> AddrTool) and (FTrace = 0) then
+      // Modules talking to each other (a 1999 Grand Prix sends one every
+      // 2 seconds): only the raw traffic view shows those.
     else if Msg.Mode = ModeNegativeResponse then
     begin
       // A refusal nobody is waiting for any more (it came late). Requests that
@@ -527,11 +534,15 @@ begin
   end;
   if FStreaming then
   begin
-    if (FLastData.ElapsedMilliseconds >= NoDataWarningMs) and not FNoDataWarned then
-    begin
-      Warn('No data from the PCM for 3 seconds. Is the key on?');
-      FNoDataWarned := True;
-    end;
+    if FLastData.ElapsedMilliseconds >= NoDataWarningMs then
+      if not FNoDataWarned then
+      begin
+        Warn('No data from the PCM for 3 seconds. Is the key on? UVScan keeps asking it to stream again.');
+        FNoDataWarned := True;
+        Restream;
+      end
+      else if FRestreamClock.ElapsedMilliseconds >= RestreamMs then
+        Restream;
     if (FLog <> nil) and (FLogFlush.ElapsedMilliseconds >= 1000) then
     begin
       FLog.Flush;
@@ -1108,6 +1119,50 @@ begin
   end;
 end;
 
+{ The PCM stopped streaming in the middle of a scan: it was reset (the
+  engine was cranked, or the key went off and on) and forgot the DPIDs, or
+  it dropped the stream. Define them again and ask for the stream again.
+  Called every RestreamMs while it stays silent; when it doesn't answer at
+  all (the key is off) this gives up after the first request. }
+procedure TScanEngine.Restream;
+var
+  D: TDpidDef;
+  S: TDpidSlot;
+  Msg: TClass2Message;
+  Answered: Boolean;
+  Request: TBytes;
+begin
+  FRestreamClock := TStopwatch.StartNew;
+  Answered := False;
+  for D in FPlan.Dpids do
+    for S in D.Slots do
+    begin
+      if FRejected[S.Item] then
+        Continue;
+      if Exchange(DefineDpidRequest(D.Id, S.Position, S.Size, S.Pid),
+        function(const Fr: TAvtFrame): Boolean
+        var
+          M: TClass2Message;
+        begin
+          Result := FromPcm(Fr, M) and (M.IsPositiveFor(ModeDefineDpid) or M.IsNegativeFor(ModeDefineDpid));
+        end, ReplyTimeoutMs, Msg) then
+        Answered := True
+      else if not Answered then
+        Exit; // nobody there: try again later
+    end;
+  for Request in FPlan.StreamRequests(FStreamSpeed) do
+    Exchange(Request,
+      function(const Fr: TAvtFrame): Boolean
+      var
+        M: TClass2Message;
+      begin
+        Result := FromPcm(Fr, M) and M.IsNegativeFor(ModeRequestDpids);
+      end, ReplyTimeoutMs, Msg);
+  FLastHeartbeat := TStopwatch.StartNew;
+  if Answered then
+    Log('The PCM answered; asked it to stream again');
+end;
+
 procedure TScanEngine.DoStopScan;
 begin
   DoStopLog;
@@ -1134,6 +1189,7 @@ end;
 
 procedure TScanEngine.HandleDpidData(const Msg: TClass2Message);
 var
+  Ev: TEngineEvent;
   Idx, I, B: Integer;
   S: TDpidSlot;
   P: TPidDef;
@@ -1147,8 +1203,15 @@ begin
     Inc(FStray);
     Exit;
   end;
+  if FNoDataWarned then
+  begin
+    Ev := Default(TEngineEvent);
+    Ev.Kind := eeStreamBack;
+    Ev.Text := Format('Data from the PCM again after %.0f seconds', [FLastData.ElapsedMilliseconds / 1000]);
+    Emit(Ev);
+    FNoDataWarned := False;
+  end;
   FLastData := TStopwatch.StartNew;
-  FNoDataWarned := False;
   for S in FPlan.Dpids[Idx].Slots do
   begin
     if FRejected[S.Item] then
@@ -1182,9 +1245,11 @@ begin
       Inputs[0] := F.Data[FScanPids[I].AnalogChannel]; // Data[0] = $58, then channels 1..3
       FWork[I] := FScanPids[I].Formula.Evaluate(Inputs, []);
     end;
-  FLastData := TStopwatch.StartNew;
   if Length(FPlan.Dpids) = 0 then
+  begin
+    FLastData := TStopwatch.StartNew; // the AVT's own inputs; otherwise only the PCM's data counts
     CompleteCycle; // analog-only scan: each sample is a cycle
+  end;
 end;
 
 procedure TScanEngine.ComputeCalculated;

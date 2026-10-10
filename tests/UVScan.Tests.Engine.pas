@@ -29,6 +29,7 @@ type
     [Test] procedure ConnectsAndReadsVehicleInfo;
     [Test] procedure ConnectsWhenAvtHoldsHalfAFrame;
     [Test] procedure ScansAndDecodesValues;
+    [Test] procedure ResumesAfterPcmReset;
     [Test] procedure UpdatesComeEvenly;
     [Test] procedure ReportsRejectedPidAndKeepsScanning;
     [Test] procedure LogsToCsv;
@@ -370,6 +371,32 @@ begin
 
   FEngine.Post(Command(ecStopScan));
   Assert.IsTrue(WaitUntil(function: Boolean begin Result := FState = esConnected end), 'did not stop');
+  Assert.IsFalse(HasEvent(eeError));
+end;
+
+{ The PCM resets in the middle of a scan (the engine is cranked) and forgets
+  the DPIDs: a warning, then the scan is set up again and carries on by
+  itself. Seen on a 1999 Grand Prix: the scan went quiet for good. }
+procedure TEngineTests.ResumesAfterPcmReset;
+var
+  Cmd: TEngineCommand;
+  Before: Int64;
+  Ev: TEngineEvent;
+begin
+  Connect;
+  Cmd := Command(ecStartScan);
+  Cmd.PidIds := [IdRpm, IdIpw, IdEct];
+  FEngine.Post(Cmd);
+  Assert.IsTrue(WaitUntil(function: Boolean begin Result := FEngine.GetSnapshot.Cycles >= 5 end), 'no scan cycles');
+  FSim.ResetPcm;
+  Assert.IsTrue(WaitUntil(function: Boolean begin Result := HasEvent(eeWarning) end, 8000), 'no warning');
+  Before := FEngine.GetSnapshot.Cycles;
+  Assert.IsTrue(WaitUntil(function: Boolean begin Result := HasEvent(eeStreamBack) end, 8000), 'stream not back');
+  Assert.IsTrue(FindEvent(eeStreamBack, Ev));
+  Assert.Contains(Ev.Text, 'again after');
+  Assert.IsTrue(WaitUntil(function: Boolean begin Result := FEngine.GetSnapshot.Cycles >= Before + 5 end),
+    'no cycles after the reset');
+  Assert.AreEqual(Ord(esScanning), Ord(FState));
   Assert.IsFalse(HasEvent(eeError));
 end;
 

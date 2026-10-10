@@ -78,6 +78,23 @@ type
   EBadRequest = class(Exception);
 
 function PrintWindow(H: HWND; DC: HDC; Flags: UINT): BOOL; stdcall; external user32;
+function SetDpiContext(Context: THandle): BOOL; stdcall; external user32 name 'SetProcessDpiAwarenessContext' delayed;
+
+{ Real pixels on every screen, even after the display scaling changes while
+  the agent runs (system-DPI awareness then sees a stretched, smaller
+  desktop). Windows 10 1703 on; older ones get system awareness. }
+procedure UseRealPixels;
+const
+  PerMonitorAwareV2 = THandle(-4);
+begin
+  try
+    if SetDpiContext(PerMonitorAwareV2) then
+      Exit;
+  except
+    // no such function (an older Windows)
+  end;
+  SetProcessDPIAware;
+end;
 
 var
   BaseDir, Token: string;
@@ -976,7 +993,7 @@ var
   Listener, Client: System.Net.Socket.TSocket;
 
 begin
-  SetProcessDPIAware;
+  UseRealPixels;
   LogLock := TCriticalSection.Create;
   ShotLock := TCriticalSection.Create;
   try

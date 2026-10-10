@@ -24,6 +24,7 @@ type
     [Test] procedure ParsesExtendedLengthFrame;
     [Test] procedure ResyncsAfterStrayHeaderByte;
     [Test] procedure ResyncsAfterTruncatedFrame;
+    [Test] procedure ResyncsAfterHeaderWithoutData;
     [Test] procedure SkipsTailOfFrameAtConnect;
   end;
 
@@ -212,6 +213,29 @@ begin
     Assert.IsTrue(P.TryNext(F));
     Assert.AreEqual('01 60', F.ToHex);
     Assert.AreEqual(2, P.Resyncs); // the cut frame's header, then its status byte
+  finally
+    P.Free;
+  end;
+end;
+
+procedure TAvtFramingTests.ResyncsAfterHeaderWithoutData;
+var
+  P: TAvtFrameParser;
+  F: TAvtFrame;
+begin
+  // Captured on a 1999 Grand Prix (AVT-841 + Keyspan USA-19HS, Windows) while
+  // streaming: a 0C header with none of its bytes, then the transmit status
+  // for a tester present and the next stream frames.
+  P := TAvtFrameParser.Create;
+  try
+    P.Push(HexToBytes('0C 01 60 0C 00 6C F1 10 6A FE 00 00 02 16 00 00 0C 00 6C F1 10 6A FD 68 80 7A 63 00 80'));
+    Assert.IsTrue(P.TryNext(F));
+    Assert.AreEqual('01 60', F.ToHex);
+    Assert.IsTrue(P.TryNext(F));
+    Assert.AreEqual('6C F1 10 6A FE 00 00 02 16 00 00', BytesToHex(F.BusMessage));
+    Assert.IsTrue(P.TryNext(F));
+    Assert.AreEqual('6C F1 10 6A FD 68 80 7A 63 00 80', BytesToHex(F.BusMessage));
+    Assert.AreEqual(1, P.Resyncs);
   finally
     P.Free;
   end;

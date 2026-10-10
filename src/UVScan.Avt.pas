@@ -176,6 +176,19 @@ begin
     Exit(TryNext(Frame));
   end;
 
+  // A received bus message always starts with status 00 (only the AVT's
+  // one-byte transmit status, 01 60, is shorter). Anything else means a
+  // header whose bytes never came: seen on a 1999 Grand Prix through a
+  // Keyspan, "0C" then straight "01 60", which put every later frame two
+  // bytes off. Skip it.
+  if not FHostSide and ((Header shr 4 = AvtKindBus) or (Header = AvtExtendedHeader)) and (DataLen >= 2) and
+    (FBuffer[HeaderLen] <> 0) then
+  begin
+    Consume(1);
+    Inc(FResyncs);
+    Exit(TryNext(Frame));
+  end;
+
   // A frame with no data, or a bus message whose first byte is no Class 2
   // header (Class 2 always uses the 3-byte header form: bit 4 clear), means
   // the framing is off: a stray byte, or the AVT cut a frame short (it does
