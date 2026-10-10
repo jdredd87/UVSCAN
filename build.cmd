@@ -1,7 +1,8 @@
 @echo off
 rem Builds UVScan and the unit tests (Win32 Debug, the only Windows build for now) with the
 rem Delphi 13 command-line tools, runs the tests, and builds the console tools (the bench
-rem probe, and the simulator served on the network for the Network (TCP/IP) connection).
+rem probe, the simulator served on the network for the Network (TCP/IP) connection, and the
+rem agent for testing on another PC).
 rem Usage: build
 rem        build android [install]   - Android64 debug APK (install: adb install on the attached phone)
 setlocal
@@ -17,6 +18,8 @@ pushd "%~dp0tools"
 "%BDS%\bin\dcc32.exe" -B -Q -$D+ "-NSSystem;Winapi;System.Win" -EWin32 -NUWin32 UVScanProbe.dpr
 set UV_RESULT=%ERRORLEVEL%
 if %UV_RESULT%==0 "%BDS%\bin\dcc32.exe" -B -Q -$D+ "-NSSystem;Winapi;System.Win" -EWin32 -NUWin32 UVScanSimServer.dpr
+if %UV_RESULT%==0 set UV_RESULT=%ERRORLEVEL%
+if %UV_RESULT%==0 "%BDS%\bin\dcc32.exe" -B -Q -$D+ "-NSSystem;Winapi;System.Win;Vcl" -EWin32 -NUWin32 UVScanAgent.dpr
 if %UV_RESULT%==0 set UV_RESULT=%ERRORLEVEL%
 popd
 exit /b %UV_RESULT%

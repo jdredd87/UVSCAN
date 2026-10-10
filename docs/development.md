@@ -10,7 +10,7 @@ Open `UVScan.dproj` in the IDE, or from a command prompt:
 build.cmd
 ```
 
-That builds the app (`Win32\Debug\UVScan.exe`), builds and runs the DUnitX tests (`tests\UVScanTests.dproj`), and builds the console tools (`tools\Win32\UVScanProbe.exe`, the bench tool, and `tools\Win32\UVScanSimServer.exe`, the simulator on the network). It stops at the first failure.
+That builds the app (`Win32\Debug\UVScan.exe`), builds and runs the DUnitX tests (`tests\UVScanTests.dproj`), and builds the console tools (`tools\Win32\UVScanProbe.exe`, the bench tool, `tools\Win32\UVScanSimServer.exe`, the simulator on the network, and `tools\Win32\UVScanAgent.exe`, for [testing on another PC](#testing-on-another-pc)). It stops at the first failure.
 
 ### Android
 
@@ -82,6 +82,28 @@ UVScanProbe COM9 cpidconfirm 01 1104,110C 3 repeat single-bit tests, keep effect
 
 `cpids`, `cpidlen`, `cpidmap` and `cpidconfirm` **send device control commands**; `cpidmap` on CPID $02 resets learned values. They end with mode $20 (return to normal). See [protocol notes](protocol.md#device-control-mode-ae).
 
+## Testing on another PC
+
+A laptop at the car (or wherever the AVT is) needs no Delphi: `tools\UVScanAgent.exe` runs there, and `tools\agent.ps1` on the development PC sends it builds, runs them, clicks and types in them, takes screenshots and fetches files, over the home network.
+
+1. `powershell -File tools\agent.ps1 kit` makes `..\UVScanAgent-kit\UVScanAgent.zip` with the agent, a new token and `install.cmd`.
+2. On the laptop, unzip it and run `install.cmd` as administrator: it copies the agent to `C:\UVScanAgent`, lets it through Windows Firewall from the local network only, and starts it (`install signin` also starts it at sign-in, `install remove` undoes it all). Or just run `UVScanAgent.exe` and allow it when the firewall asks.
+3. `agent find` looks for it on this PC's networks and remembers it.
+
+```
+agent deploy                           this build (UVScan, UVScanProbe, UVScanSimServer) to C:\UVScanAgent\UVScan
+agent info                             Windows, screen, serial ports (with the driver, which names the chip)
+agent run "UVScan\UVScanProbe.exe COM3 run 20 1,3,7" 120    hidden; prints the output, exits with its code
+agent ps "Get-ChildItem C:\ProgramData\UVScan"               the same through PowerShell
+agent start UVScan\UVScan.exe          on the laptop's desktop
+agent shot lap.png [title]             the screen, or one window
+agent click 517 860 [title]            screen pixels, or the window's client pixels with a title
+agent key 13 [csaw] [title]  |  agent text "..." [title]  |  agent windows  |  agent kill UVScan
+agent get %ProgramData%\UVScan\settings.json  |  agent put file [remote]  |  agent ls [folder]
+```
+
+Every request but `/ping` needs the token from the kit (kept in `%LOCALAPPDATA%\UVScanAgent\target.txt` here), because the agent runs whatever it is sent. Its window logs each request. It keeps the laptop awake with the screen on while it runs; a locked screen stops clicks and screenshots. The protocol is plain HTTP, listed at the top of `tools/UVScanAgent.dpr`.
+
 ## Sample log
 
 `python tools\make_sample_log.py [file.csv]` writes a made-up 25-minute drive (10 rows a second, 20 channels: cold start, city, on-ramp and passing pulls with knock retard, highway with the converter clutch locked, a hot idle with the fan and A/C cycling) as a UVScan log, by default `UVScan_sample_drive.csv` in *Documents\UVScan Logs*, for trying the log viewer and playback with more than the built-in demo.
@@ -124,6 +146,7 @@ UVScanProbe COM9 cpidconfirm 01 1104,110C 3 repeat single-bit tests, keep effect
 | `tests/` | DUnitX tests |
 | `tools/UVScanProbe.dpr` | Console bench tool |
 | `tools/UVScanSimServer.dpr` | The simulator on the network, for the Network (TCP/IP) connection |
+| `tools/UVScanAgent.dpr`, `tools/agent.ps1`, `tools/UVScanAgent-install.cmd` | Testing on another PC (see above) |
 | `tools/make_sample_log.py` | Writes the sample log (see above) |
 | `docs/` | This documentation and its screenshots |
 | `legacy/` | The original 2008 source, for reference only; not used by the new app |
