@@ -9,6 +9,7 @@ What UVScan sends and why, as measured with an **AVT‑841** on a bench **2001 3
 - Every bus message UVScan sends is confirmed by the AVT with `01 60`.
 - Received bus messages arrive as `0N 00 <message>` (status byte `00`).
 - A single duplicated header byte was seen once; the parser resynchronises.
+- Received frame kinds: `0x` bus messages (status `00` + message, or the 1-byte transmit status `01 60`), `11` extended bus messages, `2x`/`3x` errors, `64 58 ...` analog inputs, `9x` init/version replies. A USB-serial adapter that drops bytes leaves the parser reading data bytes as headers, so any other header byte, or a kind 6 frame that isn't `58 ...`, is skipped one byte at a time until the frames line up again.
 - Serial: 115200 baud, 8N1, RTS/CTS.
 
 ## Reading a PID (mode $22)

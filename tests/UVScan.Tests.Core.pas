@@ -26,6 +26,7 @@ type
     [Test] procedure ResyncsAfterTruncatedFrame;
     [Test] procedure ResyncsAfterHeaderWithoutData;
     [Test] procedure ResyncsWhenReadingTwoBytesLate;
+    [Test] procedure ResyncsWhenReadingThreeBytesLate;
     [Test] procedure SkipsTailOfFrameAtConnect;
   end;
 
@@ -127,13 +128,13 @@ begin
   try
     P.Push(HexToBytes('92 04'));
     Assert.IsFalse(P.TryNext(F));
-    P.Push(HexToBytes('11 C1'));
+    P.Push(HexToBytes('13 01'));
     Assert.IsTrue(P.TryNext(F));
-    Assert.AreEqual('92 04 11', F.ToHex);
+    Assert.AreEqual('92 04 13', F.ToHex);
     Assert.IsFalse(P.TryNext(F));
-    P.Push(HexToBytes('00'));
+    P.Push(HexToBytes('60'));
     Assert.IsTrue(P.TryNext(F));
-    Assert.AreEqual('C1 00', F.ToHex);
+    Assert.AreEqual('01 60', F.ToHex);
   finally
     P.Free;
   end;
@@ -268,6 +269,36 @@ begin
         Inc(Good);
     end;
     Assert.IsTrue(Good >= 2, Format('only %d stream frames read', [Good]));
+    Assert.IsTrue(P.Resyncs > 0);
+  finally
+    P.Free;
+  end;
+end;
+
+procedure TAvtFramingTests.ResyncsWhenReadingThreeBytesLate;
+const
+  A = '0C 00 6C F1 10 6A FE 00 00 01 08 00 80 ';
+  B = '0C 00 6C F1 10 6A FD 00 75 00 00 00 00 ';
+var
+  P: TAvtFrameParser;
+  F: TAvtFrame;
+  Good: Integer;
+begin
+  // Captured on a Galaxy S9+ (AVT-841 + Keyspan USA-19H) with the bench PCM:
+  // stream frames read from their fourth byte came out as "F1 10",
+  // "FE 00 00 01 08 00 80 0C 00 6C F1 10 6A FD 00" and "75 00 00 00 00 0C",
+  // a cycle that kept repeating.
+  P := TAvtFrameParser.Create;
+  try
+    P.Push(HexToBytes('F1 10 6A FE 00 00 01 08 00 80 ' + B + A + B + A + B));
+    Good := 0;
+    while P.TryNext(F) do
+    begin
+      Assert.IsTrue(F.Kind in [$0, $6, $9], 'still out of step: ' + F.ToHex);
+      if F.IsBusMessage and (Length(F.BusMessage) = 11) then
+        Inc(Good);
+    end;
+    Assert.IsTrue(Good >= 4, Format('only %d stream frames read', [Good]));
     Assert.IsTrue(P.Resyncs > 0);
   finally
     P.Free;

@@ -189,6 +189,18 @@ begin
     Exit(TryNext(Frame));
   end;
 
+  // The AVT only sends kinds 0 (bus), 2 and 3 (errors), 6 (analog) and 9
+  // (version), plus the extended header $11. Any other header is a data byte
+  // read as one: on a Galaxy S9+ (Keyspan) stream frames read three bytes
+  // late came out as "F1 10", "FE ..." and "75 ...", over and over, and cost
+  // half a second each time.
+  if not FHostSide and (Header <> AvtExtendedHeader) and not (Header shr 4 in [$0, $2, $3, $6, $9]) then
+  begin
+    Consume(1);
+    Inc(FResyncs);
+    Exit(TryNext(Frame));
+  end;
+
   // The AVT's only kind 6 frame is its analog inputs, 58 and three values.
   // One that isn't is the middle of a stream frame read two bytes late
   // ("6C F1 10 6A ..." read as kind 6, length 12): it repeats frame after
