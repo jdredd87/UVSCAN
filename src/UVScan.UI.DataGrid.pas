@@ -43,6 +43,7 @@ type
     Visible: Boolean;
     Wrap: Boolean;          // word-wrap the text (give the row the height it needs)
     Shrink: Boolean;        // a smaller font rather than cut text (numbers)
+    ElideMiddle: Boolean;   // too long: cut from the middle (names that differ at the end)
   end;
 
   TDataGrid = class(TControl)
@@ -120,7 +121,7 @@ type
     function ColumnWidths: TArray<Single>;
     function HeaderBorderAt(X, Y: Single): Integer;
     procedure DrawText(const R: TRectF; const S: string; Align: TGridAlign; Color: TAlphaColor; Size: Single;
-      Bold: Boolean; Wrap: Boolean = False; Shrink: Boolean = False);
+      Bold: Boolean; Wrap: Boolean = False; Shrink: Boolean = False; ElideMiddle: Boolean = False);
     procedure DrawCheck(const R: TRectF; Checked: Boolean; Color: TAlphaColor);
     function CheckRect(const RowRect: TRectF): TRectF;
   protected
@@ -147,6 +148,9 @@ type
     { Text too wide for the cell is drawn smaller (down to half size) instead
       of being cut short - for values, where "13..." says nothing. }
     procedure SetColumnShrink(Index: Integer; Shrink: Boolean);
+    { Text too wide for the cell loses its middle ("Misfire C...6 Current")
+      rather than its end - for names that differ only at the end. }
+    procedure SetColumnElideMiddle(Index: Integer; Elide: Boolean);
     { Width a column gets now (stretch columns share what is left). }
     function ColumnWidth(Index: Integer): Single;
     { Height Text needs in column Index when wrapped (cell padding included). }
@@ -731,6 +735,12 @@ begin
   Repaint;
 end;
 
+procedure TDataGrid.SetColumnElideMiddle(Index: Integer; Elide: Boolean);
+begin
+  FColumns[Index].ElideMiddle := Elide;
+  Repaint;
+end;
+
 function TDataGrid.ColumnWidth(Index: Integer): Single;
 begin
   Result := ColumnWidths[Index];
@@ -911,9 +921,42 @@ begin
 end;
 
 procedure TDataGrid.DrawText(const R: TRectF; const S: string; Align: TGridAlign; Color: TAlphaColor;
-  Size: Single; Bold: Boolean; Wrap: Boolean; Shrink: Boolean);
+  Size: Single; Bold: Boolean; Wrap: Boolean; Shrink: Boolean; ElideMiddle: Boolean);
 var
   W: Single;
+  T: string;
+  Lo, Hi, Mid: Integer;
+
+  function Measure(const Text: string): Single;
+  begin
+    FLayout.BeginUpdate;
+    try
+      FLayout.MaxSize := TPointF.Create(100000, R.Height * 4);
+      FLayout.Text := Text;
+      FLayout.WordWrap := False;
+      FLayout.Font.Size := Size;
+      if FFontFamily <> '' then
+        FLayout.Font.Family := FFontFamily;
+      if Bold then
+        FLayout.Font.Style := [TFontStyle.fsBold]
+      else
+        FLayout.Font.Style := [];
+    finally
+      FLayout.EndUpdate;
+    end;
+    Result := FLayout.TextWidth;
+  end;
+
+  // Keep characters of T: a third from the start, the rest from the end
+  // (where names differ: "Misf...6 Current"), with an ellipsis between
+  function Cut(Keep: Integer): string;
+  var
+    Head: Integer;
+  begin
+    Head := Keep div 3;
+    Result := Copy(T, 1, Head).TrimRight + #$2026 + Copy(T, Length(T) - (Keep - Head) + 1, MaxInt).TrimLeft;
+  end;
+
 begin
   if (S = '') or (R.Width <= 2) then
     Exit;
@@ -942,11 +985,36 @@ begin
     if W > R.Width then
       Size := Max(Size / 2, Size * R.Width / W * 0.97);
   end;
+  T := S;
+  if ElideMiddle and not Wrap and (R.Width > 10) and (Measure(S) > R.Width) then
+  begin
+    // units in brackets go first ("RPM (RPM)", "Misfire Cyl. 6 Current (Count)")
+    if T.EndsWith(')') and (T.LastIndexOf(' (') > 0) then
+      T := T.Substring(0, T.LastIndexOf(' ('));
+    // then the most characters that fit (few, so a short binary search)
+    Lo := Length(T);
+    Hi := Length(T);
+    if Measure(T) > R.Width then
+    begin
+      Lo := 0;
+      Hi := Length(T) - 1;
+    end;
+    while Lo < Hi do
+    begin
+      Mid := (Lo + Hi + 1) div 2;
+      if Measure(Cut(Mid)) <= R.Width then
+        Lo := Mid
+      else
+        Hi := Mid - 1;
+    end;
+    if Lo < Length(T) then
+      T := Cut(Lo);
+  end;
   FLayout.BeginUpdate;
   try
     FLayout.TopLeft := R.TopLeft;
     FLayout.MaxSize := TPointF.Create(R.Width, R.Height);
-    FLayout.Text := S;
+    FLayout.Text := T;
     FLayout.WordWrap := Wrap;
     FLayout.Trimming := TTextTrimming.Character;
     FLayout.Font.Size := Size;
@@ -1100,7 +1168,8 @@ begin
             H := St.FontSize;
           DrawText(TRectF.Create(CellR.Left + FCellPadding, CellR.Top, CellR.Right - FCellPadding, CellR.Bottom),
             Text, FColumns[Col].Align, Fore, H, St.Bold, FColumns[Col].Wrap,
-            FColumns[Col].Shrink or FColumns[Col].Wrap); // a word too long to wrap: smaller, not broken
+            FColumns[Col].Shrink or FColumns[Col].Wrap, // a word too long to wrap: smaller, not broken
+            FColumns[Col].ElideMiddle);
           X := X + W[Col];
         end;
       end;
@@ -1129,7 +1198,8 @@ begin
         if (Col = 0) and FCheckboxes then
           CellR.Left := CellR.Left + Min(18, FRowHeight - 6) + FCellPadding;
         DrawText(TRectF.Create(CellR.Left + FCellPadding, 0, CellR.Right - FCellPadding, FHeaderHeight),
-          FColumns[Col].Caption, FColumns[Col].Align, FHeaderTextColor, FFontSize * 0.92, True);
+          FColumns[Col].Caption, FColumns[Col].Align, FHeaderTextColor, FFontSize * 0.92, True, False, False,
+          True); // keeps the end: units, or the number in "Misfire Cyl. 6 Current"
         X := X + W[Col];
         Canvas.Stroke.Color := FLineColor;
         Canvas.DrawLine(TPointF.Create(X - 0.5, 4), TPointF.Create(X - 0.5, FHeaderHeight - 4), 1);

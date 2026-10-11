@@ -391,6 +391,7 @@ begin
   FChannels.HeaderHeight := 24;
   FChannels.FontSize := 12;
   FChannels.AddColumn('Channel', 112, gaLeft, True);
+  FChannels.SetColumnElideMiddle(0, True); // "Misfire Cyl. 1 Current" .. "6 Current" stay apart
   FChannels.AddColumn('Value', 56, gaRight);
   FChannels.AddColumn('Min', 50, gaRight);
   FChannels.AddColumn('Avg', 54, gaRight);
