@@ -232,6 +232,9 @@ type
     { The live data has new samples, or (NewChannels) was started again for
       another scan. }
     class procedure LiveChanged(NewChannels: Boolean);
+    { The chart view to show for the next scan, e.g. the one named like its
+      scan list ('' or no such view: keep the current one). }
+    class procedure SuggestLiveView(const Name: string);
   end;
 
 implementation
@@ -244,6 +247,7 @@ uses
 var
   Viewer: TLogViewerForm;
   LiveSource: TLogData;
+  LiveViewHint: string;
 
 const
   Speeds: array[0..6] of Double = (0.25, 0.5, 1, 2, 5, 10, 20);
@@ -346,6 +350,11 @@ begin
       Viewer.SetLive(False);
     Viewer.btnLive.Enabled := Data <> nil;
   end;
+end;
+
+class procedure TLogViewerForm.SuggestLiveView(const Name: string);
+begin
+  LiveViewHint := Name;
 end;
 
 class procedure TLogViewerForm.LiveChanged(NewChannels: Boolean);
@@ -1782,9 +1791,13 @@ begin
     begin
       FStyles[I] := V.Channels[J];
       FStyles[I].Name := FData.Channels[I].Name;
+      FStyles[I].Order := J; // lanes in the view's order
     end
     else
+    begin
       FStyles[I].Visible := False;
+      FStyles[I].Order := Length(V.Channels) + I; // ticked later: after the view's
+    end;
   end;
   FLoading := True;
   try
@@ -1852,6 +1865,8 @@ end;
 procedure TLogViewerForm.SaveViewAs(const Name: string);
 var
   V: TLogView;
+  C: TChannelStyle;
+  I, J: Integer;
 begin
   V := TLogView.Create;
   try
@@ -1859,6 +1874,18 @@ begin
     V.Mode := TChartMode(Max(0, cbMode.ItemIndex));
     V.UseDisplayLevels := chkUseDisplay.IsChecked;
     V.Channels := Copy(FStyles);
+    // in lane order, which the view keeps
+    for I := 1 to High(V.Channels) do
+    begin
+      C := V.Channels[I];
+      J := I - 1;
+      while (J >= 0) and (V.Channels[J].Order > C.Order) do
+      begin
+        V.Channels[J + 1] := V.Channels[J];
+        Dec(J);
+      end;
+      V.Channels[J + 1] := C;
+    end;
     FViews.Put(V);
   finally
     V.Free;
@@ -1904,6 +1931,17 @@ var
   I: Integer;
 begin
   SetPlaying(False);
+  if FLive and (LiveViewHint <> '') then
+  begin
+    // Once per scan: a view picked while it runs stays.
+    if FViews.IndexOf(LiveViewHint) >= 0 then
+    begin
+      FillViews(LiveViewHint);
+      FViews.LastView := LiveViewHint;
+      SaveViews;
+    end;
+    LiveViewHint := '';
+  end;
   ApplyView(CurrentView(ComboText(cbView)));
   FChart.Live := FLive;
   FChart.SetData(FData);

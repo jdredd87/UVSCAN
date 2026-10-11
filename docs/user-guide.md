@@ -91,6 +91,22 @@ Tick PIDs on the *PIDs* page, or in the list on the left of a wide window (type 
 
 - **Test PIDs** asks the PCM about each ticked PID (or all of them) and shows *yes / no* in the *Test* column.
 - **Scan list** holds named selections such as *Misfires* or *Transmission*. Pick one to tick its PIDs, **Save as…** to store the current ticks under a name, **Delete** to remove a list. Lists only remember which PIDs, so fixing a PID's formula fixes it in every list.
+- UVScan comes with a scan list for each common job, and each has a [live chart](#live-chart) view of the same name:
+
+| Scan list / view | For | Charts |
+| --- | --- | --- |
+| Basic engine | A first look at any engine | RPM, MPH, TP %, MAP, ECT, IAT, STFT, LTFT, KR, IGN V |
+| Warm-up | Cold start to closed loop: thermostat, idle settling, fans | ECT, IAT, RPM, Desired Idle, IAC Position, Loop, STFT, Fans Low |
+| Idle | Rough or hunting idle, vacuum leaks | RPM, Desired Idle, IAC Position, MAP, Spark, STFT, Load |
+| Fuel trims | Lean / rich problems, O2 sensors (trims beyond ±10 % yellow, ±20 % red) | STFT, LTFT, O2, HO2 B1S2, Loop, FT Cell, RPM, MAP |
+| Knock check | Spark knock under load | RPM, TP %, MAP, Spark, KR, IAT |
+| Acceleration | A pull: power enrichment, airflow, timing, knock | RPM, MPH, Gear, TP %, MAP, MAF (g/s), Spark, KR, PE Mode |
+| Charging | Battery / alternator: voltage against the generator's duty | IGN V, Gen PWM, RPM, Fans Low / High, Gen Lamp |
+| Cooling | Overheating: when the fans come on | ECT, Fans Low / High, IAT, Trans Temp, MPH, Hot Lamp |
+| Transmission | Shifts, converter lock-up, line pressure | RPM, MPH, Gear, TP %, TCC Slip, TCC %, PC %, Trans Temp |
+| Misfires | Which cylinder misfires, and when | RPM, Misfires, Misfire Cyl. 1–6 Current |
+
+  Not every PCM has every PID: **Test PIDs** shows which ones yours answers. An update of UVScan adds new built-in lists and views to yours; ones you deleted stay deleted.
 - Right‑click a PID (long‑press on a phone) → **Display & alerts…** or **Add to dashboard…**.
 
 ## Live data
@@ -119,7 +135,8 @@ The chart button in the top bar of *Live* and *Gauges* (or **⋮ → Live chart*
 - **Pause:** click, drag or touch the chart (or press **Pause** / Space) to stop it scrolling and put the cursor there. The values on the left are then the ones at the cursor; the slider, **|<**, the mouse wheel, panning and selecting a stretch (for min / avg / max) all work as on a log. **Live** (or **>|**) goes back to now.
 - Channels, colours, widths, scales, alert colours, level bands, chart modes and saved **views** are the same as in the log viewer. The channels are named like the columns of a log, so a view saved for logs works on the live chart and the other way round.
 - **Image…** saves the chart as it is. **Demo**, **Open log…** or a recent log switch the window back to logs; **Live scan** (on a phone **Live**) returns to the scan.
-- A new scan starts the chart again with its PIDs.
+- A new scan starts the chart again with its PIDs. Started from a scan list that has a view of the same name (all the built-in ones do), the chart switches to that view.
+- In **Lanes** the strips are in the order the view lists its channels.
 
 ## Display and alerts
 
@@ -227,7 +244,7 @@ While scanning, **Start log (F8)** writes every update to a CSV file named `UVSc
 
 **Playback:** **Play** (or Space) runs the cursor through the log in real time — or at 0.25× to 20× — with the chart following (**Follow cursor**), the grid scrolling along and the values on the left updating, like watching the drive again. **|<** and **>|** jump to the start and end; the slider scrubs.
 
-**Views:** **Save view…** stores the ticked channels, colours, widths, scales, alert levels and chart mode under a name; pick it in **View** to apply it to any log (channels are matched by name; ones the view does not list are hidden). The last view used is remembered. Two come with UVScan: *MPH vs RPM vs IAT* and *Knock check*. Views live in `logviews.json`.
+**Views:** **Save view…** stores the ticked channels, colours, widths, scales, alert levels and chart mode under a name; pick it in **View** to apply it to any log (channels are matched by name; ones the view does not list are hidden). The last view used is remembered. UVScan comes with a view for each of its [scan lists](#choosing-pids-and-scan-lists), plus *MPH vs RPM vs IAT*. Views live in `logviews.json`.
 
 ## Vehicle and trouble codes
 

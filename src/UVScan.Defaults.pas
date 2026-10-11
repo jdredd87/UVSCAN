@@ -23,10 +23,25 @@ function DefaultLogViewsJson: string;
   files that were created. }
 function CreateMissingDataFiles: TArray<string>;
 
+{ Adds the built-in scan lists and log views that lists.json and logviews.json
+  have not been given yet (each file names those it has in "builtIns"), so an
+  update brings the new ones and never brings back one the user deleted. A
+  list's PIDs are matched to this install's pids.json by kind, PID code and
+  name. Returns what was added, for Messages. }
+function AddNewBuiltIns: TArray<string>;
+{ The same for these files (tests). }
+function AddNewBuiltInsTo(const PidsName, ListsName, ViewsName: string): TArray<string>;
+
 implementation
 
 uses
-  System.Types, System.Classes, System.JSON, UVScan.Paths, UVScan.JsonFile;
+  System.Types, System.Classes, System.JSON, UVScan.Paths, UVScan.JsonFile, UVScan.Pids, UVScan.PidLists,
+  UVScan.LogViews;
+
+const
+  // What the first releases had, whose files don't say.
+  FirstBuiltInLists: array[0..2] of string = ('Basic engine', 'Misfires', 'Transmission');
+  FirstBuiltInViews: array[0..1] of string = ('MPH vs RPM vs IAT', 'Knock check');
 
 function ResourceText(const Name: string): string;
 var
@@ -100,6 +115,156 @@ begin
   Ensure(ListsFile, DefaultListsJson, 'default lists.json');
   Ensure(ControlsFile, DefaultControlsJson, 'default controls.json');
   Ensure(LogViewsFile, DefaultLogViewsJson, 'default logviews.json');
+end;
+
+function Has(const Items: TArray<string>; const S: string): Boolean;
+var
+  Item: string;
+begin
+  for Item in Items do
+    if SameText(Item, S) then
+      Exit(True);
+  Result := False;
+end;
+
+function AddNewLists(const PidsName, ListsName: string): TArray<string>;
+var
+  Mine, Builtin: TPidCatalog;
+  Lists, Defaults: TPidLists;
+  I, J, Id: Integer;
+  Ids: TArray<Integer>;
+  P, Q: TPidDef;
+  Name: string;
+  Changed: Boolean;
+begin
+  Result := nil;
+  Mine := TPidCatalog.Create;
+  Builtin := TPidCatalog.Create;
+  Lists := TPidLists.Create;
+  Defaults := TPidLists.Create;
+  try
+    Mine.LoadFromFile(PidsName);
+    Builtin.LoadFromJsonText(DefaultPidsJson);
+    Lists.LoadFromFile(ListsName);
+    Defaults.LoadFromJsonText(DefaultListsJson);
+    if Lists.BuiltIns = nil then
+      for Name in FirstBuiltInLists do
+        Lists.BuiltIns := Lists.BuiltIns + [Name];
+    Changed := False;
+    for I := 0 to Defaults.Count - 1 do
+    begin
+      Name := Defaults[I].Name;
+      if Has(Lists.BuiltIns, Name) then
+        Continue;
+      Lists.BuiltIns := Lists.BuiltIns + [Name];
+      Changed := True;
+      if Lists.IndexOf(Name) >= 0 then
+        Continue; // the user has one of that name: theirs stays
+      Ids := nil;
+      for Id in Defaults[I].PidIds do
+      begin
+        P := Builtin.FindById(Id);
+        if P = nil then
+          Continue;
+        for J := 0 to Mine.Count - 1 do
+        begin
+          Q := Mine[J];
+          if Q.Enabled and (Q.Kind = P.Kind) and SameText(Q.PidCode, P.PidCode) and
+            SameText(Q.DisplayName, P.DisplayName) then
+          begin
+            Ids := Ids + [Q.Id];
+            Break;
+          end;
+        end;
+      end;
+      if Ids <> nil then
+      begin
+        Lists.Put(Name, Ids);
+        Result := Result + [Format('scan list "%s"', [Name])];
+      end;
+    end;
+    if Changed then
+      Lists.SaveToFile(ListsName);
+  finally
+    Defaults.Free;
+    Lists.Free;
+    Builtin.Free;
+    Mine.Free;
+  end;
+end;
+
+{ The first "Knock check" named its channels after the demo drive (TPS, MAP),
+  so a real scan only charted RPM and KR. }
+function IsFirstKnockCheck(V: TLogView): Boolean;
+begin
+  Result := SameText(V.Name, 'Knock check') and (Length(V.Channels) = 4) and
+    SameText(V.Channels[1].Name, 'TPS') and SameText(V.Channels[2].Name, 'MAP');
+end;
+
+function AddNewViews(const ViewsName: string): TArray<string>;
+var
+  Views, Defaults: TLogViewList;
+  Root: TJSONObject;
+  I, Mine: Integer;
+  Name: string;
+  Changed: Boolean;
+begin
+  Result := nil;
+  Views := TLogViewList.Create;
+  Defaults := TLogViewList.Create;
+  try
+    Views.LoadFromFile(ViewsName);
+    Root := ParseJsonObject(DefaultLogViewsJson, 'default logviews.json');
+    try
+      Defaults.LoadFromJson(Root);
+    finally
+      Root.Free;
+    end;
+    if Views.BuiltIns = nil then
+      for Name in FirstBuiltInViews do
+        Views.BuiltIns := Views.BuiltIns + [Name];
+    Changed := False;
+    for I := 0 to Defaults.Count - 1 do
+    begin
+      Name := Defaults[I].Name;
+      Mine := Views.IndexOf(Name);
+      if (Mine >= 0) and IsFirstKnockCheck(Views[Mine]) then
+      begin
+        Views.Put(Defaults[I]);
+        Result := Result + [Format('chart view "%s" (fixed for live scans)', [Name])];
+        Changed := True;
+        Continue;
+      end;
+      if Has(Views.BuiltIns, Name) then
+        Continue;
+      Views.BuiltIns := Views.BuiltIns + [Name];
+      Changed := True;
+      if Mine < 0 then
+      begin
+        Views.Put(Defaults[I]);
+        Result := Result + [Format('chart view "%s"', [Name])];
+      end;
+    end;
+    if Changed then
+      Views.SaveToFile(ViewsName);
+  finally
+    Defaults.Free;
+    Views.Free;
+  end;
+end;
+
+function AddNewBuiltInsTo(const PidsName, ListsName, ViewsName: string): TArray<string>;
+begin
+  Result := nil;
+  if FileExists(ListsName) and FileExists(PidsName) then
+    Result := Result + AddNewLists(PidsName, ListsName);
+  if FileExists(ViewsName) then
+    Result := Result + AddNewViews(ViewsName);
+end;
+
+function AddNewBuiltIns: TArray<string>;
+begin
+  Result := AddNewBuiltInsTo(PidsFile, ListsFile, LogViewsFile);
 end;
 
 end.

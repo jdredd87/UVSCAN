@@ -1,6 +1,33 @@
 {
   "version": 1,
+  "builtIns": [
+    "Acceleration",
+    "Basic engine",
+    "Charging",
+    "Cooling",
+    "Fuel trims",
+    "Idle",
+    "Knock check",
+    "Misfires",
+    "Transmission",
+    "Warm-up"
+  ],
   "lists": [
+    {
+      "name": "Acceleration",
+      "pids": [
+        1,
+        8,
+        11,
+        7,
+        37,
+        9,
+        14,
+        2,
+        51,
+        15
+      ]
+    },
     {
       "name": "Basic engine",
       "pids": [
@@ -19,6 +46,70 @@
         14,
         39,
         33
+      ]
+    },
+    {
+      "name": "Charging",
+      "pids": [
+        12,
+        136,
+        1,
+        66,
+        67,
+        115
+      ]
+    },
+    {
+      "name": "Cooling",
+      "pids": [
+        3,
+        66,
+        67,
+        10,
+        56,
+        8,
+        1,
+        113
+      ]
+    },
+    {
+      "name": "Fuel trims",
+      "pids": [
+        1,
+        7,
+        4,
+        5,
+        6,
+        13,
+        71,
+        47,
+        32
+      ]
+    },
+    {
+      "name": "Idle",
+      "pids": [
+        1,
+        49,
+        50,
+        7,
+        9,
+        5,
+        6,
+        12,
+        102
+      ]
+    },
+    {
+      "name": "Knock check",
+      "pids": [
+        1,
+        11,
+        7,
+        9,
+        14,
+        10,
+        3
       ]
     },
     {
@@ -75,6 +166,20 @@
         156,
         154,
         157
+      ]
+    },
+    {
+      "name": "Warm-up",
+      "pids": [
+        3,
+        10,
+        1,
+        49,
+        50,
+        47,
+        5,
+        66,
+        12
       ]
     }
   ]

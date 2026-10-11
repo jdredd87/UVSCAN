@@ -9,7 +9,8 @@ unit UVScan.PidLists;
 
   Definitions live in pids.json; a list only refers to ids, so fixing a
   formula there fixes it in every list. Ids that no longer exist are ignored
-  when a list is applied. *)
+  when a list is applied. "builtIns" names the built-in lists this file has
+  been given (see AddNewBuiltIns), so a deleted one does not come back. *)
 
 interface
 
@@ -44,6 +45,8 @@ type
     property Count: Integer read GetCount;
     property Items[Index: Integer]: TPidList read GetItem; default;
     property Warnings: TStringList read FWarnings;
+  public
+    BuiltIns: TArray<string>;
   end;
 
 const
@@ -111,6 +114,7 @@ var
 begin
   FItems.Clear;
   FWarnings.Clear;
+  BuiltIns := JStrings(Root, 'builtIns');
   Arr := JArr(Root, 'lists');
   if Arr = nil then
     Exit;
@@ -152,6 +156,8 @@ var
 begin
   Result := TJSONObject.Create;
   Result.AddPair('version', TJSONNumber.Create(ListsFileVersion));
+  if Length(BuiltIns) > 0 then
+    Result.AddPair('builtIns', StringsToJson(BuiltIns));
   Arr := TJSONArray.Create;
   Result.AddPair('lists', Arr);
   for L in FItems do

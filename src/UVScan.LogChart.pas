@@ -460,7 +460,7 @@ end;
 
 function TLogChart.Visible_: TArray<Integer>;
 var
-  I: Integer;
+  I, J, T: Integer;
 begin
   Result := nil;
   if FData = nil then
@@ -468,6 +468,18 @@ begin
   for I := 0 to FData.ChannelCount - 1 do
     if (I <= High(FStyles)) and FStyles[I].Visible then
       Result := Result + [I];
+  // in the order the styles give (a view's order of channels); few, so a simple sort
+  for I := 1 to High(Result) do
+  begin
+    T := Result[I];
+    J := I - 1;
+    while (J >= 0) and (FStyles[Result[J]].Order > FStyles[T].Order) do
+    begin
+      Result[J + 1] := Result[J];
+      Dec(J);
+    end;
+    Result[J + 1] := T;
+  end;
 end;
 
 procedure TLogChart.Scale(Ch: Integer; out Lo, Hi: Double);
@@ -757,6 +769,9 @@ begin
                 // under the lane's name (top right) when it would cover it
                 if X_(FCursor) > FPlot.Left + FPlot.Width / 2 then
                   Y := Max(Y, LaneTop + 28); // (its box starts 9 above Y; the name ends at +18)
+                // inside its own lane: the next lane's value would cover it
+                if LaneH >= 24 then
+                  Y := EnsureRange(Y, LaneTop + 10, LaneTop + LaneH - 10);
                 Bubble(VText + ' ' + FData.Channels[Ch].Units, X_(FCursor), Y, FStyles[Ch].Color);
               end;
             end;

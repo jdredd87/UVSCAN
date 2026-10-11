@@ -160,7 +160,7 @@ switch ($Cmd) {
   'get' {
     $remote = Arg 0; $local = Arg 1 (Split-Path $remote -Leaf)
     $r = Call GET '/file' @{ path = $remote } $null 300
-    $local = [IO.Path]::GetFullPath((Join-Path (Get-Location) $local))
+    $local = [IO.Path]::GetFullPath([IO.Path]::Combine((Get-Location).Path, $local))
     [IO.File]::WriteAllBytes($local, $r.Body); "$local, $($r.Body.Length) bytes"
   }
   'run' { Run (Arg 0) ([int](Arg 1 60)) (Arg 2) }
@@ -174,7 +174,7 @@ switch ($Cmd) {
     if ($a -match '^\d+$') { Say (Call POST '/kill' @{ pid = $a }) } else { Say (Call POST '/kill' @{ name = $a }) }
   }
   'shot' {
-    $local = [IO.Path]::GetFullPath((Join-Path (Get-Location) (Arg 0 'laptop.png')))
+    $local = [IO.Path]::GetFullPath([IO.Path]::Combine((Get-Location).Path, (Arg 0 'laptop.png')))
     $r = Call GET '/shot' @{ title = (Arg 1) }
     [IO.File]::WriteAllBytes($local, $r.Body); "$local, $($r.Body.Length) bytes"
   }

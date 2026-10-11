@@ -15,7 +15,8 @@ unit UVScan.LogViews;
   Channels are matched to a log by name ("RPM" or "RPM (RPM)"). Channels of
   the log that a view does not list are hidden when the view is applied. The
   live chart uses the same views (its channels are named like log columns);
-  liveSpan is how many seconds of it are shown. *)
+  liveSpan is how many seconds of it are shown. "builtIns" names the built-in
+  views this file has been given (see AddNewBuiltIns). *)
 
 interface
 
@@ -35,6 +36,7 @@ type
     MinValue, MaxValue: Double;
     LevelColors: Boolean;    // colour the line where an alert level matches
     Levels: TArray<TDisplayLevel>; // own levels; empty = use display.json (if enabled)
+    Order: Integer;          // where its lane goes (not saved: a view's order of channels)
   end;
 
   TLogView = class
@@ -58,6 +60,7 @@ type
   public
     LastView: string;
     LiveSpan: Double;
+    BuiltIns: TArray<string>;
     constructor Create;
     destructor Destroy; override;
     function IndexOf(const Name: string): Integer;
@@ -100,6 +103,7 @@ begin
   Result.AutoScale := True;
   Result.MinValue := 0;
   Result.MaxValue := 100;
+  Result.Order := Index;
 end;
 
 function JFloatDef(Obj: TJSONObject; const Name: string; out V: Double): Boolean;
@@ -276,6 +280,7 @@ var
 begin
   FItems.Clear;
   LastView := JStr(Root, 'lastView');
+  BuiltIns := JStrings(Root, 'builtIns');
   LiveSpan := 60;
   if JFloatDef(Root, 'liveSpan', S) and (S >= 5) and (S <= 3600) then
     LiveSpan := S;
@@ -316,6 +321,8 @@ begin
   if LastView <> '' then
     Result.AddPair('lastView', LastView);
   Result.AddPair('liveSpan', TJSONNumber.Create(LiveSpan));
+  if Length(BuiltIns) > 0 then
+    Result.AddPair('builtIns', StringsToJson(BuiltIns));
   Arr := TJSONArray.Create;
   for V in FItems do
     Arr.AddElement(V.ToJson);

@@ -7,7 +7,7 @@ interface
 uses
   System.SysUtils, System.Classes, System.Math, System.JSON, System.IOUtils, System.UITypes,
   DUnitX.TestFramework, UVScan.LogData, UVScan.LogViews, UVScan.Display, UVScan.JsonFile, UVScan.Defaults,
-  UVScan.LogChart;
+  UVScan.LogChart, UVScan.Pids, UVScan.PidLists;
 
 type
   [TestFixture]
@@ -32,6 +32,8 @@ type
     [Test] procedure RoundTrip;
     [Test] procedure PutReplacesByName;
     [Test] procedure BuiltInViewsLoad;
+    [Test] procedure BuiltInViewsFitTheirLists;
+    [Test] procedure UpdateAddsNewBuiltIns;
   end;
 
 implementation
@@ -409,6 +411,115 @@ begin
   end;
 end;
 
+{ What a live scan charts: every channel of a built-in view is a PID of the
+  built-in catalog (by its short name, as the live chart names them), and a
+  view named like a built-in scan list only charts PIDs of that list. }
+procedure TLogViewTests.BuiltInViewsFitTheirLists;
+var
+  Views: TLogViewList;
+  Lists: TPidLists;
+  Catalog: TPidCatalog;
+  Root: TJSONObject;
+  V: TLogView;
+  C: TChannelStyle;
+  Names: TStringList;
+  I, L, Id: Integer;
+  P: TPidDef;
+begin
+  Views := TLogViewList.Create;
+  Lists := TPidLists.Create;
+  Catalog := TPidCatalog.Create;
+  Names := TStringList.Create;
+  Root := ParseJsonObject(DefaultLogViewsJson, 'logviews.json');
+  try
+    Views.LoadFromJson(Root);
+    Lists.LoadFromJsonText(DefaultListsJson);
+    Catalog.LoadFromJsonText(DefaultPidsJson);
+    Assert.IsTrue(Views.Count >= 10);
+    Assert.AreEqual(Views.Count, Integer(Length(Views.BuiltIns)), 'every built-in view is listed in builtIns');
+    Assert.AreEqual(Lists.Count, Integer(Length(Lists.BuiltIns)), 'every built-in list is listed in builtIns');
+    for I := 0 to Views.Count - 1 do
+    begin
+      V := Views[I];
+      Names.Clear;
+      L := Lists.IndexOf(V.Name);
+      if L >= 0 then
+        for Id in Lists[L].PidIds do
+        begin
+          P := Catalog.FindById(Id);
+          Assert.IsNotNull(P, Format('list "%s": no PID %d', [V.Name, Id]));
+          Names.Add(P.DisplayName);
+        end
+      else
+        for Id := 0 to Catalog.Count - 1 do
+          Names.Add(Catalog[Id].DisplayName);
+      for C in V.Channels do
+        Assert.IsTrue(Names.IndexOf(C.Name) >= 0, Format('view "%s": %s', [V.Name, C.Name]));
+    end;
+  finally
+    Root.Free;
+    Names.Free;
+    Catalog.Free;
+    Lists.Free;
+    Views.Free;
+  end;
+end;
+
+{ An install from before the built-ins grew: it gets the new lists and views,
+  the old broken Knock check is fixed, a list of its own is not touched, and
+  running it again changes nothing. }
+procedure TLogViewTests.UpdateAddsNewBuiltIns;
+var
+  Dir, PidsName, ListsName, ViewsName: string;
+  Added: TArray<string>;
+  Lists: TPidLists;
+  Views: TLogViewList;
+  K: Integer;
+begin
+  Dir := TPath.Combine(TPath.GetTempPath, 'UVScanBuiltIns' + IntToStr(Random(1000000)));
+  ForceDirectories(Dir);
+  PidsName := TPath.Combine(Dir, 'pids.json');
+  ListsName := TPath.Combine(Dir, 'lists.json');
+  ViewsName := TPath.Combine(Dir, 'logviews.json');
+  Lists := TPidLists.Create;
+  Views := TLogViewList.Create;
+  try
+    TFile.WriteAllText(PidsName, DefaultPidsJson);
+    TFile.WriteAllText(ListsName,
+      '{"version":1,"lists":[{"name":"Basic engine","pids":[1,3]},{"name":"Idle","pids":[1]}]}');
+    TFile.WriteAllText(ViewsName,
+      '{"version":1,"views":[{"name":"Knock check","channels":[{"name":"RPM"},{"name":"TPS"},{"name":"MAP"},' +
+      '{"name":"KR"}]},{"name":"Mine","channels":[{"name":"RPM"}]}]}');
+    Added := AddNewBuiltInsTo(PidsName, ListsName, ViewsName);
+    Assert.IsTrue(Length(Added) > 5, string.Join(', ', Added));
+
+    Lists.LoadFromFile(ListsName);
+    Assert.IsTrue(Lists.IndexOf('Fuel trims') >= 0);
+    Assert.IsTrue(Lists.IndexOf('Misfires') < 0, 'the first built-ins were offered already (deleted here)');
+    Assert.AreEqual(1, Integer(Length(Lists[Lists.IndexOf('Idle')].PidIds)), 'a list of its own stays');
+    Assert.AreEqual(2, Integer(Length(Lists[Lists.IndexOf('Basic engine')].PidIds)));
+
+    Views.LoadFromFile(ViewsName);
+    Assert.IsTrue(Views.IndexOf('Fuel trims') >= 0);
+    Assert.IsTrue(Views.IndexOf('Mine') >= 0);
+    K := Views.IndexOf('Knock check');
+    Assert.IsTrue(Views[K].IndexOf('TP %') >= 0, 'Knock check fixed');
+    Assert.IsTrue(Views.IndexOf('MPH vs RPM vs IAT') < 0, 'the first built-ins were offered already');
+
+    // Deleted after the update: stays deleted.
+    Views.Delete(Views.IndexOf('Fuel trims'));
+    Views.SaveToFile(ViewsName);
+    Added := AddNewBuiltInsTo(PidsName, ListsName, ViewsName);
+    Assert.AreEqual(0, Integer(Length(Added)), string.Join(', ', Added));
+    Views.LoadFromFile(ViewsName);
+    Assert.IsTrue(Views.IndexOf('Fuel trims') < 0);
+  finally
+    Views.Free;
+    Lists.Free;
+    TDirectory.Delete(Dir, True);
+  end;
+end;
+
 procedure TLogViewTests.BuiltInViewsLoad;
 var
   L: TLogViewList;
@@ -424,11 +535,13 @@ begin
     L.LoadFromJson(Root);
     Assert.IsTrue(L.Count >= 2);
     Assert.IsTrue(L.IndexOf(L.LastView) >= 0);
-    // every channel the built-in views name exists in the demo drive
+    // the views for what the demo drive has show all of it there
     D.MakeDemo;
     for var I := 0 to L.Count - 1 do
     begin
       V := L[I];
+      if not SameText(V.Name, 'MPH vs RPM vs IAT') then
+        Continue;
       for var C in V.Channels do
       begin
         Name := C.Name;

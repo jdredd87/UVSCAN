@@ -1910,6 +1910,13 @@ begin
     on E: Exception do
       AddMessage('Could not create default data files: ' + E.Message);
   end;
+  try
+    for F in AddNewBuiltIns do
+      AddMessage('Added the built-in ' + F);
+  except
+    on E: Exception do
+      AddMessage('Could not add the new built-in scan lists and chart views: ' + E.Message);
+  end;
 
   try
     FLists.LoadFromFile(ListsFile);
@@ -2985,6 +2992,11 @@ begin
   end;
   FLiveLog.StartLive(IfThen(FTestMode, 'Test display', 'Live scan'), Names, Units, Switches);
   FLiveStart := TThread.GetTickCount64;
+  // A scan list's own chart view (the built-in lists each have one).
+  if not FTestMode and (cbLists.ItemIndex > 0) then
+    TLogViewerForm.SuggestLiveView(ComboText(cbLists))
+  else
+    TLogViewerForm.SuggestLiveView('');
   TLogViewerForm.LiveChanged(True);
 end;
 

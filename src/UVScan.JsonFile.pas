@@ -24,6 +24,9 @@ function JInt(Obj: TJSONObject; const Name: string; Default: Integer = 0): Integ
 function JBool(Obj: TJSONObject; const Name: string; Default: Boolean = False): Boolean;
 function JObj(Obj: TJSONObject; const Name: string): TJSONObject;
 function JArr(Obj: TJSONObject; const Name: string): TJSONArray;
+{ The strings of an array (other values skipped); nil if there is none. }
+function JStrings(Obj: TJSONObject; const Name: string): TArray<string>;
+function StringsToJson(const Items: TArray<string>): TJSONArray;
 
 implementation
 
@@ -141,6 +144,28 @@ begin
     Result := TJSONArray(V)
   else
     Result := nil;
+end;
+
+function JStrings(Obj: TJSONObject; const Name: string): TArray<string>;
+var
+  Arr: TJSONArray;
+  I: Integer;
+begin
+  Result := nil;
+  Arr := JArr(Obj, Name);
+  if Arr <> nil then
+    for I := 0 to Arr.Count - 1 do
+      if Arr.Items[I] is TJSONString then
+        Result := Result + [TJSONString(Arr.Items[I]).Value];
+end;
+
+function StringsToJson(const Items: TArray<string>): TJSONArray;
+var
+  S: string;
+begin
+  Result := TJSONArray.Create;
+  for S in Items do
+    Result.Add(S);
 end;
 
 end.

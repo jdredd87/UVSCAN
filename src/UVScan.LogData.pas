@@ -460,7 +460,7 @@ procedure TLogData.MakeDemo;
 const
   Rate = 10;
   Seconds = 600;
-  Names: array[0..9] of string = ('RPM', 'MPH', 'ECT', 'IAT', 'TPS', 'MAP', 'KR', 'O2 B1S1', 'STFT', 'IGN V');
+  Names: array[0..9] of string = ('RPM', 'MPH', 'ECT', 'IAT', 'TP %', 'MAP(kPa)', 'KR', 'O2', 'STFT', 'IGN V');
   Units: array[0..9] of string = ('RPM', 'MPH', 'Deg F', 'Deg F', '%', 'kPa', 'Degrees', 'mV', '%', 'V');
 var
   N, I, C: Integer;

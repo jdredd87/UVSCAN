@@ -1,15 +1,78 @@
 {
   "version": 1,
-  "lastView": "MPH vs RPM vs IAT",
+  "lastView": "Basic engine",
+  "builtIns": ["Basic engine", "Warm-up", "Idle", "Fuel trims", "Knock check", "Acceleration", "Charging", "Cooling",
+    "Transmission", "Misfires", "MPH vs RPM vs IAT"],
   "views": [
     {
-      "name": "MPH vs RPM vs IAT",
-      "mode": "overlay",
+      "name": "Basic engine",
+      "mode": "lanes",
       "useDisplayLevels": true,
       "channels": [
         { "name": "RPM", "color": "#2D7FF9", "width": 2 },
         { "name": "MPH", "color": "#FF4040", "width": 2 },
-        { "name": "IAT", "color": "#FFA500", "width": 2 }
+        { "name": "TP %", "color": "#B060C0", "width": 2, "min": 0, "max": 100 },
+        { "name": "MAP(kPa)", "color": "#00B4C8", "width": 2 },
+        { "name": "ECT", "color": "#FF8B4B", "width": 2 },
+        { "name": "IAT", "color": "#FFA500", "width": 2 },
+        { "name": "STFT", "color": "#4682B4", "width": 2, "min": -25, "max": 25 },
+        { "name": "LTFT", "color": "#C06000", "width": 2, "min": -25, "max": 25 },
+        { "name": "KR", "color": "#51C235", "width": 2, "min": 0, "max": 10, "levelColors": true },
+        { "name": "IGN V", "color": "#808080", "width": 2, "min": 10, "max": 16, "levelColors": true }
+      ]
+    },
+    {
+      "name": "Warm-up",
+      "mode": "lanes",
+      "useDisplayLevels": true,
+      "channels": [
+        { "name": "ECT", "color": "#FF8B4B", "width": 3, "levelColors": true },
+        { "name": "IAT", "color": "#FFA500", "width": 2 },
+        { "name": "RPM", "color": "#2D7FF9", "width": 2 },
+        { "name": "Desired Idle", "color": "#4682B4", "width": 2 },
+        { "name": "IAC Position", "color": "#B060C0", "width": 2 },
+        { "name": "Loop", "color": "#51C235", "width": 2 },
+        { "name": "STFT", "color": "#C06000", "width": 2, "min": -25, "max": 25 },
+        { "name": "Fans Low", "color": "#00B4C8", "width": 2 }
+      ]
+    },
+    {
+      "name": "Idle",
+      "mode": "lanes",
+      "useDisplayLevels": true,
+      "channels": [
+        { "name": "RPM", "color": "#2D7FF9", "width": 3 },
+        { "name": "Desired Idle", "color": "#4682B4", "width": 2 },
+        { "name": "IAC Position", "color": "#B060C0", "width": 2 },
+        { "name": "MAP(kPa)", "color": "#00B4C8", "width": 2 },
+        { "name": "Spark", "color": "#FF4040", "width": 2 },
+        { "name": "STFT", "color": "#C06000", "width": 2, "min": -25, "max": 25 },
+        { "name": "Load", "color": "#909000", "width": 2, "min": 0, "max": 100 }
+      ]
+    },
+    {
+      "name": "Fuel trims",
+      "mode": "lanes",
+      "useDisplayLevels": true,
+      "channels": [
+        { "name": "STFT", "color": "#2D7FF9", "width": 2, "min": -25, "max": 25, "levelColors": true,
+          "levels": [
+            { "name": "Very lean", "when": ">=", "value": 20, "rowColor": "#FF5050", "textColor": "#FFFFFF" },
+            { "name": "Very rich", "when": "<=", "value": -20, "rowColor": "#FF5050", "textColor": "#FFFFFF" },
+            { "name": "Lean", "when": ">=", "value": 10, "rowColor": "#FFE680" },
+            { "name": "Rich", "when": "<=", "value": -10, "rowColor": "#FFE680" } ] },
+        { "name": "LTFT", "color": "#C06000", "width": 2, "min": -25, "max": 25, "levelColors": true,
+          "levels": [
+            { "name": "Very lean", "when": ">=", "value": 20, "rowColor": "#FF5050", "textColor": "#FFFFFF" },
+            { "name": "Very rich", "when": "<=", "value": -20, "rowColor": "#FF5050", "textColor": "#FFFFFF" },
+            { "name": "Lean", "when": ">=", "value": 10, "rowColor": "#FFE680" },
+            { "name": "Rich", "when": "<=", "value": -10, "rowColor": "#FFE680" } ] },
+        { "name": "O2", "color": "#51C235", "width": 2, "min": 0, "max": 1000 },
+        { "name": "HO2 B1S2", "color": "#909000", "width": 2, "min": 0, "max": 1000 },
+        { "name": "Loop", "color": "#B060C0", "width": 2 },
+        { "name": "FT Cell", "color": "#808080", "width": 2 },
+        { "name": "RPM", "color": "#4682B4", "width": 2 },
+        { "name": "MAP(kPa)", "color": "#00B4C8", "width": 2 }
       ]
     },
     {
@@ -18,12 +81,97 @@
       "useDisplayLevels": true,
       "channels": [
         { "name": "RPM", "color": "#2D7FF9", "width": 2 },
-        { "name": "TPS", "color": "#B060C0", "width": 2 },
-        { "name": "MAP", "color": "#00B4C8", "width": 2 },
-        { "name": "KR", "color": "#51C235", "width": 2, "min": 0, "max": 10, "levelColors": true,
+        { "name": "TP %", "color": "#B060C0", "width": 2, "min": 0, "max": 100 },
+        { "name": "MAP(kPa)", "color": "#00B4C8", "width": 2 },
+        { "name": "Spark", "color": "#FF4040", "width": 2 },
+        { "name": "KR", "color": "#51C235", "width": 3, "min": 0, "max": 10, "levelColors": true,
           "levels": [
             { "name": "Alarm", "when": ">=", "value": 4, "rowColor": "#FF5050", "textColor": "#FFFFFF" },
-            { "name": "Warning", "when": ">=", "value": 1, "rowColor": "#FFE680" } ] }
+            { "name": "Warning", "when": ">=", "value": 1, "rowColor": "#FFE680" } ] },
+        { "name": "IAT", "color": "#FFA500", "width": 2 }
+      ]
+    },
+    {
+      "name": "Acceleration",
+      "mode": "lanes",
+      "useDisplayLevels": true,
+      "channels": [
+        { "name": "RPM", "color": "#2D7FF9", "width": 2 },
+        { "name": "MPH", "color": "#FF4040", "width": 2 },
+        { "name": "Gear", "color": "#4682B4", "width": 2 },
+        { "name": "TP %", "color": "#B060C0", "width": 2, "min": 0, "max": 100 },
+        { "name": "MAP(kPa)", "color": "#00B4C8", "width": 2 },
+        { "name": "MAF(g/s)", "color": "#909000", "width": 2 },
+        { "name": "Spark", "color": "#FF8B4B", "width": 2 },
+        { "name": "KR", "color": "#51C235", "width": 3, "min": 0, "max": 10, "levelColors": true },
+        { "name": "PE Mode", "color": "#808080", "width": 2 }
+      ]
+    },
+    {
+      "name": "Charging",
+      "mode": "lanes",
+      "useDisplayLevels": true,
+      "channels": [
+        { "name": "IGN V", "color": "#2D7FF9", "width": 3, "min": 10, "max": 16, "levelColors": true },
+        { "name": "Gen PWM", "color": "#FF8B4B", "width": 2, "min": 0, "max": 100 },
+        { "name": "RPM", "color": "#4682B4", "width": 2 },
+        { "name": "Fans Low", "color": "#00B4C8", "width": 2 },
+        { "name": "Fans High", "color": "#B060C0", "width": 2 },
+        { "name": "Gen Lamp", "color": "#FF4040", "width": 2 }
+      ]
+    },
+    {
+      "name": "Cooling",
+      "mode": "lanes",
+      "useDisplayLevels": true,
+      "channels": [
+        { "name": "ECT", "color": "#FF8B4B", "width": 3, "levelColors": true },
+        { "name": "Fans Low", "color": "#00B4C8", "width": 2 },
+        { "name": "Fans High", "color": "#2D7FF9", "width": 2 },
+        { "name": "IAT", "color": "#FFA500", "width": 2 },
+        { "name": "Trans Temp", "color": "#C06000", "width": 2 },
+        { "name": "MPH", "color": "#FF4040", "width": 2 },
+        { "name": "Hot Lamp", "color": "#B060C0", "width": 2 }
+      ]
+    },
+    {
+      "name": "Transmission",
+      "mode": "lanes",
+      "useDisplayLevels": true,
+      "channels": [
+        { "name": "RPM", "color": "#2D7FF9", "width": 2 },
+        { "name": "MPH", "color": "#FF4040", "width": 2 },
+        { "name": "Gear", "color": "#51C235", "width": 3 },
+        { "name": "TP %", "color": "#B060C0", "width": 2, "min": 0, "max": 100 },
+        { "name": "TCC Slip RPM", "color": "#00B4C8", "width": 2 },
+        { "name": "TCC %", "color": "#4682B4", "width": 2, "min": 0, "max": 100 },
+        { "name": "PC %", "color": "#909000", "width": 2, "min": 0, "max": 100 },
+        { "name": "Trans Temp", "color": "#C06000", "width": 2 }
+      ]
+    },
+    {
+      "name": "Misfires",
+      "mode": "lanes",
+      "useDisplayLevels": true,
+      "channels": [
+        { "name": "RPM", "color": "#2D7FF9", "width": 2 },
+        { "name": "Misfires", "color": "#FF4040", "width": 3 },
+        { "name": "Misfire Cyl. 1 Current", "color": "#51C235", "width": 2 },
+        { "name": "Misfire Cyl. 2 Current", "color": "#FFA500", "width": 2 },
+        { "name": "Misfire Cyl. 3 Current", "color": "#B060C0", "width": 2 },
+        { "name": "Misfire Cyl. 4 Current", "color": "#00B4C8", "width": 2 },
+        { "name": "Misfire Cyl. 5 Current", "color": "#FF8B4B", "width": 2 },
+        { "name": "Misfire Cyl. 6 Current", "color": "#808080", "width": 2 }
+      ]
+    },
+    {
+      "name": "MPH vs RPM vs IAT",
+      "mode": "overlay",
+      "useDisplayLevels": true,
+      "channels": [
+        { "name": "RPM", "color": "#2D7FF9", "width": 2 },
+        { "name": "MPH", "color": "#FF4040", "width": 2 },
+        { "name": "IAT", "color": "#FFA500", "width": 2 }
       ]
     }
   ]

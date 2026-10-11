@@ -46,8 +46,11 @@ The only CSV files UVScan writes are scan logs; the only CSV it reads is an old 
 ## lists.json
 
 ```json
-{ "version": 1, "lists": [ { "name": "Misfires", "pids": [20, 21, 22, 23, 24, 25] } ] }
+{ "version": 1, "builtIns": ["Misfires", "Transmission"],
+  "lists": [ { "name": "Misfires", "pids": [20, 21, 22, 23, 24, 25] } ] }
 ```
+
+`builtIns` names the built-in lists this file has been given. At startup UVScan adds any built-in list not named there (matching its PIDs to your `pids.json` by kind, PID code and name) and adds its name, so a new version brings its new lists and one you deleted stays deleted.
 
 ## display.json
 
@@ -120,7 +123,8 @@ The top‑level `"defaults"` number records which set of built‑ins the file ha
 | `liveSpan` | Seconds the live chart shows (15‑600). |
 | `mode` | `lanes`, `overlay` (own scales) or `shared` (one scale). |
 | `useDisplayLevels` | Channels without their own `levels` use the *Display & alerts* levels of the PID with the same name and units. |
-| `channels[].name` | Matched to log columns by name (`RPM` or `RPM (RPM)`); log columns not listed are hidden. |
+| `builtIns` | The built-in views this file has been given (as in `lists.json`). |
+| `channels[].name` | Matched to log columns by name (`RPM` or `RPM (RPM)`); log columns not listed are hidden. In **Lanes** the channels are drawn in this order. |
 | `visible`, `color`, `width` | The line (`width` 1‑4). |
 | `min`, `max` | Fixed scale; leave both out for automatic. |
 | `levelColors`, `levels` | Colour the line by level; levels as in `display.json`. |
