@@ -9,12 +9,18 @@ unit UVScan.Display;
           { "name": "Alarm", "when": ">=", "value": 4, "rowColor": "#FF5050",
             "textColor": "#FFFFFF", "flash": true, "sound": "alarm", "repeat": true },
           { "name": "Warning", "when": ">=", "value": 1, "rowColor": "#FFE680" } ] } ],
-    "gauges": [
-      { "pid": 14, "style": "dial", "size": "large", "min": 0, "max": 20 } ] }
+    "dashboard": "Knock check",
+    "dashboards": [
+      { "name": "Knock check",
+        "gauges": [ { "pid": 14, "style": "dial", "size": "large", "min": 0, "max": 20 } ] } ],
+    "builtIns": ["Knock check"] }
 
   Levels are checked in order; the first that matches the current value
   applies. Colours are "#RRGGBB"; a missing colour means "use the normal
-  look". "pid" is the PID id from pids.json. *)
+  look". "pid" is the PID id from pids.json. "dashboard" is the one shown;
+  "builtIns" names the built-in dashboards this file has been given (see
+  UVScan.Defaults.AddNewBuiltIns). A file from before there were several
+  dashboards has one "gauges" list: that becomes the dashboard "Main". *)
 
 interface
 
@@ -67,6 +73,15 @@ type
     MinValue, MaxValue: Double;
   end;
 
+  { A named set of gauges (one page of the Gauges tab). }
+  TDashboard = class
+  public
+    Name: string;
+    Gauges: TList<TGauge>;
+    constructor Create(const AName: string);
+    destructor Destroy; override;
+  end;
+
   { What a value should look like right now (normal look + matching level). }
   TResolvedStyle = record
     Level: Integer;      // -1 = normal
@@ -90,9 +105,15 @@ type
   TDisplaySettings = class
   private
     FPids: TObjectDictionary<Integer, TPidDisplay>;
-    FGauges: TList<TGauge>;
+    FDashboards: TObjectList<TDashboard>;
+    FCurrent: Integer;
     FWarnings: TStringList;
+    function GetGauges: TList<TGauge>;
+    function GetDashboard(Index: Integer): TDashboard;
+    function GetDashboardCount: Integer;
+    procedure SetCurrent(Value: Integer);
   public
+    BuiltIns: TArray<string>;
     constructor Create;
     destructor Destroy; override;
     procedure Clear;
@@ -107,12 +128,25 @@ type
     procedure LoadFromFile(const FileName: string);
     function ToJson: TJSONObject;
     procedure SaveToFile(const FileName: string);
-    property Gauges: TList<TGauge> read FGauges;
+    function IndexOfDashboard(const Name: string): Integer;
+    { Adds an empty dashboard (or finds the one of that name); returns its index. }
+    function AddDashboard(const Name: string): Integer;
+    { Removes a dashboard; the last one is only emptied. }
+    procedure DeleteDashboard(Index: Integer);
+    function DashboardNames: TArray<string>;
+    { The gauges of the dashboard shown. }
+    property Gauges: TList<TGauge> read GetGauges;
+    property Dashboards[Index: Integer]: TDashboard read GetDashboard;
+    property DashboardCount: Integer read GetDashboardCount;
+    { Index of the dashboard shown (there is always at least one). }
+    property Current: Integer read FCurrent write SetCurrent;
     property Warnings: TStringList read FWarnings;
   end;
 
 const
   DisplayFileVersion = 1;
+  { The dashboard an older display.json's gauges go on. }
+  MainDashboard = 'Main';
   CompareOpKeys: array[TCompareOp] of string = ('>=', '>', '<=', '<', '=', '<>');
   CompareOpCaptions: array[TCompareOp] of string = ('at or above', 'above', 'at or below', 'below', 'equal to', 'not equal to');
   AlertSoundKeys: array[TAlertSound] of string = ('none', 'beep', 'alert', 'alarm', 'file');
@@ -136,11 +170,13 @@ function ResolveDisplay(D: TPidDisplay; const Value: Double): TResolvedStyle;
 type
   { Returns the id of the catalog PID with this PID code (preferring one with
     these units), or -1. }
-  TPidCodeResolver = reference to function(const PidCode, Units: string): Integer;
+  TPidCodeResolver = reference to function(const PidCode, Units, Name: string): Integer;
 
-{ The built-in examples name PIDs by "pidCode" (and optionally "units"),
-  because ids differ between catalogs. Replaces those with "pid" ids, drops
-  entries the catalog does not have, and returns how many PID entries remain. }
+{ The built-in examples name PIDs by "pidCode" (and optionally "units", and
+  "pidName" for PIDs that share a code, like the bits of a status PID),
+  because ids differ between catalogs. Replaces those with "pid" ids (in
+  "pids", "gauges" and each of "dashboards"), drops entries the catalog does
+  not have, and returns how many PID entries remain. }
 function ResolveSeedJson(Root: TJSONObject; const Resolver: TPidCodeResolver): Integer;
 
 { Accepts "4.5" and the local decimal separator ("4,5"). }
@@ -209,13 +245,13 @@ end;
 
 function ResolveSeedJson(Root: TJSONObject; const Resolver: TPidCodeResolver): Integer;
 
-  procedure ResolveArray(const Name: string);
+  procedure ResolveArray(Parent: TJSONObject; const Name: string);
   var
     Arr: TJSONArray;
     I, Id: Integer;
     E: TJSONObject;
   begin
-    Arr := JArr(Root, Name);
+    Arr := JArr(Parent, Name);
     if Arr = nil then
       Exit;
     for I := Arr.Count - 1 downto 0 do
@@ -225,7 +261,7 @@ function ResolveSeedJson(Root: TJSONObject; const Resolver: TPidCodeResolver): I
       E := TJSONObject(Arr.Items[I]);
       if E.GetValue('pidCode') = nil then
         Continue;
-      Id := Resolver(JStr(E, 'pidCode'), JStr(E, 'units'));
+      Id := Resolver(JStr(E, 'pidCode'), JStr(E, 'units'), JStr(E, 'pidName'));
       if Id < 0 then
       begin
         Arr.Remove(I).Free;
@@ -233,15 +269,22 @@ function ResolveSeedJson(Root: TJSONObject; const Resolver: TPidCodeResolver): I
       end;
       E.RemovePair('pidCode').Free;
       E.RemovePair('units').Free;
+      E.RemovePair('pidName').Free;
       E.AddPair('pid', TJSONNumber.Create(Id));
     end;
   end;
 
 var
   Arr: TJSONArray;
+  I: Integer;
 begin
-  ResolveArray('pids');
-  ResolveArray('gauges');
+  ResolveArray(Root, 'pids');
+  ResolveArray(Root, 'gauges');
+  Arr := JArr(Root, 'dashboards');
+  if Arr <> nil then
+    for I := 0 to Arr.Count - 1 do
+      if Arr.Items[I] is TJSONObject then
+        ResolveArray(TJSONObject(Arr.Items[I]), 'gauges');
   Arr := JArr(Root, 'pids');
   if Arr = nil then
     Result := 0
@@ -302,20 +345,36 @@ begin
   Result := (FontSize = 0) and (TextColor = NoColor) and (RowColor = NoColor) and (Length(Levels) = 0);
 end;
 
+{ TDashboard }
+
+constructor TDashboard.Create(const AName: string);
+begin
+  inherited Create;
+  Name := AName;
+  Gauges := TList<TGauge>.Create;
+end;
+
+destructor TDashboard.Destroy;
+begin
+  Gauges.Free;
+  inherited;
+end;
+
 { TDisplaySettings }
 
 constructor TDisplaySettings.Create;
 begin
   inherited;
   FPids := TObjectDictionary<Integer, TPidDisplay>.Create([doOwnsValues]);
-  FGauges := TList<TGauge>.Create;
+  FDashboards := TObjectList<TDashboard>.Create(True);
+  FDashboards.Add(TDashboard.Create(MainDashboard));
   FWarnings := TStringList.Create;
 end;
 
 destructor TDisplaySettings.Destroy;
 begin
   FPids.Free;
-  FGauges.Free;
+  FDashboards.Free;
   FWarnings.Free;
   inherited;
 end;
@@ -323,8 +382,69 @@ end;
 procedure TDisplaySettings.Clear;
 begin
   FPids.Clear;
-  FGauges.Clear;
+  FDashboards.Clear;
+  FDashboards.Add(TDashboard.Create(MainDashboard));
+  FCurrent := 0;
+  BuiltIns := nil;
   FWarnings.Clear;
+end;
+
+function TDisplaySettings.GetGauges: TList<TGauge>;
+begin
+  Result := FDashboards[FCurrent].Gauges;
+end;
+
+function TDisplaySettings.GetDashboard(Index: Integer): TDashboard;
+begin
+  Result := FDashboards[Index];
+end;
+
+function TDisplaySettings.GetDashboardCount: Integer;
+begin
+  Result := FDashboards.Count;
+end;
+
+procedure TDisplaySettings.SetCurrent(Value: Integer);
+begin
+  FCurrent := EnsureRange(Value, 0, FDashboards.Count - 1);
+end;
+
+function TDisplaySettings.IndexOfDashboard(const Name: string): Integer;
+begin
+  for Result := 0 to FDashboards.Count - 1 do
+    if SameText(FDashboards[Result].Name, Trim(Name)) then
+      Exit;
+  Result := -1;
+end;
+
+function TDisplaySettings.AddDashboard(const Name: string): Integer;
+begin
+  Result := IndexOfDashboard(Name);
+  if Result < 0 then
+    Result := FDashboards.Add(TDashboard.Create(Trim(Name)));
+end;
+
+procedure TDisplaySettings.DeleteDashboard(Index: Integer);
+begin
+  if (Index < 0) or (Index >= FDashboards.Count) then
+    Exit;
+  if FDashboards.Count = 1 then
+    FDashboards[0].Gauges.Clear
+  else
+  begin
+    FDashboards.Delete(Index);
+    if FCurrent >= Index then
+      FCurrent := Max(0, FCurrent - 1);
+  end;
+end;
+
+function TDisplaySettings.DashboardNames: TArray<string>;
+var
+  D: TDashboard;
+begin
+  Result := nil;
+  for D in FDashboards do
+    Result := Result + [D.Name];
 end;
 
 function TDisplaySettings.Find(PidId: Integer): TPidDisplay;
@@ -511,13 +631,38 @@ begin
   end;
 end;
 
+procedure LoadGauges(Arr: TJSONArray; List: TList<TGauge>);
+var
+  I: Integer;
+  E: TJSONObject;
+  G: TGauge;
+begin
+  if Arr <> nil then
+    for I := 0 to Arr.Count - 1 do
+    begin
+      if not (Arr.Items[I] is TJSONObject) then
+        Continue;
+      E := TJSONObject(Arr.Items[I]);
+      G.PidId := JInt(E, 'pid', -1);
+      if G.PidId < 0 then
+        Continue;
+      G.Style := TGaugeStyle(KeyIndexOf(GaugeStyleKeys, JStr(E, 'style', 'dial'), 0));
+      G.Size := TGaugeSize(KeyIndexOf(GaugeSizeKeys, JStr(E, 'size', 'medium'), 1));
+      G.MinValue := JFloat(E, 'min', 0);
+      G.MaxValue := JFloat(E, 'max', 100);
+      if G.MaxValue <= G.MinValue then
+        G.MaxValue := G.MinValue + 1;
+      List.Add(G);
+    end;
+end;
+
 procedure TDisplaySettings.LoadFromJson(Root: TJSONObject);
 var
   Arr: TJSONArray;
   I: Integer;
   E: TJSONObject;
   D: TPidDisplay;
-  G: TGauge;
+  Name: string;
 begin
   Clear;
   Arr := JArr(Root, 'pids');
@@ -545,24 +690,30 @@ begin
       end;
     end;
 
-  Arr := JArr(Root, 'gauges');
-  if Arr <> nil then
+  BuiltIns := JStrings(Root, 'builtIns');
+  Arr := JArr(Root, 'dashboards');
+  if Arr = nil then
+    LoadGauges(JArr(Root, 'gauges'), FDashboards[0].Gauges) // a file from before
+  else
+  begin
+    FDashboards.Clear;
     for I := 0 to Arr.Count - 1 do
     begin
       if not (Arr.Items[I] is TJSONObject) then
         Continue;
       E := TJSONObject(Arr.Items[I]);
-      G.PidId := JInt(E, 'pid', -1);
-      if G.PidId < 0 then
+      Name := Trim(JStr(E, 'name'));
+      if (Name = '') or (IndexOfDashboard(Name) >= 0) then
+      begin
+        FWarnings.Add(Format('dashboards[%d]: missing or repeated "name"', [I]));
         Continue;
-      G.Style := TGaugeStyle(KeyIndexOf(GaugeStyleKeys, JStr(E, 'style', 'dial'), 0));
-      G.Size := TGaugeSize(KeyIndexOf(GaugeSizeKeys, JStr(E, 'size', 'medium'), 1));
-      G.MinValue := JFloat(E, 'min', 0);
-      G.MaxValue := JFloat(E, 'max', 100);
-      if G.MaxValue <= G.MinValue then
-        G.MaxValue := G.MinValue + 1;
-      FGauges.Add(G);
+      end;
+      LoadGauges(JArr(E, 'gauges'), FDashboards[AddDashboard(Name)].Gauges);
     end;
+    if FDashboards.Count = 0 then
+      FDashboards.Add(TDashboard.Create(MainDashboard));
+  end;
+  FCurrent := Max(0, IndexOfDashboard(JStr(Root, 'dashboard')));
 end;
 
 procedure TDisplaySettings.LoadFromJsonText(const Text: string);
@@ -591,8 +742,9 @@ end;
 
 function TDisplaySettings.ToJson: TJSONObject;
 var
-  Arr: TJSONArray;
-  E: TJSONObject;
+  Arr, Dashes: TJSONArray;
+  E, DE: TJSONObject;
+  Dash: TDashboard;
   Ids: TArray<Integer>;
   Id: Integer;
   D: TPidDisplay;
@@ -620,18 +772,29 @@ begin
     Arr.AddElement(E);
   end;
 
-  Arr := TJSONArray.Create;
-  Result.AddPair('gauges', Arr);
-  for G in FGauges do
+  Result.AddPair('dashboard', FDashboards[FCurrent].Name);
+  Dashes := TJSONArray.Create;
+  Result.AddPair('dashboards', Dashes);
+  for Dash in FDashboards do
   begin
-    E := TJSONObject.Create;
-    E.AddPair('pid', TJSONNumber.Create(G.PidId));
-    E.AddPair('style', GaugeStyleKeys[G.Style]);
-    E.AddPair('size', GaugeSizeKeys[G.Size]);
-    E.AddPair('min', TJSONNumber.Create(G.MinValue));
-    E.AddPair('max', TJSONNumber.Create(G.MaxValue));
-    Arr.AddElement(E);
+    DE := TJSONObject.Create;
+    DE.AddPair('name', Dash.Name);
+    Arr := TJSONArray.Create;
+    DE.AddPair('gauges', Arr);
+    for G in Dash.Gauges do
+    begin
+      E := TJSONObject.Create;
+      E.AddPair('pid', TJSONNumber.Create(G.PidId));
+      E.AddPair('style', GaugeStyleKeys[G.Style]);
+      E.AddPair('size', GaugeSizeKeys[G.Size]);
+      E.AddPair('min', TJSONNumber.Create(G.MinValue));
+      E.AddPair('max', TJSONNumber.Create(G.MaxValue));
+      Arr.AddElement(E);
+    end;
+    Dashes.AddElement(DE);
   end;
+  if Length(BuiltIns) > 0 then
+    Result.AddPair('builtIns', StringsToJson(BuiltIns));
 end;
 
 procedure TDisplaySettings.SaveToFile(const FileName: string);

@@ -8,7 +8,7 @@ unit UVScan.Defaults;
 interface
 
 uses
-  System.SysUtils;
+  System.SysUtils, UVScan.Pids;
 
 function DefaultPidsJson: string;
 function DefaultDtcsJson: string;
@@ -23,20 +23,24 @@ function DefaultLogViewsJson: string;
   files that were created. }
 function CreateMissingDataFiles: TArray<string>;
 
-{ Adds the built-in scan lists and log views that lists.json and logviews.json
-  have not been given yet (each file names those it has in "builtIns"), so an
-  update brings the new ones and never brings back one the user deleted. A
-  list's PIDs are matched to this install's pids.json by kind, PID code and
-  name. Returns what was added, for Messages. }
+{ Adds the built-in scan lists, log views and dashboards that lists.json,
+  logviews.json and display.json have not been given yet (each file names
+  those it has in "builtIns"), so an update brings the new ones and never
+  brings back one the user deleted. PIDs are matched to this install's
+  pids.json by kind, PID code and name. Returns what was added, for Messages. }
 function AddNewBuiltIns: TArray<string>;
 { The same for these files (tests). }
-function AddNewBuiltInsTo(const PidsName, ListsName, ViewsName: string): TArray<string>;
+function AddNewBuiltInsTo(const PidsName, ListsName, ViewsName, DisplayName: string): TArray<string>;
+
+{ The catalog's PID for a built-in example: an enabled vehicle PID with this
+  code (and this short name, if given), preferring these units; -1 if none. }
+function ResolvePid(Catalog: TPidCatalog; const PidCode, Units, Name: string): Integer;
 
 implementation
 
 uses
-  System.Types, System.Classes, System.JSON, UVScan.Paths, UVScan.JsonFile, UVScan.Pids, UVScan.PidLists,
-  UVScan.LogViews;
+  System.Types, System.Classes, System.JSON, UVScan.Paths, UVScan.JsonFile, UVScan.PidLists,
+  UVScan.LogViews, UVScan.Display;
 
 const
   // What the first releases had, whose files don't say.
@@ -253,18 +257,93 @@ begin
   end;
 end;
 
-function AddNewBuiltInsTo(const PidsName, ListsName, ViewsName: string): TArray<string>;
+function ResolvePid(Catalog: TPidCatalog; const PidCode, Units, Name: string): Integer;
+var
+  I: Integer;
+  P: TPidDef;
+begin
+  Result := -1;
+  for I := 0 to Catalog.Count - 1 do
+  begin
+    P := Catalog[I];
+    if not P.Enabled or (P.Kind <> pkVehicle) or not SameText(P.PidCode, PidCode) then
+      Continue;
+    if (Name <> '') and not SameText(P.DisplayName, Name) then
+      Continue;
+    if (Units = '') or SameText(P.Units, Units) then
+      Exit(P.Id);
+    if Result < 0 then
+      Result := P.Id;
+  end;
+end;
+
+function AddNewDashboards(const PidsName, DisplayName: string): TArray<string>;
+var
+  Catalog: TPidCatalog;
+  Mine, Builtin: TDisplaySettings;
+  Root: TJSONObject;
+  I, J, K: Integer;
+  Name: string;
+  Changed: Boolean;
+begin
+  Result := nil;
+  Catalog := TPidCatalog.Create;
+  Mine := TDisplaySettings.Create;
+  Builtin := TDisplaySettings.Create;
+  try
+    Catalog.LoadFromFile(PidsName);
+    Mine.LoadFromFile(DisplayName);
+    Root := ParseJsonObject(DefaultDisplayJson, 'default display.json');
+    try
+      ResolveSeedJson(Root,
+        function(const PidCode, Units, PidName: string): Integer
+        begin
+          Result := ResolvePid(Catalog, PidCode, Units, PidName);
+        end);
+      Builtin.LoadFromJson(Root);
+    finally
+      Root.Free;
+    end;
+    if Mine.BuiltIns = nil then
+      Mine.BuiltIns := [MainDashboard]; // the first releases had that one
+    Changed := False;
+    for I := 0 to Builtin.DashboardCount - 1 do
+    begin
+      Name := Builtin.Dashboards[I].Name;
+      if Has(Mine.BuiltIns, Name) then
+        Continue;
+      Mine.BuiltIns := Mine.BuiltIns + [Name];
+      Changed := True;
+      if (Mine.IndexOfDashboard(Name) >= 0) or (Builtin.Dashboards[I].Gauges.Count = 0) then
+        Continue;
+      K := Mine.AddDashboard(Name);
+      for J := 0 to Builtin.Dashboards[I].Gauges.Count - 1 do
+        Mine.Dashboards[K].Gauges.Add(Builtin.Dashboards[I].Gauges[J]);
+      Result := Result + [Format('dashboard "%s"', [Name])];
+    end;
+    if Changed then
+      Mine.SaveToFile(DisplayName);
+  finally
+    Builtin.Free;
+    Mine.Free;
+    Catalog.Free;
+  end;
+end;
+
+function AddNewBuiltInsTo(const PidsName, ListsName, ViewsName, DisplayName: string): TArray<string>;
 begin
   Result := nil;
   if FileExists(ListsName) and FileExists(PidsName) then
     Result := Result + AddNewLists(PidsName, ListsName);
   if FileExists(ViewsName) then
     Result := Result + AddNewViews(ViewsName);
+  if FileExists(DisplayName) and FileExists(PidsName) then
+    Result := Result + AddNewDashboards(PidsName, DisplayName);
 end;
 
 function AddNewBuiltIns: TArray<string>;
 begin
-  Result := AddNewBuiltInsTo(PidsFile, ListsFile, LogViewsFile);
+  Result := AddNewBuiltInsTo(PidsFile, ListsFile, LogViewsFile, DisplayFile);
 end;
 
 end.

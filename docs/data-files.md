@@ -54,6 +54,8 @@ The only CSV files UVScan writes are scan logs; the only CSV it reads is an old 
 
 ## display.json
 
+Gauges are kept per dashboard: `"dashboard"` is the one shown, `"dashboards"` lists them (`{ "name": "Knock check", "gauges": [ ... ] }`) and `"builtIns"` works as in `lists.json`. A file with a single `"gauges"` list (from before there were several) is read as the dashboard *Main*.
+
 ```json
 { "version": 1,
   "pids": [

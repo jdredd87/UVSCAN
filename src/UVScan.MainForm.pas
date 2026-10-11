@@ -324,6 +324,16 @@ type
     FAddGauge: TCircle;              // the round + on the Gauges page
     FDashEmpty: TLabel;              // shown when there are no gauges
     FDashSpacer: TLayout;            // keeps the + clear of the last gauge
+    FDashCombo: TComboBox;           // which dashboard (wide windows; the page menu everywhere)
+    FDashPicks: TComponent;          // owns the senders of the dashboard chooser's items
+    procedure FillDashboards;
+    procedure SelectDashboard(Index: Integer);
+    procedure DashComboChange(Sender: TObject);
+    procedure ChooseDashboardClick(Sender: TObject);
+    procedure DashPickClick(Sender: TObject);
+    procedure NewDashboardClick(Sender: TObject);
+    procedure RenameDashboardClick(Sender: TObject);
+    procedure DeleteDashboardClick(Sender: TObject);
     procedure CreateGrids;
     procedure BuildChrome;
     procedure ArrangeLayout;
@@ -883,6 +893,14 @@ begin
   Icon.Data.Data := 'M12 5 L12 19 M5 12 L19 12';
   Icon.Fill.Kind := TBrushKind.None;
   Icon.Stroke.Thickness := 2.6;
+  FDashCombo := TComboBox.Create(Self);
+  FDashCombo.Stored := False;
+  FDashCombo.Parent := pnlDashBar;
+  FDashCombo.Index := 0;
+  FDashCombo.SetBounds(0, 0, 190, 30);
+  FDashCombo.Hint := 'Which dashboard to show (the page menu adds, renames and deletes them)';
+  FDashCombo.ShowHint := True;
+  FDashCombo.OnChange := DashComboChange;
   FDashEmpty := TLabel.Create(Self);
   FDashEmpty.Parent := tiDashboard;
   FDashEmpty.Stored := False;
@@ -1121,7 +1139,10 @@ begin
   if not FChromeReady then
     Exit;
   P := CurrentPage;
-  lblTitle.Text := P.Text;
+  if (P = tiDashboard) and (FDisplay <> nil) and (FDisplay.DashboardCount > 1) then
+    lblTitle.Text := FDisplay.Dashboards[FDisplay.Current].Name // which dashboard, also on a phone
+  else
+    lblTitle.Text := P.Text;
   btnBack.Visible := (tcMain.ActiveTab = tiMore) and (P <> tiMoreMenu);
   btnMenu.Visible := (P = tiLive) or (P = tiDashboard) or (P = tiPids) or (P = tiMessages) or (P = tiConnect) or
     (P = tiControls);
@@ -1359,10 +1380,15 @@ begin
   end
   else if P = tiDashboard then
   begin
+    AddPageMenuItem('Dashboards...', ChooseDashboardClick, FDisplay.DashboardCount > 1);
     AddPageMenuItem('Add gauge...', btnAddGaugeClick);
     AddPageMenuItem('Tick these PIDs', btnTickDashPidsClick);
     AddPageMenuItem(btnDashTest.Text, btnTestDisplayClick, btnDashTest.Enabled);
     AddPageMenuItem('Live chart', LiveChartClick);
+    AddPageMenuItem('-', nil);
+    AddPageMenuItem('New dashboard...', NewDashboardClick);
+    AddPageMenuItem('Rename dashboard...', RenameDashboardClick);
+    AddPageMenuItem('Delete dashboard...', DeleteDashboardClick);
   end
   else if P = tiPids then
   begin
@@ -2992,9 +3018,12 @@ begin
   end;
   FLiveLog.StartLive(IfThen(FTestMode, 'Test display', 'Live scan'), Names, Units, Switches);
   FLiveStart := TThread.GetTickCount64;
-  // A scan list's own chart view (the built-in lists each have one).
+  // A scan list's own chart view and dashboard (the built-in lists each have both).
   if not FTestMode and (cbLists.ItemIndex > 0) then
-    TLogViewerForm.SuggestLiveView(ComboText(cbLists))
+  begin
+    TLogViewerForm.SuggestLiveView(ComboText(cbLists));
+    SelectDashboard(FDisplay.IndexOfDashboard(ComboText(cbLists)));
+  end
   else
     TLogViewerForm.SuggestLiveView('');
   TLogViewerForm.LiveChanged(True);
@@ -4286,22 +4315,9 @@ begin
       Root := ParseJsonObject(DefaultDisplayJson, 'default display.json');
       try
         Count := ResolveSeedJson(Root,
-          function(const PidCode, Units: string): Integer
-          var
-            I: Integer;
-            P: TPidDef;
+          function(const PidCode, Units, Name: string): Integer
           begin
-            Result := -1;
-            for I := 0 to FCatalog.Count - 1 do
-            begin
-              P := FCatalog[I];
-              if not P.Enabled or (P.Kind <> pkVehicle) or not SameText(P.PidCode, PidCode) then
-                Continue;
-              if (Units = '') or SameText(P.Units, Units) then
-                Exit(P.Id);
-              if Result < 0 then
-                Result := P.Id;
-            end;
+            Result := ResolvePid(FCatalog, PidCode, Units, Name);
           end);
         WriteJsonFile(DisplayFile, Root);
         FDisplay.LoadFromJson(Root);
@@ -4403,6 +4419,7 @@ var
   View: TGaugeView;
   Title, Units: string;
 begin
+  FillDashboards;
   for View in FGaugeViews do
     View.Free;
   FGaugeViews.Clear;
@@ -4447,6 +4464,144 @@ begin
       'Right-click a gauge to change, move or remove it. Double-click to edit.');
   LayoutDashboard;
   RefreshDashboard;
+end;
+
+procedure TMainForm.FillDashboards;
+var
+  Name: string;
+begin
+  if FDashCombo = nil then
+    Exit;
+  FDashCombo.OnChange := nil;
+  try
+    FDashCombo.Items.BeginUpdate;
+    try
+      FDashCombo.Items.Clear;
+      for Name in FDisplay.DashboardNames do
+        FDashCombo.Items.Add(Name);
+    finally
+      FDashCombo.Items.EndUpdate;
+    end;
+    FDashCombo.ItemIndex := FDisplay.Current;
+  finally
+    FDashCombo.OnChange := DashComboChange;
+  end;
+  UpdateAppBar;
+end;
+
+procedure TMainForm.SelectDashboard(Index: Integer);
+begin
+  if (Index < 0) or (Index >= FDisplay.DashboardCount) or (Index = FDisplay.Current) then
+    Exit;
+  FDisplay.Current := Index;
+  SaveDisplay; // remembers which one
+  BuildDashboard;
+end;
+
+procedure TMainForm.DashComboChange(Sender: TObject);
+begin
+  SelectDashboard(FDashCombo.ItemIndex);
+end;
+
+{ The dashboards to pick from, as a menu (a phone has no room for the box). }
+procedure TMainForm.ChooseDashboardClick(Sender: TObject);
+var
+  Items: TArray<TActionItem>;
+  It: TActionItem;
+  Pick: TComponent;
+  I: Integer;
+  Pt: TPointF;
+begin
+  FDashPicks.Free;
+  FDashPicks := TComponent.Create(Self);
+  Items := nil;
+  for I := 0 to FDisplay.DashboardCount - 1 do
+  begin
+    Pick := TComponent.Create(FDashPicks);
+    Pick.Tag := I;
+    It := Default(TActionItem);
+    It.Text := FDisplay.Dashboards[I].Name;
+    It.Enabled := True;
+    It.Checked := I = FDisplay.Current;
+    It.OnClick := DashPickClick;
+    It.Sender := Pick;
+    Items := Items + [It];
+  end;
+  Pt := btnMenu.LocalToAbsolute(TPointF.Create(0, btnMenu.Height));
+  ShowActionMenu(Self, Items, TPointF.Create(ClientWidth, Pt.Y));
+end;
+
+procedure TMainForm.DashPickClick(Sender: TObject);
+begin
+  if Sender is TComponent then
+    SelectDashboard(TComponent(Sender).Tag);
+end;
+
+procedure TMainForm.NewDashboardClick(Sender: TObject);
+begin
+  AskText('New dashboard', 'Name (a scan list of the same name shows it when it starts)', '',
+    procedure(Name: string)
+    begin
+      Name := Trim(Name);
+      if Name = '' then
+        Exit;
+      if FDisplay.IndexOfDashboard(Name) >= 0 then
+      begin
+        ShowNotice(Format('There is a dashboard "%s" already', [Name]), True);
+        Exit;
+      end;
+      FDisplay.Current := FDisplay.AddDashboard(Name);
+      SaveDisplay;
+      BuildDashboard;
+    end);
+end;
+
+procedure TMainForm.RenameDashboardClick(Sender: TObject);
+var
+  Old: string;
+begin
+  Old := FDisplay.Dashboards[FDisplay.Current].Name;
+  AskText('Rename dashboard', 'Name', Old,
+    procedure(Name: string)
+    var
+      I: Integer;
+    begin
+      Name := Trim(Name);
+      I := FDisplay.IndexOfDashboard(Name);
+      if (Name = '') or (Name = Old) then
+        Exit;
+      if (I >= 0) and (I <> FDisplay.Current) then
+      begin
+        ShowNotice(Format('There is a dashboard "%s" already', [Name]), True);
+        Exit;
+      end;
+      FDisplay.Dashboards[FDisplay.Current].Name := Name;
+      SaveDisplay;
+      BuildDashboard;
+    end);
+end;
+
+procedure TMainForm.DeleteDashboardClick(Sender: TObject);
+var
+  Name: string;
+begin
+  Name := FDisplay.Dashboards[FDisplay.Current].Name;
+  if FDisplay.DashboardCount = 1 then
+    Confirm(Format('Remove all the gauges of "%s"? (It is the only dashboard.)', [Name]),
+      procedure
+      begin
+        FDisplay.DeleteDashboard(FDisplay.Current);
+        SaveDisplay;
+        BuildDashboard;
+      end)
+  else
+    Confirm(Format('Delete the dashboard "%s" and its gauges?', [Name]),
+      procedure
+      begin
+        FDisplay.DeleteDashboard(FDisplay.IndexOfDashboard(Name));
+        SaveDisplay;
+        BuildDashboard;
+      end);
 end;
 
 { Left to right, wrapping to the width of the dashboard. On a narrow one (a

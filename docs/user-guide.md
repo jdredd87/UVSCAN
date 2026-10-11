@@ -183,6 +183,8 @@ They follow the **same alert levels** as the grid: the scale shows the levels as
 - Right‑click a gauge → **Edit gauge…**, **Display & alerts…**, **Move earlier / later**, **Remove from dashboard**. Double‑click edits.
 - **Tick these PIDs** ticks the dashboard's PIDs in the PID list, ready to scan.
 
+**Several dashboards.** The box at the left of the Gauges bar (on a phone **⋮ → Dashboards…**) picks which one is shown; the top bar shows its name. **⋮ → New / Rename / Delete dashboard…** manage them. UVScan comes with one for each of its [scan lists](#choosing-pids-and-scan-lists) (*Basic engine*, *Warm-up*, *Idle*, *Fuel trims*, *Knock check*, *Acceleration*, *Charging*, *Cooling*, *Transmission*, *Misfires*), and starting a scan from a scan list shows the dashboard of the same name, so a list of your own gets its dashboard by giving both the same name. The gauges of an older UVScan are the dashboard *Main*.
+
 <table><tr>
 <td valign="top"><a href="media/win-dashboard.mp4"><img src="media/win-dashboard.webp" width="560" alt="Dashboard on Windows"></a></td>
 <td valign="top" width="250"><a href="media/phone-dashboard.mp4"><img src="media/phone-dashboard.webp" width="240" alt="Dashboard on a phone"></a></td>

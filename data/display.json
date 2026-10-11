@@ -25,11 +25,144 @@
       ]
     }
   ],
-  "gauges": [
-    { "pidCode": "000C", "style": "dial", "size": "medium", "min": 0, "max": 7000 },
-    { "pidCode": "11A6", "style": "dial", "size": "medium", "min": 0, "max": 20 },
-    { "pidCode": "0005", "style": "dial", "size": "medium", "min": -40, "max": 140 },
-    { "pidCode": "1141", "style": "bar", "size": "medium", "min": 8, "max": 18 },
-    { "pidCode": "000D", "units": "MPH", "style": "number", "size": "medium", "min": 0, "max": 140 }
+  "dashboard": "Main",
+  "builtIns": ["Main", "Basic engine", "Warm-up", "Idle", "Fuel trims", "Knock check", "Acceleration", "Charging",
+    "Cooling", "Transmission", "Misfires"],
+  "dashboards": [
+    {
+      "name": "Main",
+      "gauges": [
+        { "pidCode": "000C", "style": "dial", "size": "medium", "min": 0, "max": 7000 },
+        { "pidCode": "11A6", "style": "dial", "size": "medium", "min": 0, "max": 20 },
+        { "pidCode": "0005", "style": "dial", "size": "medium", "min": -40, "max": 140 },
+        { "pidCode": "1141", "style": "bar", "size": "medium", "min": 8, "max": 18 },
+        { "pidCode": "000D", "units": "MPH", "style": "number", "size": "medium", "min": 0, "max": 140 }
+      ]
+    },
+    {
+      "name": "Basic engine",
+      "gauges": [
+        { "pidCode": "000C", "style": "dial", "size": "large", "min": 0, "max": 7000 },
+        { "pidCode": "000D", "units": "MPH", "style": "number", "size": "medium", "min": 0, "max": 140 },
+        { "pidCode": "0005", "style": "dial", "size": "medium", "min": -40, "max": 140 },
+        { "pidCode": "000B", "style": "dial", "size": "medium", "min": 0, "max": 105 },
+        { "pidCode": "11A6", "style": "dial", "size": "medium", "min": 0, "max": 20 },
+        { "pidCode": "0011", "style": "bar", "size": "medium", "min": 0, "max": 100 },
+        { "pidCode": "000F", "style": "bar", "size": "medium", "min": -40, "max": 80 },
+        { "pidCode": "1141", "style": "bar", "size": "medium", "min": 8, "max": 18 }
+      ]
+    },
+    {
+      "name": "Warm-up",
+      "gauges": [
+        { "pidCode": "0005", "style": "dial", "size": "large", "min": -40, "max": 140 },
+        { "pidCode": "000C", "style": "dial", "size": "medium", "min": 0, "max": 3000 },
+        { "pidCode": "1192", "style": "number", "size": "medium", "min": 0, "max": 2000 },
+        { "pidCode": "1105", "style": "number", "size": "medium", "min": 0, "max": 1 },
+        { "pidCode": "000F", "style": "bar", "size": "medium", "min": -40, "max": 80 },
+        { "pidCode": "1172", "style": "bar", "size": "medium", "min": 0, "max": 255 },
+        { "pidCode": "0006", "style": "bar", "size": "medium", "min": -25, "max": 25 },
+        { "pidCode": "1103", "pidName": "Fans Low", "style": "number", "size": "small", "min": 0, "max": 1 }
+      ]
+    },
+    {
+      "name": "Idle",
+      "gauges": [
+        { "pidCode": "000C", "style": "dial", "size": "large", "min": 0, "max": 2000 },
+        { "pidCode": "1192", "style": "number", "size": "medium", "min": 0, "max": 2000 },
+        { "pidCode": "000B", "style": "dial", "size": "medium", "min": 0, "max": 105 },
+        { "pidCode": "000E", "style": "dial", "size": "medium", "min": -10, "max": 50 },
+        { "pidCode": "1172", "style": "bar", "size": "medium", "min": 0, "max": 255 },
+        { "pidCode": "0006", "style": "bar", "size": "medium", "min": -25, "max": 25 },
+        { "pidCode": "0004", "style": "bar", "size": "medium", "min": 0, "max": 100 }
+      ]
+    },
+    {
+      "name": "Fuel trims",
+      "gauges": [
+        { "pidCode": "0006", "style": "bar", "size": "large", "min": -25, "max": 25 },
+        { "pidCode": "0007", "style": "bar", "size": "large", "min": -25, "max": 25 },
+        { "pidCode": "1145", "style": "bar", "size": "medium", "min": 0, "max": 1000 },
+        { "pidCode": "1146", "style": "bar", "size": "medium", "min": 0, "max": 1000 },
+        { "pidCode": "1105", "style": "number", "size": "small", "min": 0, "max": 1 },
+        { "pidCode": "1190", "style": "number", "size": "small", "min": 0, "max": 20 },
+        { "pidCode": "000C", "style": "dial", "size": "small", "min": 0, "max": 7000 },
+        { "pidCode": "000B", "style": "dial", "size": "small", "min": 0, "max": 105 }
+      ]
+    },
+    {
+      "name": "Knock check",
+      "gauges": [
+        { "pidCode": "11A6", "style": "dial", "size": "large", "min": 0, "max": 20 },
+        { "pidCode": "000E", "style": "dial", "size": "medium", "min": -10, "max": 50 },
+        { "pidCode": "000C", "style": "dial", "size": "medium", "min": 0, "max": 7000 },
+        { "pidCode": "000B", "style": "dial", "size": "medium", "min": 0, "max": 105 },
+        { "pidCode": "0011", "style": "bar", "size": "medium", "min": 0, "max": 100 },
+        { "pidCode": "000F", "style": "number", "size": "small", "min": -40, "max": 80 }
+      ]
+    },
+    {
+      "name": "Acceleration",
+      "gauges": [
+        { "pidCode": "000C", "style": "dial", "size": "large", "min": 0, "max": 7000 },
+        { "pidCode": "000D", "units": "MPH", "style": "number", "size": "large", "min": 0, "max": 140 },
+        { "pidCode": "199A", "style": "number", "size": "medium", "min": 0, "max": 6 },
+        { "pidCode": "000B", "style": "dial", "size": "medium", "min": 0, "max": 105 },
+        { "pidCode": "0010", "style": "dial", "size": "medium", "min": 0, "max": 250 },
+        { "pidCode": "11A6", "style": "dial", "size": "medium", "min": 0, "max": 20 },
+        { "pidCode": "0011", "style": "bar", "size": "medium", "min": 0, "max": 100 },
+        { "pidCode": "000E", "style": "number", "size": "small", "min": -10, "max": 50 },
+        { "pidCode": "1106", "pidName": "PE Mode", "style": "number", "size": "small", "min": 0, "max": 1 }
+      ]
+    },
+    {
+      "name": "Charging",
+      "gauges": [
+        { "pidCode": "1141", "style": "dial", "size": "large", "min": 8, "max": 18 },
+        { "pidCode": "114D", "style": "bar", "size": "medium", "min": 0, "max": 100 },
+        { "pidCode": "000C", "style": "dial", "size": "medium", "min": 0, "max": 7000 },
+        { "pidCode": "1104", "pidName": "Gen Lamp", "style": "number", "size": "small", "min": 0, "max": 1 },
+        { "pidCode": "1103", "pidName": "Fans Low", "style": "number", "size": "small", "min": 0, "max": 1 },
+        { "pidCode": "1103", "pidName": "Fans High", "style": "number", "size": "small", "min": 0, "max": 1 }
+      ]
+    },
+    {
+      "name": "Cooling",
+      "gauges": [
+        { "pidCode": "0005", "style": "dial", "size": "large", "min": -40, "max": 140 },
+        { "pidCode": "1940", "style": "dial", "size": "medium", "min": -40, "max": 150 },
+        { "pidCode": "000F", "style": "bar", "size": "medium", "min": -40, "max": 80 },
+        { "pidCode": "000D", "units": "MPH", "style": "number", "size": "medium", "min": 0, "max": 140 },
+        { "pidCode": "1103", "pidName": "Fans Low", "style": "number", "size": "small", "min": 0, "max": 1 },
+        { "pidCode": "1103", "pidName": "Fans High", "style": "number", "size": "small", "min": 0, "max": 1 },
+        { "pidCode": "1104", "pidName": "Hot Lamp", "style": "number", "size": "small", "min": 0, "max": 1 }
+      ]
+    },
+    {
+      "name": "Transmission",
+      "gauges": [
+        { "pidCode": "199A", "style": "number", "size": "large", "min": 0, "max": 6 },
+        { "pidCode": "000C", "style": "dial", "size": "medium", "min": 0, "max": 7000 },
+        { "pidCode": "000D", "units": "MPH", "style": "number", "size": "medium", "min": 0, "max": 140 },
+        { "pidCode": "1940", "style": "dial", "size": "medium", "min": -40, "max": 150 },
+        { "pidCode": "1991", "style": "number", "size": "medium", "min": -500, "max": 500 },
+        { "pidCode": "1970", "style": "bar", "size": "medium", "min": 0, "max": 100 },
+        { "pidCode": "1972", "style": "bar", "size": "medium", "min": 0, "max": 100 },
+        { "pidCode": "0011", "style": "bar", "size": "medium", "min": 0, "max": 100 }
+      ]
+    },
+    {
+      "name": "Misfires",
+      "gauges": [
+        { "pidCode": "1200", "style": "number", "size": "large", "min": 0, "max": 255 },
+        { "pidCode": "000C", "style": "dial", "size": "medium", "min": 0, "max": 7000 },
+        { "pidCode": "1206", "style": "number", "size": "small", "min": 0, "max": 255 },
+        { "pidCode": "1205", "style": "number", "size": "small", "min": 0, "max": 255 },
+        { "pidCode": "1207", "style": "number", "size": "small", "min": 0, "max": 255 },
+        { "pidCode": "1208", "style": "number", "size": "small", "min": 0, "max": 255 },
+        { "pidCode": "11EA", "style": "number", "size": "small", "min": 0, "max": 255 },
+        { "pidCode": "11EB", "style": "number", "size": "small", "min": 0, "max": 255 }
+      ]
+    }
   ]
 }

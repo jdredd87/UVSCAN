@@ -490,7 +490,7 @@ begin
     TFile.WriteAllText(ViewsName,
       '{"version":1,"views":[{"name":"Knock check","channels":[{"name":"RPM"},{"name":"TPS"},{"name":"MAP"},' +
       '{"name":"KR"}]},{"name":"Mine","channels":[{"name":"RPM"}]}]}');
-    Added := AddNewBuiltInsTo(PidsName, ListsName, ViewsName);
+    Added := AddNewBuiltInsTo(PidsName, ListsName, ViewsName, '');
     Assert.IsTrue(Length(Added) > 5, string.Join(', ', Added));
 
     Lists.LoadFromFile(ListsName);
@@ -509,7 +509,7 @@ begin
     // Deleted after the update: stays deleted.
     Views.Delete(Views.IndexOf('Fuel trims'));
     Views.SaveToFile(ViewsName);
-    Added := AddNewBuiltInsTo(PidsName, ListsName, ViewsName);
+    Added := AddNewBuiltInsTo(PidsName, ListsName, ViewsName, '');
     Assert.AreEqual(0, Integer(Length(Added)), string.Join(', ', Added));
     Views.LoadFromFile(ViewsName);
     Assert.IsTrue(Views.IndexOf('Fuel trims') < 0);

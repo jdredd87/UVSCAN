@@ -6,8 +6,8 @@ unit UVScan.Tests.Display;
 interface
 
 uses
-  System.SysUtils, System.Math, System.UITypes, System.JSON, DUnitX.TestFramework,
-  UVScan.Display, UVScan.Alerts, UVScan.Defaults, UVScan.JsonFile;
+  System.SysUtils, System.Math, System.UITypes, System.JSON, System.IOUtils, DUnitX.TestFramework,
+  UVScan.Display, UVScan.Alerts, UVScan.Defaults, UVScan.JsonFile, UVScan.Pids;
 
 type
   [TestFixture]
@@ -24,6 +24,10 @@ type
     [Test] procedure PutDropsAllDefaultEntries;
     [Test] procedure ZonesFromLevels;
     [Test] procedure BuiltInDefaultsLoad;
+    [Test] procedure OldFileGaugesGoOnMain;
+    [Test] procedure DashboardsRoundTrip;
+    [Test] procedure BuiltInDashboardsHaveAllTheirPids;
+    [Test] procedure UpdateAddsNewDashboards;
   end;
 
   [TestFixture]
@@ -321,7 +325,7 @@ begin
     // A catalog with knock retard (11A6) as id 14, ignition voltage (1141) as
     // 12, two vehicle speeds (000D, km/h = 20, MPH = 8) and no coolant / rpm.
     Assert.AreEqual(2, ResolveSeedJson(Root,
-      function(const PidCode, Units: string): Integer
+      function(const PidCode, Units, Name: string): Integer
       begin
         if PidCode = '11A6' then
           Result := 14
@@ -345,6 +349,143 @@ begin
   finally
     Root.Free;
     S.Free;
+  end;
+end;
+
+procedure TDisplayTests.OldFileGaugesGoOnMain;
+var
+  S: TDisplaySettings;
+begin
+  S := TDisplaySettings.Create;
+  try
+    S.LoadFromJsonText('{"version":1,"gauges":[{"pid":1,"style":"dial"},{"pid":3,"style":"bar"}]}');
+    Assert.AreEqual(1, S.DashboardCount);
+    Assert.AreEqual(MainDashboard, S.Dashboards[0].Name);
+    Assert.AreEqual(2, Integer(S.Gauges.Count));
+    Assert.AreEqual(0, Integer(Length(S.BuiltIns)));
+  finally
+    S.Free;
+  end;
+end;
+
+procedure TDisplayTests.DashboardsRoundTrip;
+var
+  S, S2: TDisplaySettings;
+  Root: TJSONObject;
+  G: TGauge;
+begin
+  S := TDisplaySettings.Create;
+  S2 := TDisplaySettings.Create;
+  try
+    G := Default(TGauge);
+    G.PidId := 7;
+    G.MaxValue := 100;
+    S.Gauges.Add(G);
+    S.Current := S.AddDashboard('Knock');
+    Assert.AreEqual(1, S.Current);
+    G.PidId := 14;
+    S.Gauges.Add(G);
+    S.Gauges.Add(G);
+    Assert.AreEqual(1, S.AddDashboard('knock'), 'names are case-insensitive');
+    S.BuiltIns := ['Knock'];
+    Root := S.ToJson;
+    try
+      S2.LoadFromJson(Root);
+    finally
+      Root.Free;
+    end;
+    Assert.AreEqual(2, S2.DashboardCount);
+    Assert.AreEqual(1, S2.Current, 'the one shown is remembered');
+    Assert.AreEqual(2, Integer(S2.Gauges.Count));
+    Assert.AreEqual(1, Integer(S2.Dashboards[0].Gauges.Count));
+    Assert.AreEqual('Knock', S2.BuiltIns[0]);
+    S2.DeleteDashboard(1);
+    Assert.AreEqual(1, S2.DashboardCount);
+    Assert.AreEqual(0, S2.Current);
+    S2.DeleteDashboard(0);
+    Assert.AreEqual(1, S2.DashboardCount, 'the last one is only emptied');
+    Assert.AreEqual(0, Integer(S2.Gauges.Count));
+  finally
+    S2.Free;
+    S.Free;
+  end;
+end;
+
+{ Every gauge of the built-in dashboards finds its PID in the built-in
+  catalog (a code or name typo would drop it silently). }
+procedure TDisplayTests.BuiltInDashboardsHaveAllTheirPids;
+var
+  Catalog: TPidCatalog;
+  Root, Raw: TJSONObject;
+  Arr, Before: TJSONArray;
+  S: TDisplaySettings;
+  I: Integer;
+begin
+  Catalog := TPidCatalog.Create;
+  S := TDisplaySettings.Create;
+  Raw := ParseJsonObject(DefaultDisplayJson, 'default display.json');
+  Root := ParseJsonObject(DefaultDisplayJson, 'default display.json');
+  try
+    Catalog.LoadFromJsonText(DefaultPidsJson);
+    ResolveSeedJson(Root,
+      function(const PidCode, Units, Name: string): Integer
+      begin
+        Result := ResolvePid(Catalog, PidCode, Units, Name);
+      end);
+    S.LoadFromJson(Root);
+    Assert.AreEqual(0, S.Warnings.Count);
+    Arr := JArr(Raw, 'dashboards');
+    Assert.AreEqual(Arr.Count, S.DashboardCount);
+    Assert.AreEqual(S.DashboardCount, Integer(Length(S.BuiltIns)), 'every built-in dashboard is in builtIns');
+    for I := 0 to Arr.Count - 1 do
+    begin
+      Before := JArr(TJSONObject(Arr.Items[I]), 'gauges');
+      Assert.AreEqual(Before.Count, S.Dashboards[I].Gauges.Count, S.Dashboards[I].Name);
+    end;
+    // bits of one status PID are told apart by name
+    I := S.IndexOfDashboard('Charging');
+    Assert.AreNotEqual(S.Dashboards[I].Gauges[4].PidId, S.Dashboards[I].Gauges[5].PidId, 'Fans Low / High');
+  finally
+    Root.Free;
+    Raw.Free;
+    S.Free;
+    Catalog.Free;
+  end;
+end;
+
+{ An install from before there were several dashboards keeps its gauges as
+  "Main" and gets the built-in ones; one deleted later stays deleted. }
+procedure TDisplayTests.UpdateAddsNewDashboards;
+var
+  Dir, PidsName, DisplayName: string;
+  S: TDisplaySettings;
+  Added: TArray<string>;
+begin
+  Dir := TPath.Combine(TPath.GetTempPath, 'UVScanDash' + IntToStr(Random(1000000)));
+  ForceDirectories(Dir);
+  PidsName := TPath.Combine(Dir, 'pids.json');
+  DisplayName := TPath.Combine(Dir, 'display.json');
+  S := TDisplaySettings.Create;
+  try
+    TFile.WriteAllText(PidsName, DefaultPidsJson);
+    TFile.WriteAllText(DisplayName, '{"version":1,"gauges":[{"pid":1,"style":"dial","min":0,"max":8000}]}');
+    Added := AddNewBuiltInsTo(PidsName, '', '', DisplayName);
+    Assert.AreEqual(10, Integer(Length(Added)), string.Join(', ', Added));
+    S.LoadFromFile(DisplayName);
+    Assert.AreEqual(11, S.DashboardCount);
+    Assert.AreEqual(MainDashboard, S.Dashboards[S.Current].Name, 'still shows its own gauges');
+    Assert.AreEqual(8000.0, S.Gauges[0].MaxValue, 1E-9);
+    Assert.IsTrue(S.Dashboards[S.IndexOfDashboard('Knock check')].Gauges.Count >= 5);
+
+    S.DeleteDashboard(S.IndexOfDashboard('Knock check'));
+    S.SaveToFile(DisplayName);
+    Added := AddNewBuiltInsTo(PidsName, '', '', DisplayName);
+    Assert.AreEqual(0, Integer(Length(Added)), string.Join(', ', Added));
+    S.LoadFromFile(DisplayName);
+    Assert.AreEqual(-1, S.IndexOfDashboard('Knock check'));
+  finally
+    S.Free;
+    TDirectory.Delete(Dir, True);
   end;
 end;
 
