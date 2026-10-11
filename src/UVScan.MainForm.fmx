@@ -1234,6 +1234,17 @@ object MainForm: TMainForm
                   Text = 'Keep the screen on while UVScan is open'
                   OnChange = chkKeepAwakeChange
                 end
+                object chkRound: TCheckBox
+                  IsChecked = True
+                  Position.X = 12.000000000000000000
+                  Position.Y = 110.000000000000000000
+                  Size.Width = 320.000000000000000000
+                  Size.Height = 30.000000000000000000
+                  Size.PlatformDefault = False
+                  TabOrder = 2
+                  Text = 'Round readings on gauges and live data (logs keep every digit)'
+                  OnChange = chkRoundChange
+                end
               end
               object gbAlerts: TGroupBox
                 Align = Top

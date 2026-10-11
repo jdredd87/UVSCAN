@@ -46,6 +46,7 @@ type
     ShowMinMax: Boolean;    // live data grid min / max columns
     Theme: string;          // 'system', 'light' or 'dark'
     KeepScreenOn: Boolean;  // no sleep / screen saver while UVScan is open
+    RoundReadings: Boolean; // gauges and live data: tidy decimals per PID (logs keep every digit)
     Window: TWindowSettings;
     constructor Create;
     procedure ResetToDefaults;
@@ -118,6 +119,7 @@ begin
   ShowMinMax := True;
   Theme := 'system';
   KeepScreenOn := True;
+  RoundReadings := True;
   Window := Default(TWindowSettings);
 end;
 
@@ -165,6 +167,7 @@ begin
   Sec := TJSONObject.Create;
   Sec.AddPair('theme', Theme);
   Sec.AddPair('keepScreenOn', TJSONBool.Create(KeepScreenOn));
+  Sec.AddPair('roundReadings', TJSONBool.Create(RoundReadings));
   Result.AddPair('appearance', Sec);
 
   if Window.Saved then
@@ -238,6 +241,7 @@ begin
   begin
     Theme := LowerCase(JStr(Sec, 'theme', Theme));
     KeepScreenOn := JBool(Sec, 'keepScreenOn', KeepScreenOn);
+    RoundReadings := JBool(Sec, 'roundReadings', RoundReadings);
   end;
 
   Sec := JObj(Root, 'window');

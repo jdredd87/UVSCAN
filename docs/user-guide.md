@@ -48,6 +48,8 @@ Everything fits the width it has: on a phone or a narrow window the grids drop o
 
 **Themes** (*More → Settings → Theme*): **System default** follows the light / dark setting of Windows or the phone; or pick **Light** or **Dark**. They are Delphi's own styles (Win10Modern on Windows, the Android styles on a phone). **Keep the screen on while UVScan is open** (same page, on by default) stops the phone or PC from going to sleep or blanking the screen.
 
+**Round readings on gauges and live data** (same page, on by default) shows each PID with a fixed number of decimals that suits it, so numbers do not flicker or jump sideways: throttle, RPM, temperatures, trims and speed as whole numbers (44 %, not 44.31 %), volts, knock retard and injector pulse with one decimal (13.8 V, 0.4°), O2 volts and gear ratios with two (0.45 V). The live list's min / max columns follow it too. Logs and the log viewer always keep every digit. Turn it off to see readings exactly as the formula gives them.
+
 ## Phones and tablets
 
 The layout follows the room it has, not the platform: a narrow Windows window looks like a phone, a tablet held sideways like the desktop.

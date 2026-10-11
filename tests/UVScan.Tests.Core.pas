@@ -61,6 +61,8 @@ type
   public
     [Test] procedure LoadsCatalog;
     [Test] procedure FormatsResults;
+    [Test] procedure RoundsReadings;
+    [Test] procedure TidyDecimalsFitThePid;
     [Test] procedure ShippedPidFileLoadsCleanly;
     [Test] procedure ShippedDtcFileLoadsCleanly;
   end;
@@ -602,6 +604,66 @@ begin
   finally
     P.Free;
   end;
+end;
+
+procedure TPidCatalogTests.RoundsReadings;
+var
+  P: TPidDef;
+begin
+  P := TPidDef.Create;
+  try
+    Assert.AreEqual('44', P.FormatValue(44.33, 0));
+    Assert.AreEqual('45', P.FormatValue(44.5, 0));
+    Assert.AreEqual('13.0', P.FormatValue(12.97, 1), 'the same width every time');
+    Assert.AreEqual('0.45', P.FormatValue(0.4512, 2));
+    Assert.AreEqual('0', P.FormatValue(-0.2, 0), 'no minus zero');
+    Assert.AreEqual('-3', P.FormatValue(-3.1, 0));
+    P.ResultFormat := '%f';
+    Assert.AreEqual('12', P.FormatValue(12.34567, 0), 'rounding overrides %f');
+    P.ResultFormat := '%o';
+    Assert.AreEqual('ON', P.FormatValue(1, 2));
+    P.ResultFormat := '*f';
+    Assert.AreEqual('212.0', P.FormatValue(100, 1));
+    Assert.AreEqual('--', P.FormatValue(NaN, 0));
+  finally
+    P.Free;
+  end;
+end;
+
+procedure TPidCatalogTests.TidyDecimalsFitThePid;
+
+  function Tidy(Kind: TPidKind; Bytes: Integer; const Formula, Units: string; const Format: string = ''): Integer;
+  var
+    P: TPidDef;
+  begin
+    P := TPidDef.Create;
+    try
+      P.Kind := Kind;
+      P.DataLength := Bytes;
+      P.FormulaText := Formula;
+      P.Units := Units;
+      P.ResultFormat := Format;
+      Result := P.TidyDecimals;
+    finally
+      P.Free;
+    end;
+  end;
+
+begin
+  Assert.AreEqual(0, Tidy(pkVehicle, 1, 'N0/2.55', '%'), 'TP %');
+  Assert.AreEqual(0, Tidy(pkVehicle, 1, '(N0-128)/1.28', '%', '%f'), 'fuel trim');
+  Assert.AreEqual(0, Tidy(pkVehicle, 2, '((N1 << 8) +N2) *0.25', 'RPM'), 'RPM');
+  Assert.AreEqual(0, Tidy(pkVehicle, 1, '((N0 >> 3) & 1)', 'None'), 'a status bit');
+  Assert.AreEqual(0, Tidy(pkVehicle, 1, 'N0/1.609', 'MPH', '%f'), 'MPH');
+  Assert.AreEqual(1, Tidy(pkVehicle, 1, 'N0/10', 'V'), 'ignition volts');
+  Assert.AreEqual(1, Tidy(pkVehicle, 1, '22.5*N0/256', 'Degrees'), 'knock retard shows 0.4');
+  Assert.AreEqual(1, Tidy(pkVehicle, 2, '(((N1<<8)+N2)/65.535)', 'ms', '%f'), 'injector pulse');
+  Assert.AreEqual(2, Tidy(pkVehicle, 2, 'N1 * 0.005', 'V'), 'O2 volts');
+  Assert.AreEqual(2, Tidy(pkVehicle, 1, 'N0 * 0.01563', ':1'), 'gear ratio');
+  Assert.AreEqual(2, Tidy(pkAnalog, 0, 'N0/51', 'Volts', '%f'), 'analog input');
+  Assert.AreEqual(1, Tidy(pkCalculated, 0, '%AD1% * 3.008 + 7.35', ':1', '%f'), 'wide-band AFR');
+  Assert.AreEqual(0, Tidy(pkCalculated, 0, '%AD2% * 31.9 - 9.7', 'PSI', '%f'), 'fuel pressure');
+  Assert.AreEqual(0, Tidy(pkVehicle, 1, 'N0 / 2.55', '%', '%d'), '%d');
 end;
 
 procedure TPidCatalogTests.ShippedPidFileLoadsCleanly;

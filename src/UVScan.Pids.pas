@@ -33,6 +33,7 @@ type
   private
     FFormula: TFormula;
     FFormulaText: string;
+    FTidyDecimals: Integer; // -1: not worked out yet
     procedure SetFormulaText(const Value: string);
   public
     Id: Integer;
@@ -57,7 +58,12 @@ type
     { Formula problem or ''. }
     function FormulaError: string;
     property FormulaText: string read FFormulaText write SetFormulaText;
-    function FormatValue(const Value: Double): string;
+    { Decimals = -1: as the formula gives it (up to 3 decimals, or the format's).
+      Decimals >= 0: rounded to that many, always shown (the same width every time). }
+    function FormatValue(const Value: Double; Decimals: Integer = -1): string;
+    { Decimals a reading needs to be useful on screen: 0 for whole-number PIDs and
+      wide ranges (TP 44 %, 2150 RPM), 1 or 2 for narrow ones (13.8 V, 0.45 V). }
+    function TidyDecimals: Integer;
     function DisplayName: string;
     function ToJson: TJSONObject;
   end;
@@ -128,6 +134,7 @@ constructor TPidDef.Create;
 begin
   inherited;
   Enabled := True;
+  FTidyDecimals := -1;
 end;
 
 destructor TPidDef.Destroy;
@@ -142,6 +149,7 @@ begin
     Exit;
   FFormulaText := Value;
   FreeAndNil(FFormula); // recompiled on next use
+  FTidyDecimals := -1;
 end;
 
 procedure TPidDef.Assign(Source: TPidDef);
@@ -156,6 +164,7 @@ begin
   PidCode := Source.PidCode;
   ShortName := Source.ShortName;
   ResultFormat := Source.ResultFormat;
+  FTidyDecimals := -1;
   Category := Source.Category;
   Mci := Source.Mci;
   Kind := Source.Kind;
@@ -230,12 +239,94 @@ begin
     Result := LongName;
 end;
 
-function TPidDef.FormatValue(const Value: Double): string;
+function TPidDef.TidyDecimals: Integer;
+var
+  F: TFormula;
+  Inputs: array[0..3] of Double;
+  Bytes, I, N: Integer;
+  V, Lo, Hi, Span: Double;
+  Whole: Boolean;
+  U: string;
+begin
+  if FTidyDecimals >= 0 then
+    Exit(FTidyDecimals);
+  U := LowerCase(Trim(Units));
+  // Without raw bytes to try (a calculated PID), go by the units.
+  if (U = ':1') or (U = 'afr') then
+    Span := 10
+  else if (U = 'v') or (U = 'volts') then
+    Span := 5
+  else
+    Span := 100;
+  Bytes := IfThen(Kind = pkAnalog, 1, DataLength);
+  if (Kind <> pkCalculated) and (Bytes in [1, 2]) then
+    try
+      // A private copy: the scan thread may be compiling the shared one.
+      F := TFormula.Create(FormulaText);
+      try
+        if not F.IsEmpty and (Length(F.Variables) = 0) then
+        begin
+          Whole := True;
+          Lo := Infinity;
+          Hi := NegInfinity;
+          for N := 0 to 255 do
+          begin
+            for I := 0 to 3 do
+              Inputs[I] := IfThen(I < Bytes, (N * (I * 6 + 1)) mod 256, 0);
+            V := F.Evaluate(Inputs, []);
+            if IsNan(V) or IsInfinite(V) then
+              Continue;
+            Whole := Whole and SameValue(V, Round(V), 1E-9);
+            Lo := Min(Lo, V);
+            Hi := Max(Hi, V);
+          end;
+          for I := 0 to 3 do
+            Inputs[I] := IfThen(I < Bytes, 255, 0);
+          V := F.Evaluate(Inputs, []);
+          if not IsNan(V) and not IsInfinite(V) then
+          begin
+            Lo := Min(Lo, V);
+            Hi := Max(Hi, V);
+          end;
+          if Whole then
+            Span := 1000
+          else if Hi > Lo then
+            Span := Hi - Lo;
+        end;
+      finally
+        F.Free;
+      end;
+    except
+      // a formula that does not compile: keep the units' guess
+    end;
+  // Two-byte times read to 0.015 ms over 0..1000 ms; real ones are 1..20 ms.
+  if U = 'ms' then
+    Span := Min(Span, 20);
+  if Pos('%d', LowerCase(ResultFormat)) > 0 then
+    Span := 1000;
+  if Span >= 50 then
+    FTidyDecimals := 0
+  else if Span > 6 then
+    FTidyDecimals := 1
+  else
+    FTidyDecimals := 2;
+  Result := FTidyDecimals;
+end;
+
+function TPidDef.FormatValue(const Value: Double; Decimals: Integer): string;
 var
   V: Double;
   Fmt, Token: string;
   I: Integer;
   AsWord: string;
+
+  function Fixed(X: Double): string;
+  begin
+    Result := FormatFloat('0.' + StringOfChar('0', Decimals), X, TFormatSettings.Invariant);
+    if Result.StartsWith('-') and (Result.Trim(['-', '0', '.']) = '') then
+      Delete(Result, 1, 1); // -0.2 rounds to 0, not -0
+  end;
+
 begin
   if IsNan(Value) or IsInfinite(Value) then
     Exit('--');
@@ -268,6 +359,8 @@ begin
       Result := FormatFloat('0.###', V, TFormatSettings.Invariant);
     Inc(I, 2);
   end;
+  if (Decimals >= 0) and (Pos('%d', Fmt) = 0) then
+    Result := Fixed(V);
   if AsWord <> '' then
     Result := AsWord;
 end;

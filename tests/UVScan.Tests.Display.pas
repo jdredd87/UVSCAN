@@ -6,7 +6,8 @@ unit UVScan.Tests.Display;
 interface
 
 uses
-  System.SysUtils, System.Math, System.UITypes, System.JSON, System.IOUtils, DUnitX.TestFramework,
+  System.SysUtils, System.Math, System.UITypes, System.JSON, System.IOUtils, System.Generics.Collections,
+  DUnitX.TestFramework,
   UVScan.Display, UVScan.Alerts, UVScan.Defaults, UVScan.JsonFile, UVScan.Pids;
 
 type

@@ -154,6 +154,11 @@ begin
     MaxValue := 18;
     Exit;
   end;
+  if U = 'ms' then
+  begin
+    MaxValue := 20; // injector pulse: the formula reaches 1000 ms
+    Exit;
+  end;
   if U = '%' then
   begin
     if (P.Kind = pkVehicle) and (Pos('TRIM', UpperCase(P.LongName)) > 0) then

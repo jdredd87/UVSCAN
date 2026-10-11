@@ -31,7 +31,7 @@ function StringsToJson(const Items: TArray<string>): TJSONArray;
 implementation
 
 uses
-  {$IFDEF MSWINDOWS}Winapi.Windows,{$ELSE}Posix.Stdio,{$ENDIF} System.IOUtils;
+  {$IFDEF MSWINDOWS}Winapi.Windows,{$ELSE}Posix.Stdio,{$ENDIF} System.IOUtils, System.Generics.Collections;
 
 function ParseJsonObject(const Text, Source: string): TJSONObject;
 var

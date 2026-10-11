@@ -62,6 +62,7 @@ type
     lblTheme: TLabel;
     cbTheme: TComboBox;
     chkKeepAwake: TCheckBox;
+    chkRound: TCheckBox;
     gbAlerts: TGroupBox;
     chkSound: TCheckBox;
     gbStream: TGroupBox;
@@ -187,6 +188,7 @@ type
     procedure lbMoreItemClick(const Sender: TCustomListBox; const Item: TListBoxItem);
     procedure cbThemeChange(Sender: TObject);
     procedure chkKeepAwakeChange(Sender: TObject);
+    procedure chkRoundChange(Sender: TObject);
     procedure btnRefreshPortsClick(Sender: TObject);
     procedure btnConnectClick(Sender: TObject);
     procedure btnDisconnectClick(Sender: TObject);
@@ -413,6 +415,8 @@ type
     function TestSnapshot: TLiveSnapshot;
     function LiveActive: Boolean;
     procedure RefreshLiveRows;
+    function ReadingText(P: TPidDef; const Value: Double): string;
+    function LiveValueText(I: Integer; P: TPidDef): string;
     procedure UpdateAlerts;
     procedure ApplyRowHeights;
     function LiveIndexOf(PidId: Integer): Integer;
@@ -875,7 +879,7 @@ begin
 
   AddMore('Real-time controls', 'Switch outputs, hold values, reset learned values', tiControls);
   AddMore('Tools', 'Write VIN, raw AVT frames, PID discovery', tiTools);
-  AddMore('Settings', 'Theme, alert sounds, log folder, stream speed', tiSettings);
+  AddMore('Settings', 'Theme, rounding, alert sounds, log folder, stream speed', tiSettings);
   AddMore('Messages', 'Connection log and raw traffic', tiMessages);
 
   // Gauges page: a round + to add a gauge, and a hint while there are none.
@@ -1438,6 +1442,37 @@ begin
   SaveSettings;
 end;
 
+procedure TMainForm.chkRoundChange(Sender: TObject);
+begin
+  if not FChromeReady then
+    Exit;
+  FSettings.RoundReadings := chkRound.IsChecked;
+  SaveSettings;
+  FShownRows := nil;
+  RefreshLiveRows;
+  RefreshDashboard;
+end;
+
+{ A reading as the live grid and the gauges show it. }
+function TMainForm.ReadingText(P: TPidDef; const Value: Double): string;
+begin
+  if FSettings.RoundReadings then
+    Result := P.FormatValue(Value, P.TidyDecimals)
+  else
+    Result := P.FormatValue(Value);
+end;
+
+{ Live row I's current reading ('' before the first one). }
+function TMainForm.LiveValueText(I: Integer; P: TPidDef): string;
+begin
+  if (I > High(FLive.Text)) or (FLive.Text[I] = '') then
+    Exit('');
+  if FSettings.RoundReadings and (I <= High(FLive.Values)) then
+    Result := ReadingText(P, FLive.Values[I])
+  else
+    Result := FLive.Text[I];
+end;
+
 procedure TMainForm.ThemeChanged(const Sender: TObject; const M: TMessage);
 begin
   ApplyPalette;
@@ -1608,12 +1643,17 @@ begin
   Y := Row(lblTheme, cbTheme, nil, gbAppearance);
   if gbAppearance.Width >= 50 then
   begin
-    // the check box wraps on a narrow screen
+    // the check boxes wrap on a narrow screen
     Wide(chkKeepAwake, gbAppearance);
     chkKeepAwake.TextSettings.WordWrap := True;
     chkKeepAwake.Height := Max(30, WrappedTextHeight(chkKeepAwake, chkKeepAwake.Width - 40) + 8);
     chkKeepAwake.Position.Y := Y;
-    gbAppearance.Height := Y + chkKeepAwake.Height + 10;
+    Y := Y + chkKeepAwake.Height + 4;
+    Wide(chkRound, gbAppearance);
+    chkRound.TextSettings.WordWrap := True;
+    chkRound.Height := Max(30, WrappedTextHeight(chkRound, chkRound.Width - 40) + 8);
+    chkRound.Position.Y := Y;
+    gbAppearance.Height := Y + chkRound.Height + 10;
   end;
   Y := Row(lblLogFolderCaption, edtLogFolder, btnBrowseLogFolder, gbLogging);
   if cbAway.Visible then
@@ -1629,6 +1669,7 @@ begin
   Wide(chkTrace, gbAdvanced);
   Wide(chkSound, gbAlerts);
   Wide(chkKeepAwake, gbAppearance);
+  Wide(chkRound, gbAppearance);
   Wide(lblDiscoverHelp, gbDiscover);
   lblDiscoverHelp.WordWrap := True;
   // Advanced: caption, then the frame row, then the trace box, one under another.
@@ -2023,6 +2064,7 @@ begin
   cbTheme.ItemIndex := Ord(ThemeModeFromKey(FSettings.Theme));
   chkKeepAwake.IsChecked := FSettings.KeepScreenOn;
   KeepAwake(FSettings.KeepScreenOn);
+  chkRound.IsChecked := FSettings.RoundReadings;
   for N in FSettings.SelectedPids do
     if (FCatalog.FindById(N) <> nil) and FCatalog.FindById(N).Enabled and not FSelected.Contains(N) then
       FSelected.Add(N);
@@ -3468,7 +3510,7 @@ begin
     P := FCatalog.FindById(FLiveIds[I]);
     if (P = nil) or (I > High(FLive.Text)) then
       Continue;
-    Shown := FLive.Text[I] + #1 + P.FormatValue(FMin[I]) + #1 + P.FormatValue(FMax[I]) + #1 +
+    Shown := LiveValueText(I, P) + #1 + ReadingText(P, FMin[I]) + #1 + ReadingText(P, FMax[I]) + #1 +
       IntToStr(FRowStyles[I].Level);
     if Shown <> FShownRows[I] then
     begin
@@ -3494,11 +3536,11 @@ begin
     ColValue:
       if FRejected.Contains(P.Id) then
         Text := 'rejected'
-      else if Row <= High(FLive.Text) then
-        Text := FLive.Text[Row];
+      else
+        Text := LiveValueText(Row, P);
     ColUnits: Text := P.Units;
-    ColMin: if Row <= High(FMin) then Text := P.FormatValue(FMin[Row]);
-    ColMax: if Row <= High(FMax) then Text := P.FormatValue(FMax[Row]);
+    ColMin: if Row <= High(FMin) then Text := ReadingText(P, FMin[Row]);
+    ColMax: if Row <= High(FMax) then Text := ReadingText(P, FMax[Row]);
   end;
 end;
 
@@ -4756,7 +4798,7 @@ begin
     else if Idx <= High(FLive.Values) then
     begin
       V := FLive.Values[Idx];
-      Text := FLive.Text[Idx];
+      Text := LiveValueText(Idx, P);
       if Text = '' then
         Text := '-';
     end;
