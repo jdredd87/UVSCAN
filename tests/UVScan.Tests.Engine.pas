@@ -26,6 +26,7 @@ type
   public
     [Setup] procedure Setup;
     [TearDown] procedure TearDown;
+    [Test] procedure FreeingAnIdleEngineIsQuiet;
     [Test] procedure ConnectsAndReadsVehicleInfo;
     [Test] procedure ConnectsWhenAvtHoldsHalfAFrame;
     [Test] procedure ScansAndDecodesValues;
@@ -306,6 +307,35 @@ begin
   finally
     FreeSocket(Listener);
   end;
+end;
+
+{ Freed while it waits for a command (as when the app closes): no error.
+  Seen with UVScanProbe on a laptop: an access violation in DoConnect. }
+procedure TEngineTests.FreeingAnIdleEngineIsQuiet;
+var
+  I, Errors, Connects: Integer;
+  E: TScanEngine;
+begin
+  // Its events go through TThread.Queue and are dropped when it is freed,
+  // unless WaitFor happens to deliver them first: so try a few times.
+  Errors := 0;
+  Connects := 0;
+  for I := 1 to 20 do
+  begin
+    E := TScanEngine.Create(FCatalog,
+      procedure(const Ev: TEngineEvent)
+      begin
+        if Ev.Kind = eeError then
+          Inc(Errors);
+        if (Ev.Kind = eeState) and (Ev.State = esBusy) then
+          Inc(Connects);
+      end);
+    Sleep(30); // waiting in the command queue by now
+    E.Free;
+    CheckSynchronize(0);
+  end;
+  Assert.AreEqual(0, Errors, 'errors while shutting down');
+  Assert.AreEqual(0, Connects, 'tried to connect while shutting down');
 end;
 
 procedure TEngineTests.ConnectsAndReadsVehicleInfo;

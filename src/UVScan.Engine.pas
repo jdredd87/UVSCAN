@@ -569,6 +569,11 @@ begin
         end;
       if FCommands.PopItem(Cmd) = wrSignaled then
       begin
+        // Being freed: once the queue is shut down, an empty one hands out an
+        // empty command (wrSignaled, Kind 0 = ecConnect without a port), which
+        // crashed in DoConnect and sent an error to a form being destroyed.
+        if Terminated then
+          Break;
         TInterlocked.Exchange(FCancel, 0);
         try
           Execute_(Cmd);
@@ -691,6 +696,8 @@ var
   Ok: Boolean;
   Attempt: Integer;
 begin
+  if not Assigned(Factory) then
+    raise EArgumentException.Create('Connect: no port given');
   if FPort <> nil then
     DoDisconnect;
   FVehicle := Default(TVehicleInfo);
