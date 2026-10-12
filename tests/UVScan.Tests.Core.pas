@@ -1,4 +1,4 @@
-unit UVScan.Tests.Core;
+﻿unit UVScan.Tests.Core;
 
 interface
 
@@ -881,6 +881,10 @@ begin
   Assert.IsFalse(ParseQuickStartArgs(['-list'], nil, Q, Problem));
   Assert.Contains(Problem, 'needs a value');
   Assert.IsFalse(ParseQuickStartArgs(['-list', '-scan'], nil, Q, Problem), 'a switch is not a value');
+  Assert.IsFalse(ParseQuickStartArgs(['-adapter', 'obdlink'], nil, Q, Problem));
+  Assert.Contains(Problem, 'avt or elm327');
+  Assert.IsTrue(ParseQuickStartArgs(['-adapter', 'ELM327', '-port', 'COM4'], nil, Q, Problem), Problem);
+  Assert.AreEqual('elm327', Q.Adapter);
 end;
 
 procedure TQuickStartTests.ArgumentsParseBack;
@@ -895,6 +899,7 @@ begin
   A := DefaultQuickStarts[0];
   A.Dashboard := 'Fuel trims';
   A.Port := 'COM9';
+  A.Adapter := 'elm327';
   A.Chart := True;
   // Split like Windows does: spaces outside quotes; quotes dropped.
   Args := nil;
@@ -914,6 +919,7 @@ begin
       Part := Part + C;
   Assert.IsTrue(ParseQuickStartArgs(Args, nil, B, Problem), Problem);
   Assert.AreEqual(A.Port, B.Port);
+  Assert.AreEqual('elm327', B.Adapter);
   Assert.AreEqual(A.List, B.List);
   Assert.AreEqual(A.Dashboard, B.Dashboard);
   Assert.IsTrue((A.Connect = B.Connect) and (A.Scan = B.Scan) and (A.Log = B.Log) and (A.FullScreen = B.FullScreen) and
@@ -927,6 +933,7 @@ var
   J: TJSONArray;
 begin
   A := DefaultQuickStarts;
+  A[0].Adapter := 'elm327';
   J := QuickStartsToJson(A);
   try
     B := QuickStartsFromJson(J);
@@ -937,6 +944,7 @@ begin
   Assert.AreEqual(A[0].Name, B[0].Name);
   Assert.AreEqual(A[0].List, B[0].List);
   Assert.IsTrue(B[0].Log and B[0].FullScreen and B[0].Retry);
+  Assert.AreEqual('elm327', B[0].Adapter);
   Assert.AreEqual(0, IndexOfQuickStart(B, 'DRAG strip'));
 end;
 

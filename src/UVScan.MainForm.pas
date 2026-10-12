@@ -1205,7 +1205,8 @@ begin
   for var K := Low(TAdapterKind) to High(TAdapterKind) do
     cbAdapter.Items.Add(AdapterNames[K]);
   cbAdapter.ItemIndex := 0;
-  cbAdapter.Hint := 'The interface on the port: an AVT-841, or an ELM327 type adapter (Bluetooth, Wi-Fi or USB)';
+  cbAdapter.Hint := 'The interface on the port: an AVT (838, 841 or 842), or an ELM327 type adapter ' +
+    '(Bluetooth, Wi-Fi or USB)';
   cbAdapter.ShowHint := True;
   cbAdapter.OnChange := AdapterChanged;
   // A USB ELM327 usually runs at 38400.
@@ -2588,6 +2589,12 @@ begin
     AddMessage(Format('Quick start "%s": %s', [Q.Name, Q.Describe]))
   else
     AddMessage('Starting: ' + Q.Describe);
+  // The adapter first: a Bluetooth port then still makes it an ELM327.
+  if Q.Adapter <> '' then
+  begin
+    cbAdapter.ItemIndex := Ord(AdapterKindFromKey(Q.Adapter));
+    AdapterChanged(nil);
+  end;
   if Q.Port <> '' then
   begin
     PortName := Q.Port;
@@ -3706,7 +3713,8 @@ begin
       begin
         Result := CreateSerialPort(PortName, Baud, fcRtsCts);
       end;
-  SetStatus(spPort, PortName);
+  // What is connected, and where: "ELM327 on COM4", "AVT on COM3".
+  SetStatus(spPort, Format('%s on %s', [AdapterNames[Cmd.Adapter], PortName]));
   FConnecting := True; // until the engine reports a state (a slow network AVT takes seconds)
   Post(Cmd);
 end;
@@ -3850,8 +3858,13 @@ begin
       end;
     eeVehicleInfo:
       begin
-        lblFirmwareCaption.Text := IfThen(FConnectedAdapter = akElm327, 'Adapter', 'AVT firmware');
-        lblFirmware.Text := IfThen(Ev.Vehicle.Firmware = '', '-', Ev.Vehicle.Firmware);
+        // "AVT, firmware 04 13" or what the ELM327 says it is ("ELM327 v2.2").
+        if Ev.Vehicle.Firmware = '' then
+          lblFirmware.Text := AdapterNames[FConnectedAdapter]
+        else if FConnectedAdapter = akAvt then
+          lblFirmware.Text := 'AVT, firmware ' + Ev.Vehicle.Firmware
+        else
+          lblFirmware.Text := Ev.Vehicle.Firmware;
         lblVin.Text := IfThen(Ev.Vehicle.Vin = '', '-', Ev.Vehicle.Vin);
         lblOsid.Text := IfThen(Ev.Vehicle.Osid = '', '-', Ev.Vehicle.Osid);
         SetStatus(spVin, 'VIN ' + lblVin.Text);
@@ -3941,6 +3954,7 @@ begin
   Idle := FState = esConnected;
   cbPort.Enabled := FState = esDisconnected;
   cbBaud.Enabled := FState = esDisconnected;
+  cbAdapter.Enabled := FState = esDisconnected;
   edtTcpAddress.Enabled := FState = esDisconnected;
   btnRefreshPorts.Enabled := FState = esDisconnected;
   btnConnect.Enabled := FState = esDisconnected;

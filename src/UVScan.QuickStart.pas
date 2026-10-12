@@ -10,7 +10,8 @@ unit UVScan.QuickStart;
     UVScan.exe -list "Acceleration" -connect -scan -log -fullscreen -retry
     UVScan.exe -quick "Drag strip"
 
-  -port <name>        COM port, or host:port of an AVT on the network
+  -port <name>        COM port, or host:port of an adapter on the network
+  -adapter <kind>     avt or elm327 (otherwise the one chosen last)
   -list <name>        tick the PIDs of this scan list
   -dashboard <name>   show this dashboard (otherwise the scan list's, if any)
   -connect            connect at start
@@ -30,6 +31,7 @@ type
   TQuickStart = record
     Name: string;
     Port: string;         // '' = the port chosen last
+    Adapter: string;      // 'avt' or 'elm327', '' = the one chosen last
     List: string;         // scan list to tick, '' = keep the ticked PIDs
     Dashboard: string;    // dashboard to show, '' = the scan list's (if it has one)
     Connect: Boolean;
@@ -87,7 +89,7 @@ end;
 
 function TQuickStart.Any: Boolean;
 begin
-  Result := (Port <> '') or (List <> '') or (Dashboard <> '') or Connect or Scan or Log or FullScreen or Chart;
+  Result := (Port <> '') or (Adapter <> '') or (List <> '') or (Dashboard <> '') or Connect or Scan or Log or FullScreen or Chart;
 end;
 
 function TQuickStart.ToJson: TJSONObject;
@@ -96,6 +98,8 @@ begin
   Result.AddPair('name', Name);
   if Port <> '' then
     Result.AddPair('port', Port);
+  if Adapter <> '' then
+    Result.AddPair('adapter', Adapter);
   if List <> '' then
     Result.AddPair('list', List);
   if Dashboard <> '' then
@@ -113,6 +117,7 @@ begin
   Result := Default(TQuickStart);
   Result.Name := Trim(JStr(O, 'name'));
   Result.Port := Trim(JStr(O, 'port'));
+  Result.Adapter := LowerCase(Trim(JStr(O, 'adapter')));
   Result.List := Trim(JStr(O, 'list'));
   Result.Dashboard := Trim(JStr(O, 'dashboard'));
   Result.Connect := JBool(O, 'connect');
@@ -137,6 +142,8 @@ begin
   Parts := nil;
   if Port <> '' then
     Parts := Parts + ['-port ' + Quoted(Port)];
+  if Adapter <> '' then
+    Parts := Parts + ['-adapter ' + Adapter];
   if List <> '' then
     Parts := Parts + ['-list ' + Quoted(List)];
   if Dashboard <> '' then
@@ -222,6 +229,7 @@ begin
         end;
         // Its settings; switches before or after it add to them.
         Q.Port := IfThen(Q.Port <> '', Q.Port, Known[K].Port);
+        Q.Adapter := IfThen(Q.Adapter <> '', Q.Adapter, Known[K].Adapter);
         Q.List := IfThen(Q.List <> '', Q.List, Known[K].List);
         Q.Dashboard := IfThen(Q.Dashboard <> '', Q.Dashboard, Known[K].Dashboard);
         Q.Name := Known[K].Name;
@@ -236,6 +244,17 @@ begin
       begin
         if not Value(Q.Port) then
           Exit(False);
+      end
+      else if S = 'adapter' then
+      begin
+        if not Value(Q.Adapter) then
+          Exit(False);
+        Q.Adapter := LowerCase(Q.Adapter);
+        if (Q.Adapter <> 'avt') and (Q.Adapter <> 'elm327') then
+        begin
+          Problem := Format('-adapter is avt or elm327, not "%s"', [Q.Adapter]);
+          Exit(False);
+        end;
       end
       else if S = 'list' then
       begin

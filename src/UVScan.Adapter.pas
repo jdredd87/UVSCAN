@@ -124,7 +124,9 @@ type
   end;
 
 const
-  AdapterNames: array[TAdapterKind] of string = ('AVT-841', 'ELM327');
+  // An AVT-838, 841 or 842: the same host protocol (the old UVSCAN did not
+  // tell them apart either).
+  AdapterNames: array[TAdapterKind] of string = ('AVT', 'ELM327');
   AdapterKeys: array[TAdapterKind] of string = ('avt', 'elm327');
 
 function CreateAdapter(Kind: TAdapterKind; const Port: ISerialPort; const OnLog, OnTrace: TAdapterLog): TBusAdapter;

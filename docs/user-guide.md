@@ -1,6 +1,6 @@
 # UVScan user guide
 
-UVScan reads live data, trouble codes and vehicle information from GM vehicles on the **Class 2 / J1850 VPW** bus through an **AVT‑841** (or 838 / 842) interface, logs it to CSV, shows it as a grid or as gauges with alerts, and can send real‑time control commands. It was written for the 1996‑2005 GM V6s (3100 / 3400 / 3800) but works with any Class 2 PCM.
+UVScan reads live data, trouble codes and vehicle information from GM vehicles on the **Class 2 / J1850 VPW** bus through an **AVT‑841** (or 838 / 842) interface or an **ELM327** type adapter (Bluetooth, USB or Wi‑Fi), logs it to CSV, shows it as a grid or as gauges with alerts, and can send real‑time control commands. It was written for the 1996‑2005 GM V6s (3100 / 3400 / 3800) but works with any Class 2 PCM.
 
 - [The main window](#the-main-window)
 - [Phones and tablets](#phones-and-tablets)
@@ -84,7 +84,7 @@ A tablet held sideways keeps the PID list docked beside the pages:
 ## Connecting
 
 1. Plug the adapter into the vehicle (key on): an **AVT‑841** on the PC or phone (serial, USB, or the network), or an **ELM327** type adapter (Bluetooth, USB or Wi‑Fi; see [ELM327 adapters](#elm327-adapters)).
-2. On the *Connect* page choose the adapter (**AVT‑841** or **ELM327**), then its COM port, or on Android its USB adapter or paired Bluetooth adapter (**Refresh** re‑reads the list), and the baud rate (115200 for the AVT‑841, usually 38400 for a USB ELM327; Bluetooth has none). Choose **Simulator** to try UVScan without hardware: it acts as the adapter you chose.
+2. On the *Connect* page choose the adapter (**AVT**, for an AVT‑838, 841 or 842, or **ELM327**), then its COM port, or on Android its USB adapter or paired Bluetooth adapter (**Refresh** re‑reads the list), and the baud rate (115200 for the AVT‑841, usually 38400 for a USB ELM327; Bluetooth has none). Choose **Simulator** to try UVScan without hardware: it acts as the adapter you chose.
    An AVT with an **Ethernet port** (or any AVT behind a serial‑to‑network adapter) is **Network (TCP/IP)**: type its address and port in the box that appears, e.g. `192.168.2.99:10001` (port 10001 if you leave it out). It works the same from a PC or a phone on the same network. UVScan gives up after 5 seconds if nothing answers. (So far this has been tried only against the simulator; [testing with a network AVT](network-avt-testing.md) is a checklist for anyone who has one.)
 3. Press **Connect** (on the page or in the top bar). UVScan initialises the adapter, reads its firmware version, the VIN and the PCM operating system ID (shown in the status strip and under *Vehicle* on the *Connect* page).
 
@@ -112,7 +112,7 @@ When there is no time to set things up — at the drag strip, say — a **quick 
 - **Quick start…** on the *Connect* page (also in its **⋮** menu) lists them; pick one to run it. UVScan comes with **Drag strip**: the *Acceleration* scan list and dashboard, connect, scan, log, full screen, keep trying.
 - **New quick start…** starts from the scan list and dashboard chosen now; **Edit…** and **Delete…** pick one first. The page has its name, the **Scan list** (or *keep the ticked PIDs*), the **Dashboard** (or the scan list's own) and what to do then: *Connect*, *Start scanning*, *Start a log*, *Dashboard on the whole screen*, *Open the live chart*, *Keep trying to connect until the car answers*. A log needs a scan and a scan needs the connection, so ticking one ticks what it needs.
 - **Keep trying** connects again every 3 seconds while it is not connected — the adapter not plugged in yet, or the link to it lost later — and starts the scan and log again each time. A port chosen before that is not plugged in yet stays chosen, so a shortcut started before the adapter is plugged in connects as soon as it is. On a phone, being stopped for staying away from UVScan too long (*Settings → Logging*) ends the quick start: it does not connect again in the background. (If the PCM goes quiet during a scan, say the key is turned off, the scan itself keeps asking it to stream again.) The top bar's button says **Stop trying** meanwhile; **Stop**, **Disconnect** or that button end the quick start.
-- **Desktop shortcut for one…** (Windows) puts a shortcut on the desktop that starts UVScan straight into it. The shortcut holds the [command line](#keyboard-and-command-line) for it (e.g. `-list "Acceleration" -log -fullscreen -retry`), so it keeps working even if the quick start is renamed or deleted; it uses the adapter chosen last.
+- **Desktop shortcut for one…** (Windows) puts a shortcut on the desktop that starts UVScan straight into it. The shortcut holds the [command line](#keyboard-and-command-line) for it (e.g. `-list "Acceleration" -log -fullscreen -retry`), so it keeps working even if the quick start is renamed or deleted; it uses the port and adapter chosen last unless the quick start names them.
 
 <a href="media/phone-quick-start.mp4"><img src="media/phone-quick-start.webp" width="640" alt="A quick start on a phone held sideways"></a>
 
@@ -309,7 +309,7 @@ While scanning, **Start log (F8)** writes every update to a CSV file named `UVSc
 
 ![Trouble codes](images/trouble-codes.png)
 
-- **Read vehicle info** (on the *Connect* page) — AVT firmware, VIN and PCM OS ID.
+- **Read vehicle info** (on the *Connect* page) — VIN and PCM OS ID; the *Adapter* line says what is connected (*AVT, firmware 04 13* or *ELM327 v2.2*), and the status strip where (*ELM327 on COM4*).
 - **Read codes** (**Codes** in the tab bar) — trouble codes from every module that answers (PCM, TCM, ABS, BCM, …) with descriptions from `dtcs.json`.
 - **Clear codes** — asks first, then clears the PCM's codes (cycle the key and read again to confirm).
 
@@ -436,6 +436,7 @@ UVScan.exe -quick "Drag strip"
 | Switch | Does |
 |---|---|
 | `-port <name>` | The port: a COM port, `Simulator`, or an address such as `192.168.2.99:10001` for an AVT on the network. Without it, the port chosen last. |
+| `-adapter <kind>` | `avt` or `elm327`. Without it, the adapter chosen last (a Bluetooth port on Android is always an ELM327). |
 | `-list <name>` | Ticks the PIDs of this scan list. |
 | `-dashboard <name>` | Shows this dashboard (otherwise the scan list's, if it has one). |
 | `-connect` | Connects at start. |

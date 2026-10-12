@@ -527,7 +527,7 @@ object MainForm: TMainForm
               Size.Width = 100.000000000000000000
               Size.Height = 22.000000000000000000
               Size.PlatformDefault = False
-              Text = 'AVT firmware'
+              Text = 'Adapter'
             end
             object lblFirmware: TLabel
               StyledSettings = [Family, FontColor]

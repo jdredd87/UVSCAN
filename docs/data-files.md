@@ -151,7 +151,7 @@ Port and baud (and `connection.tcpAddress`, the `host:port` of an adapter on the
     "fullScreen": true, "chart": false, "retry": true } ]
 ```
 
-Optional: `"port"` (else the port chosen last) and `"dashboard"` (else the scan list's). A file without `quickStarts` gets *Drag strip*; an empty list stays empty.
+Optional: `"port"` (else the port chosen last), `"adapter"` (`avt` or `elm327`, else the one chosen last) and `"dashboard"` (else the scan list's). A file without `quickStarts` gets *Drag strip*; an empty list stays empty.
 
 ## CSV logs
 
