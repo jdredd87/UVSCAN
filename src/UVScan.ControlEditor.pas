@@ -101,6 +101,7 @@ uses
 const
   Modules: array[0..8] of Byte = ($10, $18, $20, $28, $40, $58, $60, $80, $C0);
   NarrowWidth = 560;
+  CaptionsAboveWidth = 340; // below this the captions go above their fields (a phone upright still has them beside)
   {$IFDEF MSWINDOWS}
   MonoFont = 'Consolas';
   {$ELSE}
@@ -175,13 +176,14 @@ end;
 
 procedure TControlEditorForm.FormResize(Sender: TObject);
 var
-  Narrow: Boolean;
-  W, PairW, H: Single;
+  Narrow, Above: Boolean;
+  W, PairW, H, BoxW: Single;
   PerRow, Rows, I: Integer;
   L: TLabel;
   Pairs: TArray<TLayout>;
 begin
   Narrow := InnerWidth(Self) < NarrowWidth;
+  Above := InnerWidth(Self) < CaptionsAboveWidth; // fewer rows, less scrolling
   // Name and group: side by side on a wide window, one under the other on a phone.
   if Narrow then
   begin
@@ -195,16 +197,25 @@ begin
     pairGroup.Margins.Left := 12;
   end;
   ArrangeCaptionRows([pairName, pairGroup, rowModule, rowOn, rowOff, rowConfirm],
-    [lblName, lblGroup, lblModule, lblOn, lblOff, lblConfirm], Narrow);
+    [lblName, lblGroup, lblModule, lblOn, lblOff, lblConfirm], Above);
   // (pairName's own height is the row's while it is left aligned)
-  if Narrow then
+  if Narrow and Above then
     rowName.Height := 2 * (26 + 36 + 6)
+  else if Narrow then
+    rowName.Height := 2 * (36 + 6)
   else
     rowName.Height := 36 + 6;
-  ArrangeCaptionRows([rowNotes], [lblNotes], Narrow, 80);
+  ArrangeCaptionRows([rowNotes], [lblNotes], Above, 80);
   lblSends.WordWrap := True;
-  H := Max(30, WrappedTextHeight(lblSends, Max(100, lblSends.Width)) + 6);
-  ArrangeCaptionRows([rowSends], [lblSendsCaption], Narrow, H);
+  // (from the window's width: the label's own is not settled yet on a phone)
+  lblSendsCaption.WordWrap := False;
+  FitTextWidth(lblSendsCaption);
+  if Above then
+    W := InnerWidth(Self) - 40
+  else
+    W := InnerWidth(Self) - 40 - lblSendsCaption.Width - 10;
+  H := Max(30, WrappedTextHeight(lblSends, Max(100, W)) + 6);
+  ArrangeCaptionRows([rowSends], [lblSendsCaption], Above, H);
   for L in [lblHelp, lblProblem] do
   begin
     // under the fields on a wide window, full width on a phone
@@ -232,15 +243,20 @@ begin
     Pairs[I].Width := PairW;
     Pairs[I].Height := 42;
   end;
-  PerRow := Max(1, Trunc((gbValue.Width - gbValue.Padding.Left - gbValue.Padding.Right) / PairW));
+  // (the boxes' own widths are not settled yet on a phone: from the window's)
+  BoxW := InnerWidth(Self) - gbValue.Margins.Left - gbValue.Margins.Right - 8;
+  PerRow := Max(1, Trunc((BoxW - gbValue.Padding.Left - gbValue.Padding.Right) / PairW));
   Rows := (Length(Pairs) + PerRow - 1) div PerRow;
   gbValue.Height := gbValue.Padding.Top + gbValue.Padding.Bottom + Rows * 42 + 4;
-  // Type: one per line on a phone, all on one line on a wide window.
+  // Type: two per line on a phone (one when very narrow), all on one line on
+  // a wide window.
+  PerRow := IfThen(Above, 1, 2);
   for I := 0 to High(FKindButtons) do
     if Narrow then
     begin
       FKindButtons[I].Align := TAlignLayout.None;
-      FKindButtons[I].SetBounds(gbKind.Padding.Left + 4, 28 + I * 36, gbKind.Width - 24, 34);
+      W := (InnerWidth(Self) - gbKind.Margins.Left - gbKind.Margins.Right - 32) / PerRow;
+      FKindButtons[I].SetBounds(gbKind.Padding.Left + 4 + (I mod PerRow) * W, 28 + (I div PerRow) * 36, W - 4, 34);
     end
     else
     begin
@@ -250,7 +266,7 @@ begin
       FitTextWidth(FKindButtons[I], 90);
     end;
   if Narrow then
-    gbKind.Height := 28 + Length(FKindButtons) * 36 + 6
+    gbKind.Height := 28 + ((Length(FKindButtons) + PerRow - 1) div PerRow) * 36 + 6
   else
     gbKind.Height := 28 + 34 + 8;
 end;
@@ -343,6 +359,13 @@ begin
     Exit;
   Kind := KindIndex;
   gbValue.Enabled := Kind = Ord(ckValue);
+  // Only a value control has a value: the box is not there otherwise (less to scroll).
+  if gbValue.Visible <> (Kind = Ord(ckValue)) then
+  begin
+    gbValue.Visible := Kind = Ord(ckValue);
+    if gbValue.Visible then
+      gbValue.Position.Y := lblHelp.Position.Y + lblHelp.Height + 1; // back in its place, after the help
+  end;
   lblOn.Text := IfThen(Kind = Ord(ckAction), 'Command', 'On command');
   lblOff.Text := IfThen(Kind = Ord(ckValue), 'Release', 'Off command');
   // An action is sent once and has nothing to undo.

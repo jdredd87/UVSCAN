@@ -211,7 +211,15 @@ They follow the **same alert levels** as the grid: the scale shows the levels as
 
 ![The Acceleration dashboard full screen](images/dashboard-full-screen.png)
 
-**One gauge, whole screen.** Tap or click a gauge and a round button shows on its top right corner for a few seconds; tap it and that gauge alone fills the screen (or right‑click / long‑press → **Fill the screen**). Tap the big gauge and its button again (or **Esc**, back, the corner button) for all the gauges; started from the normal page, that also leaves full screen.
+**Quick buttons on a gauge.** Tap or click a gauge and a row of round buttons shows on its top right corner for a few seconds:
+
+| Button | Does |
+|---|---|
+| ‹  › | Move the gauge earlier or later on the dashboard. The buttons stay with it, so tapping again keeps moving it. |
+| ⚙ | Edit the gauge (PID, style, size, scale, alert levels). |
+| ⛶ | That gauge alone fills the screen. On the big gauge it is the way back to all of them (so are **Esc**, back and the corner button); started from the normal page, that also leaves full screen. |
+
+The same are in the right‑click / long‑press menu (**Fill the screen**, **Move earlier / later**, **Edit gauge…**).
 
 **Fit gauges to the screen** (**⋮**, per dashboard) scales all the gauges up or down so they fill the page with no scrolling, keeping clear of the minimized chips and the **+** button. It works again whenever the window changes size or the phone turns; full screen always fits.
 

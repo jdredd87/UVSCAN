@@ -245,6 +245,10 @@ begin
   F.UpdateAlerts;
   F.UpdatePreview;
   F.FStart := F.StateText;
+  // A desktop: as tall as the screen allows (to 900), so the fields and a
+  // good-sized preview fit without scrolling (FitToScreen keeps it on it).
+  if not IsMobile and (Screen.DisplayCount > 0) then
+    F.ClientHeight := Round(Min(900, Screen.DisplayFromForm(Application.MainForm).Workarea.Height - 60));
   ShowDialog(F,
     procedure(R: TModalResult)
     var
@@ -485,7 +489,9 @@ end;
   the fields, so it stays in sight while they scroll. }
 procedure TGaugeEditorForm.FitLayout;
 var
-  W, H: Single;
+  W, H, Fields: Single;
+  I: Integer;
+  C: TControl;
 begin
   if FGaugeView = nil then
     Exit;
@@ -512,7 +518,16 @@ begin
     pnlPreview.Align := TAlignLayout.Top;
     pnlPreview.Position.Y := pnlBar.Height + 1; // under the bar
     pnlPreview.Margins.Bottom := 0;
-    pnlPreview.Height := EnsureRange(H * 0.32, 160, 300);
+    // The fields all on the screen, no scrolling (in a car every scroll
+    // counts): the preview gets what they leave, 110 to 300 high.
+    Fields := sbBody.Padding.Top + sbBody.Padding.Bottom + 16;
+    for I := 0 to sbBody.Content.ControlsCount - 1 do
+    begin
+      C := sbBody.Content.Controls[I];
+      if C.Visible and (C.Align = TAlignLayout.Top) then
+        Fields := Fields + C.Height + C.Margins.Top + C.Margins.Bottom;
+    end;
+    pnlPreview.Height := EnsureRange(H - pnlBar.Height - pnlPreview.Margins.Top - Fields, 110, 300);
   end;
   UpdatePreview;
 end;
@@ -564,8 +579,7 @@ begin
   else
     D := FSettings.Find(P.Id);
   if (D = nil) or (Length(D.Levels) = 0) then
-    S := 'None. Alert levels colour the gauge''s scale and card and can flash or sound when a value goes ' +
-      'too high or too low.'
+    S := 'None (colours, flashing and sounds for values too high or low)'
   else
   begin
     S := '';

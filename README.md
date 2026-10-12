@@ -10,7 +10,7 @@ It is a rewrite of the 2008 UVSCAN (Delphi 2007, kept in [`legacy/`](legacy) for
 
 - **Live data** — streams up to 48 bytes of PIDs from the PCM (about 10 updates a second for small selections), with min / max, calculated PIDs and AVT analog inputs. Rows go in the order you put them (also while scanning), readings are rounded to steady, readable decimals, and the grid zooms from 75 % to 250 %.
 - **Alerts** — per PID colours and green / yellow / red style alert levels that recolour the row, flash and sound an alarm (knock retard, coolant temperature, voltage, …).
-- **Dashboard** — dial, bar and big‑number gauges using the same alert levels; several dashboards (one for each built‑in scan list), and **full screen** as a virtual dash.
+- **Dashboard** — dial, bar and big‑number gauges using the same alert levels; several dashboards (one for each built‑in scan list), **full screen** as a virtual dash, one gauge filling the screen, and quick buttons on a tapped gauge to move or edit it.
 - **Quick start** — one tap (or a desktop shortcut) to pick a scan list and dashboard, connect, scan, log and go full screen, retrying until the car answers.
 - **Test display** — made‑up values sweep every PID through its range so colours, alerts and gauges can be tried without a car.
 - **CSV logging** — F8 start / stop, F9 pause.

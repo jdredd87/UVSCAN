@@ -716,7 +716,7 @@ object MainForm: TMainForm
             Size.Height = 30.000000000000000000
             Size.PlatformDefault = False
             TextSettings.FontColor = xFF707070
-            Text = 'Right-click a gauge to change, move or remove it.'
+            Text = 'Click a gauge to move, edit or enlarge it; right-click for more.'
           end
         end
         object sbDash: TVertScrollBox

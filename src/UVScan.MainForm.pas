@@ -348,7 +348,9 @@ type
     FFullState: TRectangle;          // full screen, not scanning: what is going on (no status strip there)
     FFocusGauge: Integer;            // the one gauge filling the screen, -1 = all of them
     FFocusWasFull: Boolean;          // full screen was on before (stays on after)
-    FFocusBtn: TCircle;              // shown on a tapped gauge: fill the screen with it (or back)
+    FGaugeBar: TLayout;              // shown on a tapped gauge: earlier, later, edit, fill the screen
+    FBarEarlier, FBarLater, FBarEdit: TCircle;
+    FFocusBtn: TCircle;              // (in FGaugeBar) fill the screen with the gauge, or back
     FFocusFor: Integer;              // the gauge FFocusBtn is for
     FFocusHideAt: UInt64;            // tick count FFocusBtn goes again
     FFocusItem: TMenuItem;           // gauge menu: Fill the screen
@@ -411,6 +413,10 @@ type
     procedure PlaceExitFull;
     procedure UpdateFullState;
     procedure FocusBtnClick(Sender: TObject);
+    procedure ShowGaugeBar(Index: Integer);
+    procedure HideGaugeBar;
+    procedure GaugeBarMoveClick(Sender: TObject);
+    procedure GaugeBarEditClick(Sender: TObject);
     procedure FocusGauge(Index: Integer);
     procedure FocusItemClick(Sender: TObject);
     procedure GaugeClick(Sender: TObject);
@@ -876,6 +882,31 @@ procedure TMainForm.BuildChrome;
     FMorePages := FMorePages + [Page];
   end;
 
+  function AddIcon(Button: TControl): TPath; forward;
+
+  function BarButton(const PathData, Hint: string; Handler: TNotifyEvent; Tag: Integer): TCircle;
+  var
+    P: TPath;
+  begin
+    Result := TCircle.Create(Self);
+    Result.Parent := FGaugeBar;
+    Result.Stored := False;
+    Result.Width := 46;
+    Result.Height := 46;
+    Result.Stroke.Kind := TBrushKind.None;
+    Result.Fill.Color := $E8FFFFFF;
+    Result.HitTest := True;
+    Result.Cursor := crHandPoint;
+    Result.Hint := Hint;
+    Result.ShowHint := True;
+    Result.OnClick := Handler;
+    Result.Tag := Tag;
+    P := AddIcon(Result);
+    P.Data.Data := PathData;
+    P.Fill.Kind := TBrushKind.None;
+    P.Stroke.Color := $FF1E242C;
+  end;
+
   function AddIcon(Button: TControl): TPath;
   begin
     Result := TPath.Create(Self);
@@ -999,23 +1030,22 @@ begin
   Icon := AddIcon(FExitFull);
   Icon.Data.Data := 'M9 4 L9 9 L4 9 M15 4 L15 9 L20 9 M20 15 L15 15 L15 20 M9 20 L9 15 L4 15';
   Icon.Fill.Kind := TBrushKind.None;
-  // A tapped gauge gets a round button to fill the screen with it.
+  // A tapped gauge gets a row of round buttons on its corner: move it
+  // earlier or later, edit it, fill the screen with it.
   FFocusGauge := -1;
-  FFocusBtn := TCircle.Create(Self);
-  FFocusBtn.Parent := tiDashboard;
-  FFocusBtn.Stored := False;
-  FFocusBtn.SetBounds(0, 0, 46, 46);
-  FFocusBtn.Stroke.Kind := TBrushKind.None;
-  FFocusBtn.Fill.Color := $E0FFFFFF;
-  FFocusBtn.HitTest := True;
-  FFocusBtn.Cursor := crHandPoint;
-  FFocusBtn.ShowHint := True;
-  FFocusBtn.OnClick := FocusBtnClick;
-  FFocusBtn.Visible := False;
-  Icon := AddIcon(FFocusBtn);
-  Icon.Data.Data := 'M4 9 L4 4 L9 4 M15 4 L20 4 L20 9 M20 15 L20 20 L15 20 M9 20 L4 20 L4 15';
-  Icon.Fill.Kind := TBrushKind.None;
-  Icon.Stroke.Color := $FF1E242C;
+  FGaugeBar := TLayout.Create(Self);
+  FGaugeBar.Parent := tiDashboard;
+  FGaugeBar.Stored := False;
+  FGaugeBar.HitTest := False;
+  FGaugeBar.Visible := False;
+  FBarEarlier := BarButton('M15 4 L7 12 L15 20', 'Move earlier', GaugeBarMoveClick, -1);
+  FBarLater := BarButton('M9 4 L17 12 L9 20', 'Move later', GaugeBarMoveClick, 1);
+  FBarEdit := BarButton(
+    'M12 8.5 A3.5 3.5 0 1 0 12 15.5 A3.5 3.5 0 1 0 12 8.5 Z ' +
+    'M12 2 L12 5 M12 19 L12 22 M2 12 L5 12 M19 12 L22 12 ' +
+    'M4.9 4.9 L7 7 M17 17 L19.1 19.1 M4.9 19.1 L7 17 M17 7 L19.1 4.9', 'Edit gauge', GaugeBarEditClick, 0);
+  FFocusBtn := BarButton('M4 9 L4 4 L9 4 M15 4 L20 4 L20 9 M20 15 L20 20 L15 20 M9 20 L4 20 L4 15',
+    'Fill the screen with this gauge', FocusBtnClick, 0);
   FFocusItem := TMenuItem.Create(Self);
   FFocusItem.Stored := False;
   FFocusItem.Text := 'Fill the screen';
@@ -1183,7 +1213,7 @@ begin
   if IsMobile then
   begin
     btnBrowseLogFolder.Visible := False; // no folder picker on a phone
-    lblDashHint.Text := 'Long-press a gauge to change, move or remove it.';
+    lblDashHint.Text := 'Tap a gauge to move, edit or enlarge it; long-press for more.';
     WindowState := TWindowState.wsMaximized;
     KeepInSafeArea(Self);
     OnSafeAreaChanged := SafeAreaChanged; // like KeepInSafeArea's, but full screen keeps its own
@@ -3914,7 +3944,7 @@ begin
   if (FFocusHideAt <> 0) and (TThread.GetTickCount64 >= FFocusHideAt) then
   begin
     FFocusHideAt := 0;
-    FFocusBtn.Visible := False;
+    HideGaugeBar;
   end;
   if FQuickActive and FQuick.Retry and (FState = esDisconnected) and not FConnecting then
   begin
@@ -5655,8 +5685,8 @@ begin
   ApplyDashBackground;
   if FFocusGauge >= FDisplay.Gauges.Count then
     FFocusGauge := -1;
-  if FFocusBtn <> nil then
-    FFocusBtn.Visible := False;
+  if FGaugeBar <> nil then
+    FGaugeBar.Visible := False;
   for View in FGaugeViews do
     View.Free;
   FGaugeViews.Clear;
@@ -5699,8 +5729,8 @@ begin
     lblDashHint.Text := IfThen(IsMobile, 'No gauges yet: press Add gauge, or long-press a PID.',
       'No gauges yet: press Add gauge, or right-click a PID and choose Add to dashboard.')
   else
-    lblDashHint.Text := IfThen(IsMobile, 'Long-press a gauge to change, move or remove it. Double-tap to edit.',
-      'Right-click a gauge to change, move or remove it. Double-click to edit.');
+    lblDashHint.Text := IfThen(IsMobile, 'Tap a gauge to move, edit or enlarge it; long-press for more.',
+      'Click a gauge to move, edit or enlarge it; right-click for more.');
   LayoutDashboard;
   RefreshDashboard;
 end;
@@ -6262,23 +6292,12 @@ begin
     Exit;
   if not FDisplay.Gauges[I].Minimized then
   begin
-    // A round button on its top right corner for a few seconds: fill the
-    // screen with this gauge (or, filling it, back to all of them).
-    FFocusFor := I;
-    if FFocusGauge >= 0 then
-      TPath(FFocusBtn.Controls[0]).Data.Data := 'M9 4 L9 9 L4 9 M15 4 L15 9 L20 9 M20 15 L15 15 L15 20 M9 20 L9 15 L4 15'
+    // The tapped gauge's buttons, on its top right corner for a few seconds
+    // (tapped again: gone again).
+    if FGaugeBar.Visible and (FFocusFor = I) then
+      HideGaugeBar
     else
-      TPath(FFocusBtn.Controls[0]).Data.Data := 'M4 9 L4 4 L9 4 M15 4 L20 4 L20 9 M20 15 L20 20 L15 20 M9 20 L4 20 L4 15';
-    if FFocusGauge >= 0 then
-      FFocusBtn.Hint := 'Back to all gauges'
-    else
-      FFocusBtn.Hint := 'Fill the screen with this gauge';
-    with TControl(Sender) do
-      FFocusBtn.Position.Point := FFocusBtn.ParentControl.AbsoluteToLocal(
-        LocalToAbsolute(TPointF.Create(Width - FFocusBtn.Width - 6, 6)));
-    FFocusBtn.Visible := True;
-    FFocusBtn.BringToFront;
-    FFocusHideAt := TThread.GetTickCount64 + 5000;
+      ShowGaugeBar(I);
     Exit;
   end;
   G := FDisplay.Gauges[I];
@@ -6288,10 +6307,88 @@ begin
   LayoutDashboard;
 end;
 
+{ The tapped gauge's buttons: move earlier / later, edit, fill the screen
+  (filling it: only the way back and edit). }
+procedure TMainForm.ShowGaugeBar(Index: Integer);
+const
+  Size = 46;
+  Gap = 8;
+var
+  View: TControl;
+  Btns: TArray<TCircle>;
+  B: TCircle;
+  X: Single;
+  TopRight: TPointF;
+begin
+  if (Index < 0) or (Index >= FGaugeViews.Count) then
+    Exit;
+  FFocusFor := Index;
+  View := FGaugeViews[Index];
+  if FFocusGauge >= 0 then
+  begin
+    TPath(FFocusBtn.Controls[0]).Data.Data := 'M9 4 L9 9 L4 9 M15 4 L15 9 L20 9 M20 15 L15 15 L15 20 M9 20 L9 15 L4 15';
+    FFocusBtn.Hint := 'Back to all gauges';
+    Btns := [FBarEdit, FFocusBtn];
+  end
+  else
+  begin
+    TPath(FFocusBtn.Controls[0]).Data.Data := 'M4 9 L4 4 L9 4 M15 4 L20 4 L20 9 M20 15 L20 20 L15 20 M9 20 L4 20 L4 15';
+    FFocusBtn.Hint := 'Fill the screen with this gauge';
+    Btns := [FBarEarlier, FBarLater, FBarEdit, FFocusBtn];
+  end;
+  FBarEarlier.Visible := False;
+  FBarLater.Visible := False;
+  X := 0;
+  for B in Btns do
+  begin
+    B.Visible := True;
+    B.SetBounds(X, 0, Size, Size);
+    X := X + Size + Gap;
+  end;
+  FBarEarlier.Opacity := IfThen(Index > 0, 1, 0.4);
+  FBarLater.Opacity := IfThen(Index < FGaugeViews.Count - 1, 1, 0.4);
+  // On the gauge's top right corner, kept on the page.
+  TopRight := FGaugeBar.ParentControl.AbsoluteToLocal(View.LocalToAbsolute(TPointF.Create(View.Width - 6, 6)));
+  FGaugeBar.SetBounds(Max(4, TopRight.X - (X - Gap)), Max(4, TopRight.Y), X - Gap, Size);
+  FGaugeBar.Visible := True;
+  FGaugeBar.BringToFront;
+  FFocusHideAt := TThread.GetTickCount64 + 5000;
+end;
+
+procedure TMainForm.HideGaugeBar;
+begin
+  FFocusHideAt := 0;
+  if FGaugeBar <> nil then
+    FGaugeBar.Visible := False;
+end;
+
+procedure TMainForm.GaugeBarMoveClick(Sender: TObject);
+var
+  Delta, I: Integer;
+begin
+  Delta := TComponent(Sender).Tag;
+  I := FFocusFor;
+  if (I + Delta < 0) or (I + Delta >= FDisplay.Gauges.Count) then
+    Exit;
+  FMenuGauge := I;
+  MoveGauge(Delta);
+  // The buttons follow the gauge to its new place (after the rebuild).
+  TThread.ForceQueue(nil,
+    procedure
+    begin
+      ShowGaugeBar(I + Delta);
+    end);
+end;
+
+procedure TMainForm.GaugeBarEditClick(Sender: TObject);
+begin
+  HideGaugeBar;
+  EditGauge(FFocusFor);
+end;
+
 procedure TMainForm.FocusBtnClick(Sender: TObject);
 begin
-  FFocusBtn.Visible := False;
-  FFocusHideAt := 0;
+  HideGaugeBar;
   if FFocusGauge >= 0 then
     FocusGauge(-1)
   else

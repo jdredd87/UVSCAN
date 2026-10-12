@@ -524,7 +524,9 @@ begin
   pnlDetail.Height := Y + gbTest.Height + 16;
 end;
 
-{ Narrow window: every caption above its field, one under the other. }
+{ Narrow window: the fields one under the other, each caption beside its
+  field when there is room (a phone held upright has it: half the height,
+  less scrolling), else above it. }
 procedure TPidEditorForm.StackDetail;
 type
   TPair = record
@@ -540,7 +542,8 @@ type
 var
   Pairs: TArray<TPair>;
   P: TPair;
-  Y, W, H, TY: Single;
+  Y, W, H, TY, CapW, FX, FW: Single;
+  Beside: Boolean;
 begin
   W := sbDetail.Width - 40;
   if W < 100 then
@@ -550,6 +553,17 @@ begin
     Pair(lblCategory, cbCategory), Pair(lblPid, edtPid), Pair(lblBytes, cbBytes), Pair(lblChannel, cbChannel),
     Pair(lblFormula, edtFormula), Pair(nil, lblFormulaStatus), Pair(lblFormat, cbFormat), Pair(nil, lblFormatHelp),
     Pair(lblMci, edtMci), Pair(nil, lblMciHelp), Pair(nil, gbTest)];
+  // Captions beside the fields: as wide as the widest, if the fields keep 60 %.
+  CapW := 0;
+  for P in Pairs do
+    if P.Cap <> nil then
+    begin
+      TLabel(P.Cap).WordWrap := False;
+      TLabel(P.Cap).Align := TAlignLayout.None;
+      FitTextWidth(P.Cap);
+      CapW := Max(CapW, P.Cap.Width + 12);
+    end;
+  Beside := (CapW > 0) and (CapW <= W * 0.4);
   Y := 10;
   for P in Pairs do
   begin
@@ -563,12 +577,25 @@ begin
       Continue;
     // Positions here are final: right anchors would shrink fields later.
     P.Ctl.Anchors := [TAnchorKind.akLeft, TAnchorKind.akTop];
+    FX := 16;
+    FW := W;
     if P.Cap <> nil then
     begin
       P.Cap.Anchors := [TAnchorKind.akLeft, TAnchorKind.akTop];
       TLabel(P.Cap).WordWrap := False;
-      P.Cap.SetBounds(16, Y, W, 24);
-      Y := Y + 26;
+      if Beside then
+      begin
+        TLabel(P.Cap).TextSettings.VertAlign := TTextAlign.Center;
+        P.Cap.SetBounds(16, Y, CapW, 40);
+        FX := 16 + CapW;
+        FW := W - CapW;
+      end
+      else
+      begin
+        TLabel(P.Cap).TextSettings.VertAlign := TTextAlign.Leading;
+        P.Cap.SetBounds(16, Y, W, 24);
+        Y := Y + 26;
+      end;
     end;
     if P.Ctl is TLabel then
     begin
@@ -593,8 +620,11 @@ begin
     end
     else
       H := 40;
-    P.Ctl.SetBounds(16, Y, W, H);
-    Y := Y + H + 10;
+    if P.Ctl = gbTest then
+      P.Ctl.SetBounds(16, Y, W, H)
+    else
+      P.Ctl.SetBounds(FX, Y, FW, H);
+    Y := Y + H + IfThen(Beside, 6, 10);
   end;
   pnlDetail.Height := Y + 10;
 end;
