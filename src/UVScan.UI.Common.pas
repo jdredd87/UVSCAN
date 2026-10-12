@@ -49,6 +49,11 @@ const
     (Name: 'Magenta'; Color: $FFFF00C0),
     (Name: 'Brown'; Color: $FF8B5A2B));
 
+{ A picture from the user: a file dialog on Windows, the photo picker on a
+  phone. OnPicked gets it (at most about MaxSize pixels across on a phone);
+  nothing happens when they cancel. }
+procedure PickPicture(Control: TControl; const Title: string; MaxSize: Integer; const OnPicked: TProc<TBitmap>);
+
 { Message boxes. OnClose / OnYes may be nil. }
 procedure ShowInfo(const Msg: string; const OnClose: TProc = nil);
 procedure ShowWarning(const Msg: string; const OnClose: TProc = nil);
@@ -175,7 +180,7 @@ uses
   FMX.Effects, UVScan.UI.Theme
   {$IFDEF MSWINDOWS}, Winapi.Windows, Winapi.Messages{$ENDIF}
   {$IFDEF ANDROID}, Androidapi.Helpers, Androidapi.JNI.App, Androidapi.JNI.GraphicsContentViewText,
-  Androidapi.JNIBridge, FMX.Helpers.Android, FMX.VirtualKeyboard{$ENDIF};
+  Androidapi.JNIBridge, FMX.Helpers.Android, FMX.VirtualKeyboard, FMX.MediaLibrary{$ENDIF};
 
 {$IFDEF MSWINDOWS}
 type
@@ -904,6 +909,94 @@ begin
         OnClose();
     end);
 end;
+
+{$IFDEF ANDROID}
+type
+  { The photo picker reports through methods of an object. }
+  TPicturePick = class
+    OnPicked: TProc<TBitmap>;
+    procedure Finished(Image: TBitmap);
+    procedure Cancelled;
+  end;
+
+var
+  PendingPick: TPicturePick; // the one picker open
+
+procedure TPicturePick.Finished(Image: TBitmap);
+begin
+  try
+    if Assigned(OnPicked) and (Image <> nil) and not Image.IsEmpty then
+      OnPicked(Image);
+  finally
+    if PendingPick = Self then
+      PendingPick := nil;
+    TThread.ForceQueue(nil,
+      procedure
+      begin
+        Free;
+      end);
+  end;
+end;
+
+procedure TPicturePick.Cancelled;
+begin
+  if PendingPick = Self then
+    PendingPick := nil;
+  TThread.ForceQueue(nil,
+    procedure
+    begin
+      Free;
+    end);
+end;
+{$ENDIF}
+
+procedure PickPicture(Control: TControl; const Title: string; MaxSize: Integer; const OnPicked: TProc<TBitmap>);
+{$IFDEF ANDROID}
+var
+  Svc: IFMXTakenImageService;
+begin
+  if not TPlatformServices.Current.SupportsPlatformService(IFMXTakenImageService, Svc) then
+  begin
+    ShowWarning('This phone has no photo picker');
+    Exit;
+  end;
+  PendingPick := TPicturePick.Create;
+  PendingPick.OnPicked := OnPicked;
+  Svc.TakeImageFromLibrary(Control, TSize.Create(MaxSize, MaxSize), False, PendingPick.Finished,
+    PendingPick.Cancelled);
+end;
+{$ELSE}
+var
+  Dlg: TOpenDialog;
+  Bmp: TBitmap;
+begin
+  Dlg := TOpenDialog.Create(nil);
+  try
+    Dlg.Title := Title;
+    Dlg.Filter := 'Pictures|*.jpg;*.jpeg;*.png;*.bmp;*.gif|All files|*.*';
+    if not Dlg.Execute then
+      Exit;
+    Bmp := TBitmap.Create;
+    try
+      try
+        Bmp.LoadFromFile(Dlg.FileName);
+      except
+        on E: Exception do
+        begin
+          ShowWarning('That picture could not be read: ' + E.Message);
+          Exit;
+        end;
+      end;
+      if Assigned(OnPicked) then
+        OnPicked(Bmp);
+    finally
+      Bmp.Free;
+    end;
+  finally
+    Dlg.Free;
+  end;
+end;
+{$ENDIF}
 
 procedure ShowInfo(const Msg: string; const OnClose: TProc);
 begin

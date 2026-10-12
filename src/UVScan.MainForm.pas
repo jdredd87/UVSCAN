@@ -349,6 +349,9 @@ type
     FAddGauge: TCircle;              // the round + on the Gauges page
     FDashEmpty: TLabel;              // shown when there are no gauges
     FDashSpacer: TLayout;            // keeps the + clear of the last gauge
+    FDashBack: TRectangle;           // behind the gauges: the dashboard's colour, and its picture
+    FDashBackImg: TImage;            // ... scaled to cover it (clipped by FDashBack)
+    FDashBackFile: string;           // the picture loaded into FDashBackImg
     FDashCombo: TComboBox;           // which dashboard (wide windows; the page menu everywhere)
     FDashPicks: TComponent;          // owns the senders of the dashboard chooser's items
     procedure FillDashboards;
@@ -394,6 +397,13 @@ type
     procedure FullScreenClick(Sender: TObject);
     procedure SetFullScreen(Value: Boolean);
     procedure PlaceExitFull;
+    procedure ApplyDashBackground;
+    procedure PlaceDashBack;
+    procedure DashBackgroundClick(Sender: TObject);
+    procedure DashBackPickClick(Sender: TObject);
+    procedure DashColorPickClick(Sender: TObject);
+    procedure SetDashPicture(Bmp: TBitmap);
+    procedure DashPictureTaken(Image: TBitmap);
     procedure SafeAreaChanged(Sender: TObject; const AInsets: TRectF);
     function RankLiveIds(const Ids: TArray<Integer>): TArray<Integer>;
     function DisplaySnapshot(const S: TLiveSnapshot): TLiveSnapshot;
@@ -995,6 +1005,21 @@ begin
   AddMore('Settings', 'Theme, rounding, alert sounds, log folder, stream speed', tiSettings);
   AddMore('Messages', 'Connection log and raw traffic', tiMessages);
 
+  // Gauges page: the dashboard's own background behind the gauges.
+  FDashBack := TRectangle.Create(Self);
+  FDashBack.Parent := sbDash.Parent;
+  FDashBack.Stored := False;
+  FDashBack.Index := sbDash.Index; // under the gauges
+  FDashBack.HitTest := False;
+  FDashBack.Stroke.Kind := TBrushKind.None;
+  FDashBack.Fill.Kind := TBrushKind.None;
+  FDashBack.ClipChildren := True;
+  FDashBackImg := TImage.Create(Self);
+  FDashBackImg.Parent := FDashBack;
+  FDashBackImg.Stored := False;
+  FDashBackImg.HitTest := False;
+  FDashBackImg.WrapMode := TImageWrapMode.Stretch;
+  FDashBackImg.Visible := False;
   // Gauges page: a round + to add a gauge, and a hint while there are none.
   FAddGauge := TCircle.Create(Self);
   FAddGauge.Parent := tiDashboard;
@@ -1341,6 +1366,219 @@ begin
     sbDash.Position.Y + sbDash.Height - FAddGauge.Height - 20);
   FAddGauge.BringToFront;
   PlaceExitFull;
+  PlaceDashBack;
+end;
+
+{ The dashboard's background: its colour, and its picture scaled to cover the
+  page (cut at the sides or the top and bottom, never stretched). }
+procedure TMainForm.ApplyDashBackground;
+var
+  D: TDashboard;
+  FileName: string;
+begin
+  if FDashBack = nil then
+    Exit;
+  D := FDisplay.Dashboards[FDisplay.Current];
+  if D.BackColor <> NoColor then
+  begin
+    FDashBack.Fill.Kind := TBrushKind.Solid;
+    FDashBack.Fill.Color := D.BackColor;
+  end
+  else
+    FDashBack.Fill.Kind := TBrushKind.None;
+  FileName := '';
+  if D.BackImage <> '' then
+    FileName := System.IOUtils.TPath.Combine(System.IOUtils.TPath.Combine(DataDir, 'images'), D.BackImage);
+  if FileName <> FDashBackFile then
+  begin
+    FDashBackFile := FileName;
+    FDashBackImg.Bitmap.SetSize(0, 0);
+    if (FileName <> '') and FileExists(FileName) then
+      try
+        FDashBackImg.Bitmap.LoadFromFile(FileName);
+      except
+        on E: Exception do
+          AddMessage('Dashboard picture could not be read: ' + E.Message);
+      end;
+  end;
+  FDashBackImg.Visible := not FDashBackImg.Bitmap.IsEmpty;
+  PlaceDashBack;
+end;
+
+procedure TMainForm.PlaceDashBack;
+var
+  W, H, S: Single;
+begin
+  if FDashBack = nil then
+    Exit;
+  FDashBack.SetBounds(sbDash.Position.X, sbDash.Position.Y, sbDash.Width, sbDash.Height);
+  // Full screen: the window's own edge (a pixel or two past the page) in the
+  // dashboard's colour, or black under a picture.
+  if FFullScreen and ((FDashBack.Fill.Kind = TBrushKind.Solid) or FDashBackImg.Visible) then
+  begin
+    Fill.Kind := TBrushKind.Solid;
+    if FDashBack.Fill.Kind = TBrushKind.Solid then
+      Fill.Color := FDashBack.Fill.Color
+    else
+      Fill.Color := TAlphaColors.Black;
+  end
+  else
+    Fill.Kind := TBrushKind.None;
+  // Drawn in child order: the background, then the gauges, then what floats over them.
+  if FDashBack.Index > sbDash.Index then
+  begin
+    sbDash.BringToFront;
+    FDashEmpty.BringToFront;
+    FAddGauge.BringToFront;
+    FExitFull.BringToFront;
+  end;
+  if not FDashBackImg.Visible then
+    Exit;
+  W := FDashBackImg.Bitmap.Width;
+  H := FDashBackImg.Bitmap.Height;
+  if (W <= 0) or (H <= 0) then
+    Exit;
+  S := Max(FDashBack.Width / W, FDashBack.Height / H);
+  FDashBackImg.SetBounds((FDashBack.Width - W * S) / 2, (FDashBack.Height - H * S) / 2, W * S, H * S);
+end;
+
+{ Gauges: Background... - the theme's, a colour, or a picture. }
+procedure TMainForm.DashBackgroundClick(Sender: TObject);
+var
+  Items: TArray<TActionItem>;
+  D: TDashboard;
+  Pt: TPointF;
+
+  procedure Add(const Text: string; Tag: Integer; Enabled, Checked: Boolean);
+  var
+    It: TActionItem;
+    Pick: TComponent;
+  begin
+    Pick := TComponent.Create(FDashPicks);
+    Pick.Tag := Tag;
+    It := Default(TActionItem);
+    It.Text := Text;
+    It.Enabled := Enabled;
+    It.Checked := Checked;
+    It.OnClick := DashBackPickClick;
+    It.Sender := Pick;
+    Items := Items + [It];
+  end;
+
+begin
+  FDashPicks.Free;
+  FDashPicks := TComponent.Create(Self);
+  D := FDisplay.Dashboards[FDisplay.Current];
+  Items := nil;
+  Add('Plain (the theme''s)', 0, True, (D.BackColor = NoColor) and (D.BackImage = ''));
+  Add('Solid colour...', 1, True, D.BackColor <> NoColor);
+  Add('Picture...', 2, True, D.BackImage <> '');
+  Add('No picture', 3, D.BackImage <> '', False);
+  Pt := btnMenu.LocalToAbsolute(TPointF.Create(btnMenu.Width, btnMenu.Height));
+  ShowActionMenu(Self, Items, Pt);
+end;
+
+procedure TMainForm.DashBackPickClick(Sender: TObject);
+var
+  D: TDashboard;
+  Items: TArray<TActionItem>;
+  It: TActionItem;
+  Pick: TComponent;
+begin
+  D := FDisplay.Dashboards[FDisplay.Current];
+  case TComponent(Sender).Tag of
+    0:
+      begin
+        D.BackColor := NoColor;
+        SetDashPicture(nil);
+      end;
+    1:
+      // the colours to pick from (after this menu has closed)
+      TThread.ForceQueue(nil,
+        procedure
+        var
+          N: Integer;
+        begin
+          FDashPicks.Free;
+          FDashPicks := TComponent.Create(Self);
+          Items := nil;
+          for N := 0 to High(NamedColors) do
+          begin
+            Pick := TComponent.Create(FDashPicks);
+            Pick.Tag := N;
+            It := Default(TActionItem);
+            It.Text := NamedColors[N].Name;
+            It.Enabled := True;
+            It.Checked := FDisplay.Dashboards[FDisplay.Current].BackColor = NamedColors[N].Color;
+            It.OnClick := DashColorPickClick;
+            It.Sender := Pick;
+            Items := Items + [It];
+          end;
+          ShowActionMenu(Self, Items, btnMenu.LocalToAbsolute(TPointF.Create(btnMenu.Width, btnMenu.Height)));
+        end);
+    2:
+      PickPicture(sbDash, 'Dashboard picture', 2560, DashPictureTaken);
+    3:
+      SetDashPicture(nil);
+  end;
+end;
+
+procedure TMainForm.DashPictureTaken(Image: TBitmap);
+begin
+  SetDashPicture(Image);
+end;
+
+procedure TMainForm.DashColorPickClick(Sender: TObject);
+var
+  N: Integer;
+begin
+  N := TComponent(Sender).Tag;
+  if (N < 0) or (N > High(NamedColors)) then
+    Exit;
+  FDisplay.Dashboards[FDisplay.Current].BackColor := NamedColors[N].Color;
+  SaveDisplay;
+  ApplyDashBackground;
+end;
+
+{ Bmp = nil: no picture. Otherwise a copy (at most 2560 pixels across) goes
+  to DataDir\images, so the original can be moved or deleted. }
+procedure TMainForm.SetDashPicture(Bmp: TBitmap);
+var
+  D: TDashboard;
+  Dir, Name, Old: string;
+  Small: TBitmap;
+  K: Single;
+  Params: TBitmapCodecSaveParams;
+begin
+  D := FDisplay.Dashboards[FDisplay.Current];
+  Dir := System.IOUtils.TPath.Combine(DataDir, 'images');
+  Old := D.BackImage;
+  D.BackImage := '';
+  if (Bmp <> nil) and not Bmp.IsEmpty then
+  begin
+    ForceDirectories(Dir);
+    Name := Format('dashboard-%s.jpg', [FormatDateTime('yyyymmdd-hhnnsszzz', Now)]);
+    K := Min(1, 2560 / Max(Bmp.Width, Bmp.Height));
+    Small := Bmp.CreateThumbnail(Max(1, Round(Bmp.Width * K)), Max(1, Round(Bmp.Height * K)));
+    try
+      Params.Quality := 88;
+      Small.SaveToFile(System.IOUtils.TPath.Combine(Dir, Name), @Params);
+      D.BackImage := Name;
+    finally
+      Small.Free;
+    end;
+  end;
+  // The old picture goes, unless another dashboard shows it too.
+  if (Old <> '') and (Old <> D.BackImage) then
+  begin
+    var Shared := False;
+    for var I := 0 to FDisplay.DashboardCount - 1 do
+      Shared := Shared or SameText(FDisplay.Dashboards[I].BackImage, Old);
+    if not Shared then
+      DeleteFile(System.IOUtils.TPath.Combine(Dir, Old));
+  end;
+  SaveDisplay;
+  ApplyDashBackground;
 end;
 
 procedure TMainForm.SafeAreaChanged(Sender: TObject; const AInsets: TRectF);
@@ -1643,6 +1881,7 @@ begin
     AddPageMenuItem(btnDashTest.Text, btnTestDisplayClick, btnDashTest.Enabled);
     AddPageMenuItem('Live chart', LiveChartClick);
     AddPageMenuItem('Full screen', FullScreenClick);
+    AddPageMenuItem('Background...', DashBackgroundClick);
     if FWide then
       AddPageMenuItem('PID list beside the pages', TogglePidPanelClick, True, not FSettings.Window.PidsHidden);
     AddPageMenuItem('-', nil);
@@ -5242,6 +5481,7 @@ var
   Title, Units: string;
 begin
   FillDashboards;
+  ApplyDashBackground;
   for View in FGaugeViews do
     View.Free;
   FGaugeViews.Clear;
@@ -5542,10 +5782,11 @@ begin
   if not IsMobile and not FFullScreen then
     Avail := Avail - 16; // the scroll bar (a phone's floats over the page)
   SetLength(R, FGaugeViews.Count);
-  if FFullScreen and (Arrange(1) < sbDash.Height) then
+  if FFullScreen then
   begin
-    // Full screen: as big as they go and still all fit on the screen.
-    Lo := 1;
+    // Full screen: as big as they go and still all fit on the screen
+    // (smaller too, down to 0.4, e.g. a phone held sideways).
+    Lo := 0.4;
     Hi := 4;
     while Hi - Lo > 0.02 do
     begin

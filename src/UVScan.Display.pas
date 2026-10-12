@@ -78,6 +78,8 @@ type
   public
     Name: string;
     Gauges: TList<TGauge>;
+    BackColor: TAlphaColor;  // the page behind the gauges, NoColor = the theme's
+    BackImage: string;       // a picture behind them (file name in DataDir\images), '' = none
     constructor Create(const AName: string);
     destructor Destroy; override;
   end;
@@ -659,7 +661,7 @@ end;
 procedure TDisplaySettings.LoadFromJson(Root: TJSONObject);
 var
   Arr: TJSONArray;
-  I: Integer;
+  I, J: Integer;
   E: TJSONObject;
   D: TPidDisplay;
   Name: string;
@@ -708,7 +710,10 @@ begin
         FWarnings.Add(Format('dashboards[%d]: missing or repeated "name"', [I]));
         Continue;
       end;
-      LoadGauges(JArr(E, 'gauges'), FDashboards[AddDashboard(Name)].Gauges);
+      J := AddDashboard(Name);
+      LoadGauges(JArr(E, 'gauges'), FDashboards[J].Gauges);
+      FDashboards[J].BackColor := HexToColor(JStr(E, 'backColor'), NoColor);
+      FDashboards[J].BackImage := ExtractFileName(Trim(JStr(E, 'backImage')));
     end;
     if FDashboards.Count = 0 then
       FDashboards.Add(TDashboard.Create(MainDashboard));
@@ -779,6 +784,10 @@ begin
   begin
     DE := TJSONObject.Create;
     DE.AddPair('name', Dash.Name);
+    if Dash.BackColor <> NoColor then
+      DE.AddPair('backColor', ColorToHex(Dash.BackColor));
+    if Dash.BackImage <> '' then
+      DE.AddPair('backImage', Dash.BackImage);
     Arr := TJSONArray.Create;
     DE.AddPair('gauges', Arr);
     for G in Dash.Gauges do
