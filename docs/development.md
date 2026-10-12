@@ -45,6 +45,10 @@ For development, connect the IDE to the phone over Wi‑Fi (Developer options > 
 
 The factory data in `data\` is compiled into the exe through `UVScan.Defaults.rc` (`UVScan.Defaults.res` is generated and not in git).
 
+### Version
+
+`AppVersion` in `src\UVScan.Version.pas` is the version, changed by hand (major.minor.patch; the rewrite started at 2.0.0, after the VCL UVSCAN's 10.18.08b). Change the version info in `UVScan.dproj` to match (*Project → Options → Version Info*: Windows file version, Android `versionName`). Before each build (IDE or `build.cmd`, either platform) the project runs `tools\stamp.ps1`, which writes `src\UVScan.BuildStamp.inc` (not in git): the build number (the commit count), the commit (with `+` when built with uncommitted changes) and the date. UVScan shows them in the title bar, *More → About* and the first line of *Messages*.
+
 ## Tests
 
 `tests\` holds DUnitX tests for the protocol pieces (AVT framing, Class 2 messages, DPID planning, the formula evaluator), the JSON files, the legacy CSV import, display levels and alerts, real‑time controls (including how active device controls are merged), log reading and saved views, and end‑to‑end engine runs against the simulator (connect, scan, log, PID test, discovery, stop/restart). They run on both platforms and report memory leaks.
@@ -166,6 +170,7 @@ Every request but `/ping` needs the token from the kit (kept in `%LOCALAPPDATA%\
 | `src/UVScan.LegacyImport.pas` | Old `PIDS.csv` import and catalog merge |
 | `src/UVScan.Defaults.pas` | Factory defaults built into the exe; creates missing data files |
 | `src/UVScan.Paths.pas` | Data folder (`C:\ProgramData\UVScan`) |
+| `src/UVScan.Version.pas` | Version and build stamp (`tools\stamp.ps1`) |
 | `src/UVScan.JsonFile.pas` | JSON helpers (atomic save) |
 | `src/UVScan.Hex.pas` | Hex / byte helpers |
 | `src/UVScan.MainForm.*` | Main window |

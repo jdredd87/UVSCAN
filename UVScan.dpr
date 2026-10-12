@@ -5,6 +5,7 @@ uses
   System.SysUtils,
   FMX.Types,
   FMX.Forms,
+  UVScan.Version in 'src\UVScan.Version.pas',
   UVScan.Hex in 'src\UVScan.Hex.pas',
   UVScan.Serial in 'src\UVScan.Serial.pas',
   UVScan.Serial.Android in 'src\UVScan.Serial.Android.pas',

@@ -359,6 +359,11 @@ type
     FFocusItem: TMenuItem;           // gauge menu: Fill the screen
     btnPidPanel: TSpeedButton;       // wide windows: the PID list beside the pages or on its own page
     btnPidsHide: TSpeedButton;       // on the PID list beside the pages: puts it away
+    tiAbout: TTabItem;               // More > About: version, credits, source code
+    FAboutBox: TVertScrollBox;
+    FAboutLabels: TArray<TLabel>;    // their heights follow the width
+    FAboutHeads: TArray<TLabel>;     // the small grey headings
+    FAboutLink: TLabel;              // the repository address
     btnLiveLog: TButton;             // Start / Stop log on the Live page's bar
     btnDashLog: TButton;             // and on the dashboard's
     FPidsShow: TRectangle;           // the strip down the left edge that brings it back
@@ -408,6 +413,10 @@ type
       Checked: Boolean = False);
     procedure ToggleMinMaxClick(Sender: TObject);
     procedure TogglePidPanelClick(Sender: TObject);
+    procedure BuildAbout;
+    procedure AboutResized(Sender: TObject);
+    procedure AboutLinkClick(Sender: TObject);
+    procedure AboutCopyClick(Sender: TObject);
     function PidsLocked: Boolean;
     procedure RunQuickStart(const Q: TQuickStart);
     procedure QuickConnect;
@@ -560,7 +569,7 @@ implementation
 uses
   System.JSON, UVScan.JsonFile, UVScan.UI.Common, UVScan.UI.Theme, UVScan.Sound, UVScan.PidEditor,
   UVScan.PidDiscovery, UVScan.DisplayEditor, UVScan.GaugeEditor, UVScan.ControlEditor, UVScan.LogViewer,
-  UVScan.QuickStartEditor, System.DateUtils, System.Permissions;
+  UVScan.QuickStartEditor, UVScan.Version, System.DateUtils, System.Permissions;
 
 const
   AwayNote = 'uvscan_away';       // the notification's name
@@ -626,7 +635,8 @@ begin
   end;
   FMenuPidId := -1;
   FMenuGauge := -1;
-  Caption := 'UVScan';
+  Caption := 'UVScan ' + VersionText; // "UVScan 2.0.0 (build 98)"
+  AddMessage(Format('UVScan %s, %s', [FullVersionText, PlatformText]));
   lblVin.TextSettings.Font.Style := [TFontStyle.fsBold];
   lblOsid.TextSettings.Font.Style := [TFontStyle.fsBold];
   lblFirmware.TextSettings.Font.Style := [TFontStyle.fsBold];
@@ -1163,6 +1173,8 @@ begin
   AddMore('Tools', 'Write VIN, raw AVT frames, PID discovery', tiTools);
   AddMore('Settings', 'Theme, rounding, alert sounds, log folder, stream speed', tiSettings);
   AddMore('Messages', 'Connection log and raw traffic', tiMessages);
+  BuildAbout;
+  AddMore('About', 'Version ' + VersionText + ', who wrote it, source code', tiAbout);
 
   // Settings, phones and tablets: keep the screen from turning (bumps in a car).
   chkLockRotate := TCheckBox.Create(Self);
@@ -1819,6 +1831,113 @@ begin
   FExitFull.BringToFront;
 end;
 
+{ More > About: which UVScan this is, who wrote it, where the source is,
+  and what it runs on. Copy puts it on the clipboard for a bug report. }
+procedure TMainForm.BuildAbout;
+var
+  Y: Single;
+
+  function Add(const Text: string; Size: Single; Bold: Boolean; Gap: Single): TLabel;
+  begin
+    Result := TLabel.Create(Self);
+    Result.Stored := False;
+    Result.Parent := FAboutBox;
+    Result.Position.Y := Y; // Align Top keeps this order
+    Y := Y + 1000;
+    Result.Align := TAlignLayout.Top;
+    Result.Margins.Top := Gap;
+    Result.AutoSize := False;
+    Result.WordWrap := True;
+    Result.StyledSettings := Result.StyledSettings - [TStyledSetting.Size, TStyledSetting.Style];
+    Result.TextSettings.Font.Size := Size;
+    if Bold then
+      Result.TextSettings.Font.Style := [TFontStyle.fsBold];
+    Result.Text := Text;
+    FAboutLabels := FAboutLabels + [Result];
+  end;
+
+  procedure Section(const Head, Body: string);
+  begin
+    FAboutHeads := FAboutHeads + [Add(Head, 12, False, 16)];
+    Add(Body, 15, False, 2);
+  end;
+
+var
+  Row: TLayout;
+  B: TButton;
+begin
+  tiAbout := TTabItem.Create(Self);
+  tiAbout.Stored := False;
+  tiAbout.Text := 'About';
+  tiAbout.Parent := tcMore;
+  FAboutBox := TVertScrollBox.Create(Self);
+  FAboutBox.Stored := False;
+  FAboutBox.Parent := tiAbout;
+  FAboutBox.Align := TAlignLayout.Client;
+  FAboutBox.Padding.Rect := TRectF.Create(16, 12, 16, 16);
+  FAboutBox.OnResized := AboutResized;
+  Y := 0;
+  Add('UVScan', 26, True, 0);
+  Add('A data logger and scan tool for GM vehicles on J1850 VPW (GM Class 2), with an AVT (838, 841 or 842) ' +
+    'or an ELM327 adapter.', 15, False, 4);
+  Section('VERSION', FullVersionText);
+  Section('WRITTEN BY', 'StevenC - author of UVSCAN' + sLineBreak +
+    'Claude (Anthropic) - helped write this version');
+  Section('SOURCE CODE', '');
+  FAboutLink := FAboutLabels[High(FAboutLabels)];
+  FAboutLink.Text := AppRepo;
+  FAboutLink.HitTest := True;
+  FAboutLink.Cursor := crHandPoint;
+  FAboutLink.TextSettings.Font.Style := [TFontStyle.fsUnderline];
+  FAboutLink.OnClick := AboutLinkClick;
+  Section('THIS COPY', PlatformText + ', ' + TOSVersion.ToString + sLineBreak +
+    'Built with Delphi 13 (FireMonkey)' + sLineBreak +
+    'Data folder: ' + DataDir);
+  Row := TLayout.Create(Self);
+  Row.Stored := False;
+  Row.Parent := FAboutBox;
+  Row.Position.Y := Y;
+  Row.Align := TAlignLayout.Top;
+  Row.Margins.Top := 20;
+  Row.Height := 36;
+  B := TButton.Create(Self);
+  B.Stored := False;
+  B.Parent := Row;
+  B.Align := TAlignLayout.Left;
+  B.Width := 170;
+  B.Text := 'Copy version info';
+  B.OnClick := AboutCopyClick;
+end;
+
+procedure TMainForm.AboutResized(Sender: TObject);
+var
+  W: Single;
+  L: TLabel;
+begin
+  W := FAboutBox.Width - FAboutBox.Padding.Left - FAboutBox.Padding.Right - 4;
+  if W < 50 then
+    Exit;
+  for L in FAboutLabels do
+    L.Height := WrappedTextHeight(L, W) + 2;
+end;
+
+procedure TMainForm.AboutLinkClick(Sender: TObject);
+begin
+  OpenUrl(AppRepo);
+end;
+
+procedure TMainForm.AboutCopyClick(Sender: TObject);
+var
+  Clip: IFMXClipboardService;
+begin
+  if TPlatformServices.Current.SupportsPlatformService(IFMXClipboardService, Clip) then
+  begin
+    Clip.SetClipboard(Format('UVScan %s' + sLineBreak + '%s, %s' + sLineBreak + '%s',
+      [FullVersionText, PlatformText, TOSVersion.ToString, AppRepo]));
+    ShowNotice('Version info copied', False);
+  end;
+end;
+
 { Wide windows: the PID list beside the pages, or (more room for them) on a
   page of its own, like on a phone. }
 procedure TMainForm.TogglePidPanelClick(Sender: TObject);
@@ -2268,6 +2387,13 @@ begin
   Icon(btnChart);
   Icon(btnFullScreen);
   Icon(btnPidPanel);
+  for var L in FAboutHeads do
+    Muted(L);
+  if FAboutLink <> nil then
+  begin
+    FAboutLink.StyledSettings := FAboutLink.StyledSettings - [TStyledSetting.FontColor];
+    FAboutLink.TextSettings.FontColor := P.Accent;
+  end;
   if btnPidsHide <> nil then
   begin
     Icon(btnPidsHide);

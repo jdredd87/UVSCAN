@@ -176,6 +176,8 @@ procedure RefreshTrackBar(T: TTrackBar);
 procedure HookBackGesture;
 { Android: UVScan to the background, as the Home button does. }
 procedure MoveAppToBack;
+{ Opens a web address in the browser. }
+procedure OpenUrl(const Url: string);
 
 implementation
 
@@ -307,6 +309,26 @@ begin
     begin
       TAndroidHelper.Activity.moveTaskToBack(True);
     end);
+  {$ENDIF}
+end;
+
+{$IFDEF MSWINDOWS}
+function ShellExecuteW(Wnd: THandle; Operation, FileName, Parameters, Directory: PChar;
+  ShowCmd: Integer): THandle; stdcall; external 'shell32.dll';
+{$ENDIF}
+
+procedure OpenUrl(const Url: string);
+begin
+  {$IF Defined(MSWINDOWS)}
+  ShellExecuteW(0, 'open', PChar(Url), nil, nil, 1 {SW_SHOWNORMAL});
+  {$ELSEIF Defined(ANDROID)}
+  try
+    TAndroidHelper.Activity.startActivity(
+      TJIntent.JavaClass.init(TJIntent.JavaClass.ACTION_VIEW, StrToJURI(Url)));
+  except
+    on E: Exception do
+      ShowWarning('No app here opens web addresses: ' + Url);
+  end;
   {$ENDIF}
 end;
 

@@ -23,6 +23,9 @@ Win64/
 # Ad-hoc dcc32 output
 build/
 
+# Written before each build by tools\stamp.ps1
+src/UVScan.BuildStamp.inc
+
 # Runtime output
 backup/
 *.log
