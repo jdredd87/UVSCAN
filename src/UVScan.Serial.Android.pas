@@ -23,8 +23,12 @@ unit UVScan.Serial.Android;
   manifest lets Android offer UVScan when the adapter is plugged in, which
   grants the permission up front.)
 
-  Everything here runs on whichever thread calls it (the scan engine for
-  Open/Read/Write); the JNI bridge attaches that thread to the Java VM. }
+  Open/Write/Purge run on whichever thread calls them (the scan engine); the
+  JNI bridge attaches that thread to the Java VM. Receiving has a thread of
+  its own that always keeps one UsbRequest queued on the IN endpoint, and
+  Read takes from what it has collected. A bulkTransfer with a timeout
+  would lose a packet whenever the timeout ran out just as it arrived, and
+  the scan engine reads with short timeouts. }
 
 interface
 
@@ -48,7 +52,7 @@ implementation
 {$IFDEF ANDROID}
 
 uses
-  System.Classes, System.Math, System.StrUtils,
+  System.Classes, System.Math, System.StrUtils, System.SyncObjs,
   Androidapi.JNI, Androidapi.JNIBridge, Androidapi.JNI.JavaTypes, Androidapi.JNI.GraphicsContentViewText,
   Androidapi.JNI.App, Androidapi.JNI.Os, Androidapi.Helpers;
 
@@ -60,6 +64,7 @@ type
   JUsbDevice = interface;
   JUsbDeviceConnection = interface;
   JUsbManager = interface;
+  JUsbRequest = interface;
 
   JUsbEndpointClass = interface(JObjectClass)
     ['{ED22A523-A782-47C9-A0F7-F4CC6C857221}']
@@ -121,8 +126,26 @@ type
     function bulkTransfer(endpoint: JUsbEndpoint; buffer: TJavaArray<Byte>; offset, length,
       timeout: Integer): Integer; cdecl;
     function getRawDescriptors: TJavaArray<Byte>; cdecl;
+    { Waits for any queued UsbRequest to finish; nil once the connection is closed. }
+    function requestWait: JUsbRequest; cdecl;
   end;
   TJUsbDeviceConnection = class(TJavaGenericImport<JUsbDeviceConnectionClass, JUsbDeviceConnection>) end;
+
+  JUsbRequestClass = interface(JObjectClass)
+    ['{5C1B6E0A-3D7F-4E52-9A41-8B2F6C7D9E13}']
+    {class} function init: JUsbRequest; cdecl;
+  end;
+
+  [JavaSignature('android/hardware/usb/UsbRequest')]
+  JUsbRequest = interface(JObject)
+    ['{8E4D2C71-6A3B-4F95-B0C8-1D7E9A2F5B64}']
+    function initialize(connection: JUsbDeviceConnection; endpoint: JUsbEndpoint): Boolean; cdecl;
+    { The data lands in buffer; its position is the byte count when it is done. }
+    function queue(buffer: JByteBuffer; length: Integer): Boolean; cdecl;
+    function cancel: Boolean; cdecl;
+    procedure close; cdecl;
+  end;
+  TJUsbRequest = class(TJavaGenericImport<JUsbRequestClass, JUsbRequest>) end;
 
   JUsbManagerClass = interface(JObjectClass)
     ['{6F90CF32-E24E-471F-ACAC-F7CBBCC30751}']
@@ -175,6 +198,25 @@ type
   // PL2303 generations: the old H, the HX family (HX, HXD, TA, TB) and the G series.
   TPl2303Kind = (pkLegacy, pkHx, pkHxn);
 
+  TAndroidUsbSerialPort = class;
+
+  { Keeps a request queued on the IN endpoint and hands what arrives to the port. }
+  TUsbReader = class(TThread)
+  private
+    FPort: TAndroidUsbSerialPort;
+    FRequest: JUsbRequest;
+    FBuffer: JByteBuffer;
+    FArray: TJavaArray<Byte>;
+    FSize: Integer;
+  protected
+    procedure Execute; override;
+  public
+    constructor Create(Port: TAndroidUsbSerialPort);
+    destructor Destroy; override;
+    { Ends Execute: cancels the queued request (the connection is closed next). }
+    procedure Stop;
+  end;
+
   TAndroidUsbSerialPort = class(TInterfacedObject, ISerialPort)
   private
     FPortName: string;
@@ -190,7 +232,10 @@ type
     FPortIndex: Integer;        // FTDI: interface number + 1
     FMultiPort: Boolean;        // FTDI chip with more than one port
     FPl2303: TPl2303Kind;
-    FJavaIn, FJavaOut: TJavaArray<Byte>;
+    FJavaOut: TJavaArray<Byte>;
+    FReader: TUsbReader;
+    FRxLock: TCriticalSection;
+    FRxReady: TEvent;           // set while FPending has bytes
     FPending: TBytes;           // received but not yet handed to Read
     FPendingPos: Integer;
     procedure CheckOpen;
@@ -207,7 +252,11 @@ type
     function Pl2303Read(Value: Integer): Integer;
     procedure Pl2303Write(Value, Index: Integer);
     procedure Pl2303PurgePipes;
-    function BulkRead(TimeoutMs: Integer): Integer;
+    { The data bytes of one IN transfer (FTDI / Keyspan status bytes removed). }
+    function Decode(const Raw: TBytes): TBytes;
+    procedure Received(const Data: TBytes);
+    procedure DropReceived;
+    procedure StopReader;
     procedure ReleaseAll;
   public
     constructor Create(const PortName: string; BaudRate: Cardinal; FlowControl: TFlowControl);
@@ -404,11 +453,15 @@ begin
   FPortName := PortName;
   FBaudRate := BaudRate;
   FFlowControl := FlowControl;
+  FRxLock := TCriticalSection.Create;
+  FRxReady := TEvent.Create(nil, True, False, '');
 end;
 
 destructor TAndroidUsbSerialPort.Destroy;
 begin
   Close;
+  FRxReady.Free;
+  FRxLock.Free;
   inherited;
 end;
 
@@ -529,10 +582,9 @@ begin
       if (FEpIn = nil) or (FEpOut = nil) then
         raise ESerialError.CreateFmt('%s: no bulk data endpoints found', [FPortName]);
       FInPacket := Max(8, FEpIn.getMaxPacketSize);
-      FJavaIn := TJavaArray<Byte>.Create(JavaBufferSize);
       FJavaOut := TJavaArray<Byte>.Create(JavaBufferSize);
-      FPending := nil;
-      FPendingPos := 0;
+      DropReceived;
+      FReader := TUsbReader.Create(Self);
       Purge;
     except
       Close;
@@ -758,13 +810,14 @@ begin
   Control(ReqOut, SET_CONTROL_LINE_STATE, $0003 {DTR + RTS}, CommId);
 end;
 
-{ Keyspan receive mode. The Linux driver uses DMA above 57600 baud, but in
-  DMA mode the adapter holds short replies back (the AVT's answers arrived
-  after the next command's); "by hand" mode passes each byte on, with a status
-  byte per packet. }
+{ Keyspan receive mode. Like the Linux driver: DMA above 57600 baud, where a
+  packet carries plain data; below it "by hand" mode, one status byte per
+  packet. (By hand at 115200 sends nearly every byte in a packet of its own,
+  and on a phone bytes went missing; the forwarding length / timeout of 1
+  set below keeps DMA mode from holding short replies back.) }
 function KeyspanDma(Baud: Cardinal): Boolean;
 begin
-  Result := False;
+  Result := Baud > 57600;
 end;
 
 { Keyspan USA-19HS: one interface; data out on endpoint 1, port control
@@ -1017,110 +1070,202 @@ end;
 
 procedure TAndroidUsbSerialPort.Close;
 begin
-  ReleaseAll;
-  FreeAndNil(FJavaIn);
+  if FReader <> nil then
+    FReader.Stop;
+  ReleaseAll; // closing the connection also ends a requestWait
+  StopReader;
   FreeAndNil(FJavaOut);
-  FPending := nil;
-  FPendingPos := 0;
+  DropReceived;
 end;
 
-{ One bulk IN transfer into FPending. Returns the number of data bytes
-  (FTDI modem status bytes removed); 0 on timeout or status-only packets. }
-function TAndroidUsbSerialPort.BulkRead(TimeoutMs: Integer): Integer;
+procedure TAndroidUsbSerialPort.StopReader;
+begin
+  if FReader = nil then
+    Exit;
+  FReader.Stop;
+  FReader.WaitFor;
+  FreeAndNil(FReader);
+end;
+
+procedure TAndroidUsbSerialPort.Received(const Data: TBytes);
+begin
+  if Length(Data) = 0 then
+    Exit;
+  FRxLock.Enter;
+  try
+    if FPendingPos >= Length(FPending) then
+      FPending := Data
+    else
+      FPending := Copy(FPending, FPendingPos, MaxInt) + Data;
+    FPendingPos := 0;
+    FRxReady.SetEvent;
+  finally
+    FRxLock.Leave;
+  end;
+end;
+
+procedure TAndroidUsbSerialPort.DropReceived;
+begin
+  FRxLock.Enter;
+  try
+    FPending := nil;
+    FPendingPos := 0;
+    FRxReady.ResetEvent;
+  finally
+    FRxLock.Leave;
+  end;
+end;
+
+{ TUsbReader }
+
+constructor TUsbReader.Create(Port: TAndroidUsbSerialPort);
+begin
+  FPort := Port;
+  // Keyspan: one packet per transfer (by hand, each starts with a status byte).
+  FSize := IfThen(Port.FDriver = udKeyspan, Port.FInPacket, JavaBufferSize);
+  FArray := TJavaArray<Byte>.Create(FSize);
+  FBuffer := TJByteBuffer.JavaClass.wrap(FArray);
+  FRequest := TJUsbRequest.JavaClass.init;
+  if not FRequest.initialize(Port.FConn, Port.FEpIn) then
+    raise ESerialError.CreateFmt('%s: could not set up USB reading', [Port.FPortName]);
+  inherited Create(False);
+end;
+
+destructor TUsbReader.Destroy;
+begin
+  inherited;
+  try
+    if FRequest <> nil then
+      FRequest.close;
+  except
+    // the connection is gone already
+  end;
+  FRequest := nil;
+  FBuffer := nil;
+  FArray.Free;
+end;
+
+procedure TUsbReader.Stop;
+begin
+  Terminate;
+  try
+    if FRequest <> nil then
+      FRequest.cancel;
+  except
+    // already done
+  end;
+end;
+
+procedure TUsbReader.Execute;
 var
-  N, Pos, Chunk, Len: Integer;
+  Conn: JUsbDeviceConnection;
+  Done: JUsbRequest;
+  N: Integer;
   Raw: TBytes;
   Env: PJNIEnv;
-  Data: TBytes;
+  Base: JBuffer;
 begin
-  Result := 0;
-  // Keyspan: one packet at a time (at 57600 and below each packet starts with a status byte).
-  Len := IfThen(FDriver = udKeyspan, FInPacket, JavaBufferSize);
-  N := FConn.bulkTransfer(FEpIn, FJavaIn, 0, Len, Max(1, TimeoutMs)); // 0 would wait forever
-  if N <= 0 then
-    Exit; // -1 = timeout (or an unplugged device; the next write reports that)
-  SetLength(Raw, N);
+  Conn := FPort.FConn;
+  Base := FBuffer; // ByteBuffer hides Buffer.position()
   Env := TJNIResolver.GetJNIEnv;
-  Env^.GetByteArrayRegion(Env, FJavaIn.ToPointer, 0, N, PJNIByte(@Raw[0]));
+  try
+    while not Terminated do
+    begin
+      Base.clear;
+      if not FRequest.queue(FBuffer, FSize) then
+        Break; // unplugged
+      Done := Conn.requestWait;
+      if Terminated or (Done = nil) then
+        Break;
+      N := Base.position;
+      if N > 0 then
+      begin
+        SetLength(Raw, N);
+        Env^.GetByteArrayRegion(Env, FArray.ToPointer, 0, N, PJNIByte(@Raw[0]));
+        FPort.Received(FPort.Decode(Raw));
+      end;
+    end;
+  except
+    // the connection went away under us: Read times out, the next write reports it
+  end;
+end;
+
+function TAndroidUsbSerialPort.Decode(const Raw: TBytes): TBytes;
+var
+  N, Pos, Chunk, Len: Integer;
+begin
+  N := Length(Raw);
+  if N = 0 then
+    Exit(nil);
   if FDriver = udFtdi then
   begin
-    // Every packet starts with two modem status bytes.
-    SetLength(Data, N);
-    Result := 0;
+    // Every packet starts with two modem status bytes (a status-only
+    // packet comes every latency period).
+    SetLength(Result, N);
+    Len := 0;
     Pos := 0;
     while Pos < N do
     begin
       Chunk := Min(FInPacket, N - Pos);
       if Chunk > 2 then
       begin
-        Move(Raw[Pos + 2], Data[Result], Chunk - 2);
-        Inc(Result, Chunk - 2);
+        Move(Raw[Pos + 2], Result[Len], Chunk - 2);
+        Inc(Len, Chunk - 2);
       end;
       Inc(Pos, Chunk);
     end;
-    SetLength(Data, Result);
+    SetLength(Result, Len);
   end
   else if (FDriver = udKeyspan) and not KeyspanDma(FBaudRate) then
   begin
     // Bit 7 of the first byte clear: one status byte, then data.
     // Set: status / data pairs.
     if Raw[0] and $80 = 0 then
-      Data := Copy(Raw, 1, MaxInt)
+      Result := Copy(Raw, 1, MaxInt)
     else
     begin
-      SetLength(Data, N div 2);
+      SetLength(Result, N div 2);
       for Pos := 0 to N div 2 - 1 do
-        Data[Pos] := Raw[Pos * 2 + 1];
+        Result[Pos] := Raw[Pos * 2 + 1];
     end;
-    Result := Length(Data);
   end
   else
-  begin
-    Data := Raw;
-    Result := N;
-  end;
-  if Result > 0 then
-  begin
-    if FPendingPos >= Length(FPending) then
-    begin
-      FPending := Data;
-      FPendingPos := 0;
-    end
-    else
-      FPending := Copy(FPending, FPendingPos, MaxInt) + Data;
-    FPendingPos := 0;
-  end;
+    Result := Raw;
 end;
 
 function TAndroidUsbSerialPort.Read(var Buffer; Count: Integer; TimeoutMs: Cardinal): Integer;
 var
   Deadline, Now_: UInt64;
-  Avail: Integer;
 begin
   CheckOpen;
   Result := 0;
   if Count <= 0 then
     Exit;
   Deadline := TThread.GetTickCount64 + TimeoutMs;
-  while Length(FPending) - FPendingPos <= 0 do
-  begin
-    // FTDI sends a status-only packet every latency period, so loop until
-    // data arrives or the time is up.
+  repeat
+    FRxLock.Enter;
+    try
+      if FPendingPos < Length(FPending) then
+      begin
+        Result := Min(Count, Length(FPending) - FPendingPos);
+        Move(FPending[FPendingPos], Buffer, Result);
+        Inc(FPendingPos, Result);
+        if FPendingPos >= Length(FPending) then
+        begin
+          FPending := nil;
+          FPendingPos := 0;
+          FRxReady.ResetEvent;
+        end;
+        Exit;
+      end;
+    finally
+      FRxLock.Leave;
+    end;
     Now_ := TThread.GetTickCount64;
-    if BulkRead(Integer(Max(1, Int64(Deadline) - Int64(Now_)))) > 0 then
-      Break;
-    if TThread.GetTickCount64 >= Deadline then
+    if Now_ >= Deadline then
       Exit;
-  end;
-  Avail := Length(FPending) - FPendingPos;
-  Result := Min(Count, Avail);
-  Move(FPending[FPendingPos], Buffer, Result);
-  Inc(FPendingPos, Result);
-  if FPendingPos >= Length(FPending) then
-  begin
-    FPending := nil;
-    FPendingPos := 0;
-  end;
+    FRxReady.WaitFor(Cardinal(Deadline - Now_));
+  until False;
 end;
 
 procedure TAndroidUsbSerialPort.Write(const Data: TBytes);
@@ -1143,11 +1288,8 @@ begin
 end;
 
 procedure TAndroidUsbSerialPort.Purge;
-var
-  I: Integer;
 begin
-  FPending := nil;
-  FPendingPos := 0;
+  DropReceived;
   if not IsOpen then
     Exit;
   case FDriver of
@@ -1163,12 +1305,9 @@ begin
     udPl2303:
       Pl2303PurgePipes;
   end;
-  // Drop anything already on its way to us.
-  for I := 1 to 8 do
-    if BulkRead(5) = 0 then
-      Break;
-  FPending := nil;
-  FPendingPos := 0;
+  // Drop anything already on its way to us: let the reader take it in first.
+  Sleep(20);
+  DropReceived;
 end;
 
 {$ENDIF}
