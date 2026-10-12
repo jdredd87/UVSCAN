@@ -359,6 +359,8 @@ type
     FFocusItem: TMenuItem;           // gauge menu: Fill the screen
     btnPidPanel: TSpeedButton;       // wide windows: the PID list beside the pages or on its own page
     btnPidsHide: TSpeedButton;       // on the PID list beside the pages: puts it away
+    btnLiveLog: TButton;             // Start / Stop log on the Live page's bar
+    btnDashLog: TButton;             // and on the dashboard's
     FPidsShow: TRectangle;           // the strip down the left edge that brings it back
     FScanStarting: Boolean;          // Start scan pressed, the engine not scanning yet
     btnFullScreen: TSpeedButton;     // Gauges: the dashboard on the whole screen
@@ -1041,6 +1043,19 @@ begin
   Icon.Fill.Kind := TBrushKind.None;
   Icon.Width := 16;
   Icon.Height := 16;
+  // Start / Stop log where the data is, not only on Connect.
+  btnLiveLog := TButton.Create(Self);
+  btnLiveLog.Parent := pnlLiveFooter;
+  btnLiveLog.Stored := False;
+  btnLiveLog.Index := 0;
+  btnLiveLog.SetBounds(0, 0, 116, 30);
+  btnLiveLog.OnClick := btnLogClick;
+  btnDashLog := TButton.Create(Self);
+  btnDashLog.Parent := pnlDashBar;
+  btnDashLog.Stored := False;
+  btnDashLog.Index := 0;
+  btnDashLog.SetBounds(0, 0, 116, 30);
+  btnDashLog.OnClick := btnLogClick;
   FPidsShow := TRectangle.Create(Self);
   FPidsShow.Parent := Self;
   FPidsShow.Stored := False;
@@ -2071,6 +2086,7 @@ begin
   P := CurrentPage;
   if P = tiLive then
   begin
+    AddPageMenuItem(IfThen(FLogging, 'Stop log', 'Start log'), btnLogClick, btnLog.Enabled);
     AddPageMenuItem('Live chart', LiveChartClick);
     AddPageMenuItem('Reset min / max', btnResetMinMaxClick);
     AddPageMenuItem(btnLiveTest.Text, btnTestDisplayClick, btnLiveTest.Enabled);
@@ -2086,6 +2102,7 @@ begin
   end
   else if P = tiDashboard then
   begin
+    AddPageMenuItem(IfThen(FLogging, 'Stop log', 'Start log'), btnLogClick, btnLog.Enabled);
     AddPageMenuItem('Dashboards...', ChooseDashboardClick, FDisplay.DashboardCount > 1);
     AddPageMenuItem('Add gauge...', btnAddGaugeClick);
     AddPageMenuItem('Tick these PIDs', btnTickDashPidsClick, not PidsLocked);
@@ -4041,6 +4058,13 @@ begin
   btnStopScan.Text := IfThen(FState = esBusy, 'Cancel', 'Stop scan');
   btnLog.Enabled := FState = esScanning;
   btnLog.Text := IfThen(FLogging, 'Stop log', 'Start log') + IfThen(IsMobile, '', ' (F8)');
+  if btnLiveLog <> nil then
+  begin
+    btnLiveLog.Enabled := btnLog.Enabled;
+    btnLiveLog.Text := btnLog.Text;
+    btnDashLog.Enabled := btnLog.Enabled;
+    btnDashLog.Text := btnLog.Text;
+  end;
   btnPause.Enabled := FLogging;
   btnPause.Text := IfThen(FLogPaused, 'Resume', 'Pause') + IfThen(IsMobile, '', ' (F9)');
   btnTestPids.Enabled := Idle;
