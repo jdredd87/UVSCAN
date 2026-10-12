@@ -5,6 +5,7 @@ UVScan reads live data, trouble codes and vehicle information from GM vehicles o
 - [The main window](#the-main-window)
 - [Phones and tablets](#phones-and-tablets)
 - [Connecting](#connecting)
+- [Quick start](#quick-start)
 - [Choosing PIDs and scan lists](#choosing-pids-and-scan-lists)
 - [Live data](#live-data)
 - [Live chart](#live-chart)
@@ -41,6 +42,8 @@ Windows and Android share one layout:
 | Tab bar | **Connect · PIDs · Live · Gauges · Codes · Logs · More** at the bottom (down the left side when the phone is held sideways). |
 
 On a wide window (about 1000 pixels and up — a big Windows window, or a tablet held sideways) the PID list stays docked on the left beside the pages (drag the splitter to size it) and the *Live* and *Gauges* pages show their buttons in a bar; on a phone or a narrow window those buttons are in the **⋮** menu.
+
+**More room for the pages:** the button at the left of the top bar (or **Ctrl + L**, or **⋮ → PID list beside the pages**) takes the PID list off the side and gives it a page of its own, **PIDs** in the tab bar, as on a phone. The same button brings it back. UVScan remembers which you chose.
 
 A phone works upright or sideways. Held sideways (a short, wide screen) the tab bar moves down the left side so the pages keep their height, the PID search sits beside the scan list, *Real‑time controls* shows the selected control beside the list, the gauge editor keeps its preview beside the fields, and the log viewer puts its log box in the top bar, playback on one row and the chart beside *Channels | Data*.
 
@@ -87,6 +90,21 @@ A tablet held sideways keeps the PID list docked beside the pages:
 
 Everything that talks to the AVT runs on a background thread, so the window stays responsive while the PCM is busy.
 
+## Quick start
+
+When there is no time to set things up — at the drag strip, say — a **quick start** does it all in one go: picks a scan list and a dashboard, connects, starts scanning and a log, opens the dashboard full screen or the live chart, and can keep trying to connect until the adapter and car answer.
+
+[![A quick start: connect, scan, log, full-screen dashboard](media/win-quick-start.webp)](media/win-quick-start.mp4)
+
+- **Quick start…** on the *Connect* page (also in its **⋮** menu) lists them; pick one to run it. UVScan comes with **Drag strip**: the *Acceleration* scan list and dashboard, connect, scan, log, full screen, keep trying.
+- **New quick start…** starts from the scan list and dashboard chosen now; **Edit…** and **Delete…** pick one first. The page has its name, the **Scan list** (or *keep the ticked PIDs*), the **Dashboard** (or the scan list's own) and what to do then: *Connect*, *Start scanning*, *Start a log*, *Dashboard on the whole screen*, *Open the live chart*, *Keep trying to connect until the car answers*. A log needs a scan and a scan needs the connection, so ticking one ticks what it needs.
+- **Keep trying** connects again every 3 seconds while it is not connected — the adapter not plugged in yet, or the link to it lost later — and starts the scan and log again each time. (If the PCM goes quiet during a scan, say the key is turned off, the scan itself keeps asking it to stream again.) The top bar's button says **Stop trying** meanwhile; **Stop**, **Disconnect** or that button end the quick start.
+- **Desktop shortcut for one…** (Windows) puts a shortcut on the desktop that starts UVScan straight into it. The shortcut holds the [command line](#keyboard-and-command-line) for it (e.g. `-list "Acceleration" -log -fullscreen -retry`), so it keeps working even if the quick start is renamed or deleted; it uses the adapter chosen last.
+
+<a href="media/phone-quick-start.mp4"><img src="media/phone-quick-start.webp" width="640" alt="A quick start on a phone held sideways"></a>
+
+Quick starts are kept in `settings.json`. On a phone they are on the same menu (Android has no command line or desktop shortcuts).
+
 ## Choosing PIDs and scan lists
 
 Tick PIDs on the *PIDs* page, or in the list on the left of a wide window (type in **Search PIDs…** to filter). The footer shows how many are ticked and how many of the PCM's 48 streaming bytes they use; it turns red when there are too many.
@@ -118,11 +136,14 @@ Press **Start scan**. Each ticked PID gets a row with its current value, units a
 - **Min / max** in the footer (or **⋮ → Show min / max**) hides or shows those two columns.
 - **‑ / +** zoom the grid from 75 % to 250 % — text, rows and columns together. Ctrl + mouse wheel over the grid, Ctrl + plus / minus and Ctrl + 0 (back to 100 %) do the same. Click the percentage to reset.
 - Rows take the colours of their [alert levels](#display-and-alerts) and flash when a level says so.
+- **Rows in your order**, also while scanning: right‑click a row (long‑press on a phone) → **Move up**, **Move down**, **Move to the top** or **Move to the bottom**, or select it and press **Alt + Up / Alt + Down**. Only what is shown changes, not what is asked of the PCM. Each scan list keeps its own order (and **Save as…** stores the rows' order); without a scan list the order is remembered for the next scan.
 - With up to 4 DPIDs (about 24 bytes of PIDs) the PCM sends about 10 updates a second, with more about 5 (see [protocol notes](protocol.md)).
 
 ![Live data zoomed, without min / max](images/live-zoom.png)
 
-[![Live data while scanning](media/win-live.webp)](media/win-live.mp4)
+[![Moving rows and hiding the PID list while scanning](media/win-live.webp)](media/win-live.mp4)
+
+<a href="media/phone-live.mp4"><img src="media/phone-live.webp" width="240" alt="Moving a row on a phone"></a>
 
 ## Live chart
 
@@ -184,6 +205,12 @@ They follow the **same alert levels** as the grid: the scale shows the levels as
 - **Add gauge…** or right‑click a PID → **Add to dashboard…**
 - Right‑click a gauge → **Edit gauge…**, **Display & alerts…**, **Move earlier / later**, **Remove from dashboard**. Double‑click edits.
 - **Tick these PIDs** ticks the dashboard's PIDs in the PID list, ready to scan.
+
+**Full screen.** The full‑screen button in the top bar (or **F11**, or **⋮ → Full screen**) shows the dashboard alone on the whole screen — no bars, tabs or PID list, on a phone not even the status and navigation bars — with the gauges as big as they go while all of them still fit. A virtual dash for driving or a run down the strip. **Esc**, the back button or gesture, or the small round button in the top right corner come back. A [quick start](#quick-start) can open it straight away.
+
+![The Acceleration dashboard full screen](images/dashboard-full-screen.png)
+
+**Background.** **⋮ → Background…** gives each dashboard its own background: **Plain** (the theme's), a **Solid colour** (black makes a good night dash), or a **Picture** — a file on Windows, the photo picker on a phone. The picture is scaled to cover the page (cut at the edges, never stretched) and kept in UVScan's data folder (`images`), so the original can be moved or deleted. **No picture** removes it.
 
 **Several dashboards.** The box at the left of the Gauges bar (on a phone **⋮ → Dashboards…**) picks which one is shown; the top bar shows its name. **⋮ → New / Rename / Delete dashboard…** manage them. UVScan comes with one for each of its [scan lists](#choosing-pids-and-scan-lists) (*Basic engine*, *Warm-up*, *Idle*, *Fuel trims*, *Knock check*, *Acceleration*, *Charging*, *Cooling*, *Transmission*, *Misfires*), and starting a scan from a scan list shows the dashboard of the same name, so a list of your own gets its dashboard by giving both the same name. The gauges of an older UVScan are the dashboard *Main*.
 
@@ -363,17 +390,35 @@ Everything UVScan does is written here with a timestamp: connection steps, PCM a
 | F7 | Log viewer |
 | F8 | Start / stop log |
 | F9 | Pause / resume log |
+| F11 | Dashboard full screen / back |
+| Ctrl + L | PID list beside the pages, or on its own page (wide windows) |
+| Alt + Up / Alt + Down | Move the selected live data row |
 | Ctrl + / Ctrl ‑ / Ctrl 0 | Zoom the live grid (Live data tab) |
 | Ctrl + mouse wheel | Zoom the live grid |
 | Space (log viewer) | Play / pause (live chart: pause / back to now) |
 | ← → Home End (log viewer chart) | Step through the log |
-| Esc | Close an open **⋮** menu; leave an editor (asking first if you changed something); in the log viewer chart, clear the selection |
+| Esc | Close an open **⋮** menu; leave full screen; leave an editor (asking first if you changed something); in the log viewer chart, clear the selection |
 
 ```
 UVScan.exe -port COM9 -connect -scan -log
+UVScan.exe -list "Acceleration" -log -fullscreen -retry
+UVScan.exe -quick "Drag strip"
 ```
 
-`-port` picks the port — a COM port, or an address such as `-port 192.168.2.99:10001` for an AVT on the network — `-connect` connects at start, `-scan` starts scanning the saved selection, `-log` starts a log as well.
+| Switch | Does |
+|---|---|
+| `-port <name>` | The port: a COM port, `Simulator`, or an address such as `192.168.2.99:10001` for an AVT on the network. Without it, the port chosen last. |
+| `-list <name>` | Ticks the PIDs of this scan list. |
+| `-dashboard <name>` | Shows this dashboard (otherwise the scan list's, if it has one). |
+| `-connect` | Connects at start. |
+| `-scan` | Starts scanning (connects first). |
+| `-log` | Starts a log as well (scans first). |
+| `-fullscreen` | The dashboard on the whole screen. |
+| `-chart` | Opens the live chart once the scan runs. |
+| `-retry` | Keeps trying to connect, every 3 seconds, until it works. |
+| `-quick <name>` | Does what that [quick start](#quick-start) does; other switches add to it. |
+
+Names with spaces go in quotes. These are what a desktop shortcut made by **Quick start → Desktop shortcut for one…** contains, so the easiest way to get one is to make it there.
 
 ## Where things are stored
 

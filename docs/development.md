@@ -26,6 +26,8 @@ builds `Android64\Debug\UVScan\bin\UVScan.apk` and, with `install`, puts it on t
 
 On Android the data folder is the app's private documents folder, and logs go to `Android/data/com.jdredd87.uvscan/files/Logs` (reachable over USB). The serial port is USB host (`UVScan.Serial.Android`): FTDI (the AVT‑841's own USB port, if it is FTDI), CP210x, CH340/CH341, CDC‑ACM and the Keyspan USA‑19HS (the bench's COM9 adapter; its firmware is in ROM, and the other Keyspan models, which need firmware loaded, are not supported). Android asks for permission the first time; connect again after allowing it.
 
+Receiving has a thread of its own (`TUsbReader`) that always keeps one `UsbRequest` queued on the IN endpoint and waits in `requestWait`; `Read` takes from what it collected. Reading with `bulkTransfer` and a timeout lost data: when the timeout ran out as a packet arrived, the packet was thrown away, and the scan engine reads with timeouts of 20 ms (on the S9+ with the Keyspan, 9.3 instead of 10 rows/s). The Keyspan runs in DMA mode above 57600 baud, as in the Linux driver; in its "by hand" mode at 115200 nearly every byte came in a USB packet of its own. With the forwarding length and timeout of 1 that UVScan sets, short replies are not held back in DMA mode.
+
 For development, connect the IDE to the phone over Wi‑Fi (Developer options > Wireless debugging, `adb pair` once, then `adb connect <ip:port>`) so the phone's USB port is free for the adapter. `tools\phone-mirror.cmd` shows the phone's screen in a window on the PC that the mouse and keyboard work (scrcpy, `winget install --id Genymobile.scrcpy`); it makes scrcpy use Delphi's adb so the two do not restart each other's adb server.
 
 ### Writing UI code

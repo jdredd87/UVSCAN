@@ -8,9 +8,10 @@ It is a rewrite of the 2008 UVSCAN (Delphi 2007, kept in [`legacy/`](legacy) for
 
 ## What it does
 
-- **Live data** — streams up to 48 bytes of PIDs from the PCM (about 10 updates a second for small selections), with min / max, calculated PIDs and AVT analog inputs. The grid zooms from 75 % to 250 %.
+- **Live data** — streams up to 48 bytes of PIDs from the PCM (about 10 updates a second for small selections), with min / max, calculated PIDs and AVT analog inputs. Rows go in the order you put them (also while scanning), readings are rounded to steady, readable decimals, and the grid zooms from 75 % to 250 %.
 - **Alerts** — per PID colours and green / yellow / red style alert levels that recolour the row, flash and sound an alarm (knock retard, coolant temperature, voltage, …).
-- **Dashboard** — dial, bar and big‑number gauges using the same alert levels.
+- **Dashboard** — dial, bar and big‑number gauges using the same alert levels; several dashboards (one for each built‑in scan list), and **full screen** as a virtual dash.
+- **Quick start** — one tap (or a desktop shortcut) to pick a scan list and dashboard, connect, scan, log and go full screen, retrying until the car answers.
 - **Test display** — made‑up values sweep every PID through its range so colours, alerts and gauges can be tried without a car.
 - **CSV logging** — F8 start / stop, F9 pause.
 - **Log viewer** — logs as a chart (lanes, or overlaid with each channel on its own scale) and a grid on one cursor, with real‑time playback at 0.25×‑20×, zoom and pan, alert colours on the line and in the grid, and saved views (e.g. *MPH vs RPM vs IAT*).
@@ -54,7 +55,7 @@ Short clips of it at work, on both platforms, are on the **[wiki](https://github
 
 Everything UVScan stores lives in `C:\ProgramData\UVScan` and is created from built‑in defaults on first run, so the exe needs nothing else. Installer note: grant Users modify rights on that folder (a folder created there by one user is read‑only for others).
 
-Command line (as in the old UVSCAN): `UVScan.exe -port COM9 -connect -scan -log`
+Command line (as in the old UVSCAN): `UVScan.exe -port COM9 -connect -scan -log`; for a quick getaway, `UVScan.exe -list "Acceleration" -log -fullscreen -retry` or `-quick "Drag strip"` (see [Quick start](docs/user-guide.md#quick-start) — UVScan makes desktop shortcuts for these).
 
 ## Build
 
