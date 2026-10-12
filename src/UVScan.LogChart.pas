@@ -673,19 +673,34 @@ var
       Text := IfThen(V >= 0.5, 'ON', 'OFF');
   end;
 
-  procedure Bubble(const S_: string; Xc, Yc: Single; Col: TAlphaColor);
+  // The value at the cursor in a box BoxH high (18, less in a short lane).
+  procedure Bubble(const S_: string; Xc, Yc: Single; Col: TAlphaColor; BoxH: Single = 18);
   var
-    Tw: Single;
+    Tw, Fs: Single;
   begin
-    Tw := TextWidth(S_, 12, True) + 10;
+    Fs := BoxH * 12 / 18;
+    Tw := TextWidth(S_, Fs, True) + 10;
     if Xc + Tw + 6 > FPlot.Right then
       Xc := Xc - Tw - 12
     else
       Xc := Xc + 6;
-    Yc := EnsureRange(Yc - 9, FPlot.Top, FPlot.Bottom - 18);
-    Fill(Xc, Yc, Tw, 18, Back, 225);
-    Fill(Xc, Yc, 3, 18, Col);
-    Txt(S_, Xc + 5, Yc, Tw - 5, 18, 12, Col, TTextAlign.Leading, True);
+    Yc := EnsureRange(Yc - BoxH / 2, FPlot.Top, FPlot.Bottom - BoxH);
+    Fill(Xc, Yc, Tw, BoxH, Back, 225);
+    Fill(Xc, Yc, 3, BoxH, Col);
+    Txt(S_, Xc + 5, Yc, Tw - 5, BoxH, Fs, Col, TTextAlign.Leading, True);
+  end;
+
+  // A lane's name on a faint backing, so its line does not run through it.
+  procedure LaneName(const S_: string; X, Y, W: Single; Col: TAlphaColor; Align: TTextAlign);
+  var
+    Tw: Single;
+  begin
+    Tw := Min(W, TextWidth(S_, 12, True) + 8);
+    if Align = TTextAlign.Trailing then
+      Fill(X + W - Tw, Y, Tw, 16, PlotBack, 170)
+    else
+      Fill(X - 4, Y, Tw, 16, PlotBack, 170);
+    Txt(S_, X, Y, W, 16, 12, Col, Align, True);
   end;
 
 var
@@ -755,24 +770,28 @@ begin
                 Line(FPlot.Left, LaneTop, FPlot.Right, LaneTop, 1, GridColor);
               DrawBands(Ch, Lo, Hi, LaneTop + 3, LaneH - 6);
               DrawSeries(Ch, Lo, Hi, LaneTop + 3, LaneH - 6);
-              // labels: name, and the scale on the left
-              Txt(FData.Channels[Ch].Caption, FPlot.Left + FPlot.Width / 2, LaneTop + 2,
-                FPlot.Width / 2 - 8, 16, 12, FStyles[Ch].Color, TTextAlign.Trailing, True);
+              // labels: the name on the side away from the cursor (its value is
+              // drawn beside the cursor), and the scale on the left
+              if X_(FCursor) > FPlot.Left + FPlot.Width / 2 then
+                LaneName(FData.Channels[Ch].Caption, FPlot.Left + 6, LaneTop + 2,
+                  FPlot.Width / 2 - 8, FStyles[Ch].Color, TTextAlign.Leading)
+              else
+                LaneName(FData.Channels[Ch].Caption, FPlot.Left + FPlot.Width / 2, LaneTop + 2,
+                  FPlot.Width / 2 - 8, FStyles[Ch].Color, TTextAlign.Trailing);
               Txt(FormatAxis(Hi, (Hi - Lo) / 4), 0, LaneTop + 1, AxisW, 14, 10.5, FStyles[Ch].Color,
                 TTextAlign.Trailing);
-              Txt(FormatAxis(Lo, (Hi - Lo) / 4), 0, LaneTop + LaneH - 15, AxisW, 14, 10.5, FStyles[Ch].Color,
-                TTextAlign.Trailing);
+              if LaneH >= 34 then // (a short lane has room for one of them)
+                Txt(FormatAxis(Lo, (Hi - Lo) / 4), 0, LaneTop + LaneH - 15, AxisW, 14, 10.5, FStyles[Ch].Color,
+                  TTextAlign.Trailing);
               ValueAtCursor(Ch, V, VText);
               if not IsNan(V) then
               begin
                 Y := Y_(EnsureRange(V, Lo, Hi), Lo, Hi, LaneTop + 3, LaneH - 6);
-                // under the lane's name (top right) when it would cover it
-                if X_(FCursor) > FPlot.Left + FPlot.Width / 2 then
-                  Y := Max(Y, LaneTop + 28); // (its box starts 9 above Y; the name ends at +18)
                 // inside its own lane: the next lane's value would cover it
                 if LaneH >= 24 then
                   Y := EnsureRange(Y, LaneTop + 10, LaneTop + LaneH - 10);
-                Bubble(VText + ' ' + FData.Channels[Ch].Units, X_(FCursor), Y, FStyles[Ch].Color);
+                Bubble(VText + ' ' + FData.Channels[Ch].Units, X_(FCursor), Y, FStyles[Ch].Color,
+                  EnsureRange(LaneH - 2, 11, 18));
               end;
             end;
           end;

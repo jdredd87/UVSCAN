@@ -32,6 +32,7 @@ type
     FVin: string;
     FDpids: TDictionary<Byte, TList<TSimSlot>>;
     FStreaming: TList<TSimStream>;   // active DPIDs (both slots)
+    FCodesCleared: Boolean;          // the PCM's codes were cleared (they stay gone until it is made again)
     FSlots: array[1..2] of TArray<Byte>;
     FSlotSpeed: array[1..2] of Integer;
     FPaused: Boolean;
@@ -384,12 +385,21 @@ begin
         Reply($10, $59, [$08, $02])
       else
       begin
-        Reply($10, $59, [$03, $00, $AF]);  // P0300
-        Reply($10, $59, [$01, $71, $AF]);  // P0171
+        if not FCodesCleared then
+        begin
+          Reply($10, $59, [$03, $00, $AF]);  // P0300
+          Reply($10, $59, [$01, $71, $AF]);  // P0171
+        end;
         Reply($10, $59, [$00, $00, $FF]);  // end of list
       end;
 
-    ModeClearDtcs, ModeReturnToNormal, $10:
+    ModeClearDtcs:
+      begin
+        FCodesCleared := True; // like a real PCM: gone until they set again
+        Reply($10, Msg.Mode + PositiveOffset, []);
+      end;
+
+    ModeReturnToNormal, $10:
       Reply($10, Msg.Mode + PositiveOffset, []);
 
     ModeDeviceControl:

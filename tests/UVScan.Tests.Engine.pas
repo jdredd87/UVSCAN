@@ -674,6 +674,14 @@ begin
   Assert.AreEqual(2, Integer(Length(Ev.Dtcs)));
   Assert.AreEqual('P0300', Ev.Dtcs[0].Code);
   Assert.AreEqual('P0171', Ev.Dtcs[1].Code);
+  // Cleared, the next read finds none.
+  FEngine.Post(Command(ecClearDtcs));
+  Sleep(500);
+  FEvents.Clear;
+  FEngine.Post(Command(ecReadDtcs));
+  Assert.IsTrue(WaitUntil(function: Boolean begin Result := HasEvent(eeDtcs) end), 'no DTC result after clearing');
+  Assert.IsTrue(FindEvent(eeDtcs, Ev));
+  Assert.AreEqual(0, Integer(Length(Ev.Dtcs)), 'codes still there after clearing');
 end;
 
 procedure TEngineTests.SmallScanAfterLargeScanDoesNotReviveOldDpids;

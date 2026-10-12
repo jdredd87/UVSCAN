@@ -1179,7 +1179,7 @@ begin
   pnlLiveFooter.Visible := Wide;
   pnlDashBar.Visible := Wide and not FFullScreen;
   if btnPidPanel <> nil then
-    btnPidPanel.Visible := Wide and not btnBack.Visible;
+    btnPidPanel.Visible := Wide;
   pnlCtlBar.Visible := Wide;
   // A short window (a phone held sideways): the tabs down the left side, and the
   // PID search beside the scan list, so the pages keep their height.
@@ -1322,7 +1322,11 @@ begin
     (P = tiControls);
   btnChart.Visible := (P = tiLive) or (P = tiDashboard);
   btnFullScreen.Visible := P = tiDashboard;
-  btnPidPanel.Visible := FWide and not btnBack.Visible;
+  // Both can show: the PID list button after the back arrow (sharing its
+  // place, a second tap on back hid the PID list).
+  btnPidPanel.Visible := FWide;
+  if btnBack.Visible then
+    btnPidPanel.Position.X := btnBack.Position.X + btnBack.Width + 1;
   if FSettings.Window.PidsHidden then
     btnPidPanel.Hint := 'Show the PID list beside the pages (Ctrl+L)'
   else
