@@ -5686,7 +5686,10 @@ begin
   if FFocusGauge >= FDisplay.Gauges.Count then
     FFocusGauge := -1;
   if FGaugeBar <> nil then
+  begin
     FGaugeBar.Visible := False;
+    FGaugeBar.Parent := tiDashboard; // off the gauge about to be freed
+  end;
   for View in FGaugeViews do
     View.Free;
   FGaugeViews.Clear;
@@ -6318,7 +6321,6 @@ var
   Btns: TArray<TCircle>;
   B: TCircle;
   X: Single;
-  TopRight: TPointF;
 begin
   if (Index < 0) or (Index >= FGaugeViews.Count) then
     Exit;
@@ -6347,9 +6349,10 @@ begin
   end;
   FBarEarlier.Opacity := IfThen(Index > 0, 1, 0.4);
   FBarLater.Opacity := IfThen(Index < FGaugeViews.Count - 1, 1, 0.4);
-  // On the gauge's top right corner, kept on the page.
-  TopRight := FGaugeBar.ParentControl.AbsoluteToLocal(View.LocalToAbsolute(TPointF.Create(View.Width - 6, 6)));
-  FGaugeBar.SetBounds(Max(4, TopRight.X - (X - Gap)), Max(4, TopRight.Y), X - Gap, Size);
+  // On the gauge itself, top right: it scrolls and moves with the gauge.
+  FGaugeBar.Parent := View;
+  FGaugeBar.Anchors := [TAnchorKind.akTop, TAnchorKind.akRight];
+  FGaugeBar.SetBounds(Max(4, View.Width - 6 - (X - Gap)), 6, X - Gap, Size);
   FGaugeBar.Visible := True;
   FGaugeBar.BringToFront;
   FFocusHideAt := TThread.GetTickCount64 + 5000;
