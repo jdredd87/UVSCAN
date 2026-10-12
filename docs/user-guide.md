@@ -43,7 +43,7 @@ Windows and Android share one layout:
 
 On a wide window (about 1000 pixels and up — a big Windows window, or a tablet held sideways) the PID list stays docked on the left beside the pages (drag the splitter to size it) and the *Live* and *Gauges* pages show their buttons in a bar; on a phone or a narrow window those buttons are in the **⋮** menu.
 
-**More room for the pages:** the button at the left of the top bar (or **Ctrl + L**, or **⋮ → PID list beside the pages**) takes the PID list off the side and gives it a page of its own, **PIDs** in the tab bar, as on a phone. The same button brings it back. UVScan remembers which you chose.
+**More room for the pages:** the **‹** button at the end of the *Scan list* row (or the button at the left of the top bar, **Ctrl + L**, or **⋮ → PID list beside the pages**) puts the PID list away, also while scanning, and gives it a page of its own, **PIDs** in the tab bar, as on a phone. The **›** strip down the left edge (or the same top bar button, or Ctrl + L) brings it back. UVScan remembers which you chose.
 
 A phone works upright or sideways. Held sideways (a short, wide screen) the tab bar moves down the left side so the pages keep their height, the PID search sits beside the scan list, *Real‑time controls* shows the selected control beside the list, the gauge editor keeps its preview beside the fields, and the log viewer puts its log box in the top bar, playback on one row and the chart beside *Channels | Data*.
 
@@ -121,6 +121,8 @@ Quick starts are kept in `settings.json`. On a phone they are on the same menu (
 ## Choosing PIDs and scan lists
 
 Tick PIDs on the *PIDs* page, or in the list on the left of a wide window (type in **Search PIDs…** to filter). The footer shows how many are ticked and how many of the PCM's 48 streaming bytes they use; it turns red when there are too many.
+
+The ticks are what the scan asks the PCM for, so they are locked while scanning (the check boxes fade, the footer says *locked*): **Stop scan**, change them, **Start scan**. Everything else stays usable while scanning: the search, *Display & alerts*, *Add to dashboard*, the rows' order and the PID list put away.
 
 - **Test PIDs** asks the PCM about each ticked PID (or all of them) and shows *yes / no* in the *Test* column.
 - **Scan list** holds named selections such as *Misfires* or *Transmission*. Pick one to tick its PIDs, **Save as…** to store the current ticks under a name, **Delete** to remove a list. Lists only remember which PIDs, so fixing a PID's formula fixes it in every list.
@@ -218,7 +220,7 @@ They follow the **same alert levels** as the grid: the scale shows the levels as
 - **Add gauge…** or right‑click a PID → **Add to dashboard…**
 - Right‑click a gauge (long‑press on a phone) → **Edit gauge…**, **Display & alerts…**, **Minimize**, **Move earlier / later**, **Remove from dashboard**. Double‑click edits.
 - **Minimize** shrinks a gauge to a small chip — its name and value, still in its alert colours — in a row at the bottom, to make room for the others for a while. Tap or click the chip to restore it.
-- **Tick these PIDs** ticks the dashboard's PIDs in the PID list, ready to scan.
+- **Tick these PIDs** ticks the dashboard's PIDs in the PID list, ready to scan (not while scanning).
 
 **Full screen.** The full‑screen button in the top bar (or **F11**, or **⋮ → Full screen**) shows the dashboard alone on the whole screen — no bars, tabs or PID list, on a phone not even the status and navigation bars — with the gauges as big as they go while all of them still fit. A virtual dash for driving or a run down the strip. With no status strip there, a red label at the top says when it is not scanning (*Not connected – trying again*, *Connected – not scanning*), since the gauges keep showing the last values. **Esc**, the back button or gesture, or the small round button in the top right corner come back. A [quick start](#quick-start) can open it straight away.
 

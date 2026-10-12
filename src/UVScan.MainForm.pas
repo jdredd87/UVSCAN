@@ -358,6 +358,9 @@ type
     FFocusHideAt: UInt64;            // tick count FFocusBtn goes again
     FFocusItem: TMenuItem;           // gauge menu: Fill the screen
     btnPidPanel: TSpeedButton;       // wide windows: the PID list beside the pages or on its own page
+    btnPidsHide: TSpeedButton;       // on the PID list beside the pages: puts it away
+    FPidsShow: TRectangle;           // the strip down the left edge that brings it back
+    FScanStarting: Boolean;          // Start scan pressed, the engine not scanning yet
     btnFullScreen: TSpeedButton;     // Gauges: the dashboard on the whole screen
     FRail: Boolean;                  // short window (a phone held sideways): the tabs go down the left side
     FCtlRunHeight: Single;           // the control panel's height under the list, while it is beside it
@@ -403,6 +406,7 @@ type
       Checked: Boolean = False);
     procedure ToggleMinMaxClick(Sender: TObject);
     procedure TogglePidPanelClick(Sender: TObject);
+    function PidsLocked: Boolean;
     procedure RunQuickStart(const Q: TQuickStart);
     procedure QuickConnect;
     procedure QuickStartClick(Sender: TObject);
@@ -1019,6 +1023,42 @@ begin
   Icon := AddIcon(btnPidPanel);
   Icon.Data.Data := 'M3 5 L21 5 L21 19 L3 19 Z M9 5 L9 19';
   Icon.Fill.Kind := TBrushKind.None;
+  // On the PID list beside the pages: a button to put it away, and a strip
+  // down the left edge to bring it back (the same as the button above).
+  btnPidsHide := TSpeedButton.Create(Self);
+  btnPidsHide.Parent := pnlListBar;
+  btnPidsHide.Stored := False;
+  btnPidsHide.Align := TAlignLayout.Right;
+  btnPidsHide.Position.X := 10000; // after Delete
+  btnPidsHide.Width := 30;
+  btnPidsHide.Margins.Left := 2;
+  btnPidsHide.Text := '';
+  btnPidsHide.Hint := 'Hide the PID list - more room for the pages (Ctrl+L)';
+  btnPidsHide.ShowHint := True;
+  btnPidsHide.OnClick := TogglePidPanelClick;
+  Icon := AddIcon(btnPidsHide);
+  Icon.Data.Data := 'M15 5 L8 12 L15 19';
+  Icon.Fill.Kind := TBrushKind.None;
+  Icon.Width := 16;
+  Icon.Height := 16;
+  FPidsShow := TRectangle.Create(Self);
+  FPidsShow.Parent := Self;
+  FPidsShow.Stored := False;
+  FPidsShow.Align := TAlignLayout.Left;
+  FPidsShow.Position.X := 0;
+  FPidsShow.Width := 22;
+  FPidsShow.Sides := [TSide.Right];
+  FPidsShow.HitTest := True;
+  FPidsShow.Cursor := crHandPoint;
+  FPidsShow.Hint := 'Show the PID list beside the pages (Ctrl+L)';
+  FPidsShow.ShowHint := True;
+  FPidsShow.OnClick := TogglePidPanelClick;
+  FPidsShow.Visible := False;
+  Icon := AddIcon(FPidsShow);
+  Icon.Data.Data := 'M9 5 L16 12 L9 19';
+  Icon.Fill.Kind := TBrushKind.None;
+  Icon.Width := 14;
+  Icon.Height := 14;
   // Full screen: a quiet round button to come back.
   FExitFull := TCircle.Create(Self);
   FExitFull.Parent := tiDashboard;
@@ -1277,6 +1317,10 @@ begin
     splLeft.Visible := False;
   end;
   FPidsDocked := Docked;
+  btnPidsHide.Visible := Docked;
+  FPidsShow.Visible := Wide and not Docked and not FFullScreen;
+  if FPidsShow.Visible then
+    FPidsShow.Position.X := 0;
   FNavButtons[1].Visible := not Docked;
   if Docked then
     lblLiveHint.Text := 'Tick PIDs on the left, connect, then press Start scan.'
@@ -2044,7 +2088,7 @@ begin
   begin
     AddPageMenuItem('Dashboards...', ChooseDashboardClick, FDisplay.DashboardCount > 1);
     AddPageMenuItem('Add gauge...', btnAddGaugeClick);
-    AddPageMenuItem('Tick these PIDs', btnTickDashPidsClick);
+    AddPageMenuItem('Tick these PIDs', btnTickDashPidsClick, not PidsLocked);
     AddPageMenuItem(btnDashTest.Text, btnTestDisplayClick, btnDashTest.Enabled);
     AddPageMenuItem('Live chart', LiveChartClick);
     AddPageMenuItem('Full screen', FullScreenClick);
@@ -2062,7 +2106,7 @@ begin
   else if P = tiPids then
   begin
     AddPageMenuItem('Test PIDs', btnTestPidsClick, btnTestPids.Enabled);
-    AddPageMenuItem('Clear selection', btnClearSelectionClick);
+    AddPageMenuItem('Clear selection', btnClearSelectionClick, not PidsLocked);
     AddPageMenuItem('Edit PIDs...', btnEditPidsClick, btnEditPids.Enabled);
   end
   else if P = tiMessages then
@@ -2207,6 +2251,12 @@ begin
   Icon(btnChart);
   Icon(btnFullScreen);
   Icon(btnPidPanel);
+  if btnPidsHide <> nil then
+  begin
+    Icon(btnPidsHide);
+    Bar(FPidsShow);
+    Icon(FPidsShow);
+  end;
   if FExitFull <> nil then
   begin
     FExitFull.Fill.Color := P.Panel;
@@ -3326,10 +3376,22 @@ begin
   Checked := (Row <= High(FPidRows)) and (FPidRows[Row] >= 0) and FSelected.Contains(FPidRows[Row]);
 end;
 
+{ What is scanned is set when the scan starts (the PCM's DPIDs, the log's
+  columns): the ticks wait for Stop. }
+function TMainForm.PidsLocked: Boolean;
+begin
+  Result := (FState = esScanning) or FScanStarting;
+end;
+
 procedure TMainForm.PidsToggle(Sender: TObject; Row: Integer);
 begin
   if (Row > High(FPidRows)) or (FPidRows[Row] < 0) then
     Exit;
+  if PidsLocked then
+  begin
+    ShowNotice('Scanning: stop the scan to change the PIDs', False);
+    Exit;
+  end;
   SetSelected(FPidRows[Row], not FSelected.Contains(FPidRows[Row]));
   UpdateBudget;
 end;
@@ -3483,6 +3545,8 @@ begin
   I := FLists.IndexOf(ComboText(cbLists));
   if I < 0 then
     Exit;
+  if PidsLocked then
+    Exit; // the combo is disabled; a quick start says so itself
   FSelected.Clear;
   SettingsChanged;
   Missing := 0;
@@ -3553,6 +3617,11 @@ end;
 
 procedure TMainForm.btnClearSelectionClick(Sender: TObject);
 begin
+  if PidsLocked then
+  begin
+    ShowNotice('Scanning: stop the scan to change the PIDs', False);
+    Exit;
+  end;
   FSelected.Clear;
   SettingsChanged;
   FillPidList;
@@ -3597,6 +3666,8 @@ begin
   end;
   lblBudget.Text := Format('%d selected  -  %d / %d bytes  -  %s',
     [Count, Bytes, MaxDpids * DpidDataBytes, Dpids]);
+  if PidsLocked then
+    lblBudget.Text := lblBudget.Text + '  -  locked';
 end;
 
 procedure TMainForm.btnTestPidsClick(Sender: TObject);
@@ -3737,10 +3808,14 @@ begin
     ShowNotice('Tick the PIDs to scan in the PID list', True);
     Exit;
   end;
+  if PidsLocked then
+    Exit; // scanning these already
   FRejected.Clear;
   Cmd := Command(ecStartScan);
   Cmd.PidIds := FSelected.ToArray;
+  FScanStarting := True; // the ticks are what is scanned from now on
   Post(Cmd);
+  UpdateControls;
 end;
 
 procedure TMainForm.btnStopScanClick(Sender: TObject);
@@ -3831,6 +3906,8 @@ begin
       begin
         FState := Ev.State;
         FConnecting := False;
+        if FState <> esBusy then
+          FScanStarting := False; // scanning, or it did not start
         SetStatus(spState, StateNames[FState]);
         if FState <> esScanning then
         begin
@@ -3959,8 +4036,7 @@ begin
   btnRefreshPorts.Enabled := FState = esDisconnected;
   btnConnect.Enabled := FState = esDisconnected;
   btnDisconnect.Enabled := Connected;
-  btnStartScan.Enabled := Idle or (FState = esScanning);
-  btnStartScan.Text := IfThen(FState = esScanning, 'Restart scan', 'Start scan');
+  btnStartScan.Enabled := Idle and not FScanStarting;
   btnStopScan.Enabled := FState in [esScanning, esBusy];
   btnStopScan.Text := IfThen(FState = esBusy, 'Cancel', 'Stop scan');
   btnLog.Enabled := FState = esScanning;
@@ -3969,6 +4045,14 @@ begin
   btnPause.Text := IfThen(FLogPaused, 'Resume', 'Pause') + IfThen(IsMobile, '', ' (F9)');
   btnTestPids.Enabled := Idle;
   btnEditPids.Enabled := FState in [esDisconnected, esConnected];
+  // Stop the scan to change what it scans.
+  if grdPids <> nil then
+    grdPids.ChecksLocked := PidsLocked;
+  cbLists.Enabled := not PidsLocked;
+  btnClearSelection.Enabled := not PidsLocked;
+  btnTickDashPids.Enabled := not PidsLocked;
+  if FCatalog <> nil then
+    UpdateBudget;
   btnReadInfo.Enabled := Idle;
   btnReadDtcs.Enabled := Idle;
   btnClearDtcs.Enabled := Idle;
@@ -6342,6 +6426,11 @@ var
   P: TPidDef;
   Added: Integer;
 begin
+  if PidsLocked then
+  begin
+    ShowNotice('Scanning: stop the scan to change the PIDs', False);
+    Exit;
+  end;
   Added := 0;
   for G in FDisplay.Gauges do
   begin
@@ -6354,9 +6443,7 @@ begin
   end;
   FillPidList;
   if Added = 0 then
-    ShowNotice('The dashboard PIDs are already ticked', False)
-  else if FState = esScanning then
-    ShowNotice(Format('%d PID(s) ticked - press Restart scan to include them', [Added]), False);
+    ShowNotice('The dashboard PIDs are already ticked', False);
 end;
 
 procedure TMainForm.PrepareGaugeMenu(Index: Integer);

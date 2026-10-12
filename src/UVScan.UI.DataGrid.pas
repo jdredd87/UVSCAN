@@ -59,6 +59,7 @@ type
     FTopRow: Integer;
     FItemIndex: Integer;
     FCheckboxes: Boolean;
+    FChecksLocked: Boolean;
     FStriped: Boolean;
     FFixedStripes: Boolean;
     FGridLines: Boolean;
@@ -104,6 +105,7 @@ type
     procedure SetTopRow(Value: Integer);
     procedure SetShowHeader(Value: Boolean);
     procedure SetCheckboxes(Value: Boolean);
+    procedure SetChecksLocked(Value: Boolean);
     function GetRowHeights(Row: Integer): Single;
     procedure SetRowHeights(Row: Integer; Value: Single);
     function GetColumn(Index: Integer): TGridColumn;
@@ -209,6 +211,9 @@ type
     property FontSize: Single read FFontSize write SetFontSize;
     property FontFamily: string read FFontFamily write FFontFamily;
     property Checkboxes: Boolean read FCheckboxes write SetCheckboxes default False;
+    { The check boxes are drawn faded: they cannot be changed for now. A click
+      still calls OnToggleCheck (which can say why). }
+    property ChecksLocked: Boolean read FChecksLocked write SetChecksLocked default False;
     property Striped: Boolean read FStriped write FStriped default True;
     { Stripes stay where they are on screen while the rows scroll under them
       (a grid that scrolls by itself, a row at a time, does not strobe). }
@@ -1041,7 +1046,11 @@ end;
 procedure TDataGrid.DrawCheck(const R: TRectF; Checked: Boolean; Color: TAlphaColor);
 var
   P: TPathData;
+  O: Single;
 begin
+  O := 1;
+  if FChecksLocked then
+    O := 0.4;
   Canvas.Fill.Kind := TBrushKind.Solid;
   Canvas.Fill.Color := FBackColor;
   Canvas.FillRect(R, 3, 3, AllCorners, 1);
@@ -1050,7 +1059,7 @@ begin
   if Checked then
   begin
     Canvas.Fill.Color := FCheckColor;
-    Canvas.FillRect(R, 3, 3, AllCorners, 1);
+    Canvas.FillRect(R, 3, 3, AllCorners, O);
     P := TPathData.Create;
     try
       P.MoveTo(TPointF.Create(R.Left + R.Width * 0.22, R.Top + R.Height * 0.52));
@@ -1058,7 +1067,7 @@ begin
       P.LineTo(TPointF.Create(R.Left + R.Width * 0.78, R.Top + R.Height * 0.30));
       Canvas.Stroke.Color := TAlphaColors.White;
       Canvas.Stroke.Thickness := 2;
-      Canvas.DrawPath(P, 1);
+      Canvas.DrawPath(P, O);
     finally
       P.Free;
     end;
@@ -1066,8 +1075,16 @@ begin
   else
   begin
     Canvas.Stroke.Color := Color;
-    Canvas.DrawRect(R, 3, 3, AllCorners, 1);
+    Canvas.DrawRect(R, 3, 3, AllCorners, O);
   end;
+end;
+
+procedure TDataGrid.SetChecksLocked(Value: Boolean);
+begin
+  if Value = FChecksLocked then
+    Exit;
+  FChecksLocked := Value;
+  Repaint;
 end;
 
 procedure TDataGrid.Paint;
