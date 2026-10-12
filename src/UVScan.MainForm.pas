@@ -344,6 +344,7 @@ type
     FWasPadding: TRectF;             // phone: the safe area insets before full screen
     FSafeHold: UInt64;               // phone: ignore inset changes until this tick (see SetFullScreen)
     FExitFull: TCircle;              // full screen: the way back
+    FFullState: TRectangle;          // full screen, not scanning: what is going on (no status strip there)
     btnPidPanel: TSpeedButton;       // wide windows: the PID list beside the pages or on its own page
     btnFullScreen: TSpeedButton;     // Gauges: the dashboard on the whole screen
     FRail: Boolean;                  // short window (a phone held sideways): the tabs go down the left side
@@ -401,6 +402,7 @@ type
     procedure FullScreenClick(Sender: TObject);
     procedure SetFullScreen(Value: Boolean);
     procedure PlaceExitFull;
+    procedure UpdateFullState;
     procedure GaugeClick(Sender: TObject);
     procedure MinimizeGaugeClick(Sender: TObject);
     procedure FitScreenClick(Sender: TObject);
@@ -993,6 +995,28 @@ begin
   FMinimizeItem.Text := 'Minimize';
   FMinimizeItem.OnClick := MinimizeGaugeClick;
   pmGauge.InsertObject(miGaugeSep1.Index, FMinimizeItem);
+  // Full screen: a pill at the top while not scanning (the values are old then).
+  FFullState := TRectangle.Create(Self);
+  FFullState.Parent := tiDashboard;
+  FFullState.Stored := False;
+  FFullState.HitTest := False;
+  FFullState.Stroke.Kind := TBrushKind.None;
+  FFullState.Fill.Color := $E0B03030;
+  FFullState.XRadius := 16;
+  FFullState.YRadius := 16;
+  FFullState.Visible := False;
+  with TLabel.Create(Self) do
+  begin
+    Parent := FFullState;
+    Stored := False;
+    Align := TAlignLayout.Client;
+    HitTest := False;
+    StyledSettings := StyledSettings - [TStyledSetting.Size, TStyledSetting.FontColor, TStyledSetting.Style];
+    TextSettings.Font.Size := 16;
+    TextSettings.Font.Style := [TFontStyle.fsBold];
+    TextSettings.FontColor := TAlphaColors.White;
+    TextSettings.HorzAlign := TTextAlign.Center;
+  end;
   // Grid menu, live rows: move the row.
   FMenuLiveRow := -1;
   for I := 0 to 4 do
@@ -1615,6 +1639,33 @@ begin
   FormResize(Self); // the insets move when the phone turns
 end;
 
+procedure TMainForm.UpdateFullState;
+var
+  S: string;
+begin
+  if FFullState = nil then
+    Exit;
+  S := '';
+  if FFullScreen and not (FState in [esScanning]) and not FTestMode then
+    case FState of
+      esDisconnected:
+        if FQuickActive and FQuick.Retry then
+          S := 'Not connected - trying again'
+        else
+          S := 'Not connected';
+      esConnected:
+        S := 'Connected - not scanning';
+    else
+      S := 'Working...';
+    end;
+  FFullState.Visible := S <> '';
+  if S = '' then
+    Exit;
+  TLabel(FFullState.Controls[0]).Text := S;
+  FFullState.SetBounds((sbDash.Width - 320) / 2 + sbDash.Position.X, sbDash.Position.Y + 8, 320, 34);
+  FFullState.BringToFront;
+end;
+
 procedure TMainForm.PlaceExitFull;
 begin
   if (FExitFull = nil) or not FExitFull.Visible then
@@ -1662,6 +1713,7 @@ begin
     pnlNotice.Visible := False;
   FAddGauge.Visible := not Value;
   FExitFull.Visible := Value;
+  UpdateFullState;
   if IsMobile then
   begin
     // No status or navigation bar. The insets Android reports around this
@@ -3583,6 +3635,13 @@ begin
       begin
         AddMessage('Warning: ' + Ev.Text);
         ShowNotice(Ev.Text, False);
+        if Ev.Flag then
+        begin
+          // Stopped for being away: a quick start does not connect again
+          // behind the user's back (the next stop would only follow).
+          FQuickActive := False;
+          FRetryAt := 0;
+        end;
         if Ev.Flag and (FAwaySince <> 0) then
         begin
           // Stopped while away: Android may end the app before the user is
@@ -3718,6 +3777,7 @@ procedure TMainForm.UpdateControls;
 var
   Connected, Idle: Boolean;
 begin
+  UpdateFullState;
   Connected := FState in [esConnected, esScanning, esBusy];
   Idle := FState = esConnected;
   cbPort.Enabled := FState = esDisconnected;
