@@ -19,6 +19,34 @@ uses
 type
   TEngineState = (esDisconnected, esConnected, esScanning, esBusy);
 
+  { Writes a log file on its own thread. File writes can stall for a moment
+    (a phone's shared storage especially); on the scan thread that left the
+    serial port unread long enough for the adapter to drop bytes. WriteLine
+    only adds to a buffer; the file gets it within half a second, and all
+    of it when the writer is freed. }
+  TLogFileWriter = class(TThread)
+  private
+    FFile: TFileStream;
+    FLock: TCriticalSection;
+    FWake: TEvent;
+    FPending: TStringBuilder;
+    FError: string;
+    function TakePending: string;
+    procedure WriteOut(const Text: string);
+  protected
+    procedure Execute; override;
+    procedure TerminatedSet; override;
+  public
+    { Creates (or replaces) the file; raises if it cannot. }
+    class function Open(const FileName: string): TLogFileWriter;
+    { Takes over AFile. }
+    constructor Create(AFile: TFileStream);
+    destructor Destroy; override;
+    procedure WriteLine(const Line: string);
+    { The first write error, or ''. Lines after it are dropped. }
+    function Error: string;
+  end;
+
   TVehicleInfo = record
     Firmware: string;
     Vin: string;
@@ -142,11 +170,10 @@ type
     FStray: Int64;
 
     // Logging
-    FLog: TStreamWriter;
+    FLog: TLogFileWriter;
     FLogPaused: Boolean;
     FLogRows: Int64;
     FLogClock: TStopwatch;
-    FLogFlush: TStopwatch;
 
     // Snapshot shared with the UI
     FLock: TCriticalSection;
@@ -234,6 +261,111 @@ const
   StateNames: array[TEngineState] of string = ('Disconnected', 'Connected', 'Scanning', 'Busy');
 
 implementation
+
+{ TLogFileWriter }
+
+class function TLogFileWriter.Open(const FileName: string): TLogFileWriter;
+var
+  F: TFileStream;
+  Bom: TBytes;
+begin
+  F := TFileStream.Create(FileName, fmCreate or fmShareDenyWrite);
+  try
+    Bom := TEncoding.UTF8.GetPreamble;
+    F.WriteBuffer(Bom, Length(Bom));
+  except
+    F.Free;
+    raise;
+  end;
+  Result := TLogFileWriter.Create(F);
+end;
+
+constructor TLogFileWriter.Create(AFile: TFileStream);
+begin
+  FFile := AFile;
+  FLock := TCriticalSection.Create;
+  FWake := TEvent.Create(nil, False, False, '');
+  FPending := TStringBuilder.Create;
+  inherited Create(False);
+end;
+
+destructor TLogFileWriter.Destroy;
+begin
+  inherited; // Terminate + WaitFor; Execute writes what is left
+  FPending.Free;
+  FWake.Free;
+  FLock.Free;
+  FFile.Free;
+end;
+
+procedure TLogFileWriter.TerminatedSet;
+begin
+  inherited;
+  FWake.SetEvent;
+end;
+
+procedure TLogFileWriter.WriteLine(const Line: string);
+begin
+  FLock.Enter;
+  try
+    FPending.Append(Line).Append(sLineBreak);
+  finally
+    FLock.Leave;
+  end;
+end;
+
+function TLogFileWriter.Error: string;
+begin
+  FLock.Enter;
+  try
+    Result := FError;
+  finally
+    FLock.Leave;
+  end;
+end;
+
+function TLogFileWriter.TakePending: string;
+begin
+  FLock.Enter;
+  try
+    Result := FPending.ToString;
+    FPending.Clear;
+  finally
+    FLock.Leave;
+  end;
+end;
+
+procedure TLogFileWriter.WriteOut(const Text: string);
+var
+  Bytes: TBytes;
+begin
+  if (Text = '') or (Error <> '') then
+    Exit;
+  try
+    Bytes := TEncoding.UTF8.GetBytes(Text);
+    FFile.WriteBuffer(Bytes, Length(Bytes));
+  except
+    on E: Exception do
+    begin
+      FLock.Enter;
+      try
+        FError := E.Message;
+      finally
+        FLock.Leave;
+      end;
+    end;
+  end;
+end;
+
+procedure TLogFileWriter.Execute;
+begin
+  while not Terminated do
+  begin
+    FWake.WaitFor(500);
+    WriteOut(TakePending);
+  end;
+  WriteOut(TakePending);
+end;
 
 const
   HeartbeatMs = 2000;
@@ -543,11 +675,6 @@ begin
       end
       else if FRestreamClock.ElapsedMilliseconds >= RestreamMs then
         Restream;
-    if (FLog <> nil) and (FLogFlush.ElapsedMilliseconds >= 1000) then
-    begin
-      FLog.Flush;
-      FLogFlush := TStopwatch.StartNew;
-    end;
   end;
 end;
 
@@ -1379,7 +1506,7 @@ begin
     Exit;
   end;
   DoStopLog;
-  FLog := TStreamWriter.Create(FileName, False, TEncoding.UTF8);
+  FLog := TLogFileWriter.Open(FileName);
   Header := 'Time (s)';
   for P in FScanPids do
     if P.Units <> '' then
@@ -1390,7 +1517,6 @@ begin
   FLogRows := 0;
   FLogPaused := False;
   FLogClock := TStopwatch.StartNew;
-  FLogFlush := TStopwatch.StartNew;
   Log('Logging to %s', [FileName]);
   Ev := Default(TEngineEvent);
   Ev.Kind := eeLogStarted;
@@ -1417,6 +1543,11 @@ begin
   finally
     SB.Free;
   end;
+  if FLog.Error <> '' then
+  begin
+    EmitText(eeError, 'Logging stopped: ' + FLog.Error);
+    DoStopLog;
+  end;
 end;
 
 procedure TScanEngine.DoStopLog;
@@ -1425,8 +1556,7 @@ var
 begin
   if FLog = nil then
     Exit;
-  FLog.Flush;
-  FreeAndNil(FLog);
+  FreeAndNil(FLog); // waits for the writer to put the rest in the file
   Log('Log closed (%d rows)', [FLogRows]);
   Ev := Default(TEngineEvent);
   Ev.Kind := eeLogStopped;

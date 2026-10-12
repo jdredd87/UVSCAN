@@ -34,6 +34,7 @@ type
     [Test] procedure UpdatesComeEvenly;
     [Test] procedure ReportsRejectedPidAndKeepsScanning;
     [Test] procedure LogsToCsv;
+    [Test] procedure LogWriterKeepsEveryLine;
     [Test] procedure TestsPids;
     [Test] procedure ReadsDtcs;
     [Test] procedure RejectsScanWithNothingSelected;
@@ -477,6 +478,44 @@ begin
   Assert.AreEqual(IdBoost, Ev.PidId);
   Assert.IsTrue(IsNan(ValueOf(FEngine.GetSnapshot, IdBoost)));
   Assert.IsFalse(IsNan(ValueOf(FEngine.GetSnapshot, IdRpm)));
+end;
+
+procedure TEngineTests.LogWriterKeepsEveryLine;
+var
+  Name: string;
+  W: TLogFileWriter;
+  I: Integer;
+  Bytes: TBytes;
+  Lines: TArray<string>;
+begin
+  Name := TPath.Combine(TPath.GetTempPath, 'uvscan-writer-test.csv');
+  W := TLogFileWriter.Open(Name);
+  try
+    W.WriteLine('Time (s),ECT (' + #$B0 + 'C)');
+    for I := 1 to 20000 do
+    begin
+      W.WriteLine(Format('%d,%d', [I, I mod 97]));
+      if I mod 5000 = 0 then
+        Sleep(600); // let some go out before the rest
+    end;
+  finally
+    W.Free;
+  end;
+  try
+    Bytes := TFile.ReadAllBytes(Name);
+    Assert.IsTrue((Length(Bytes) > 3) and (Bytes[0] = $EF) and (Bytes[1] = $BB) and (Bytes[2] = $BF), 'UTF-8 BOM');
+    Lines := TFile.ReadAllLines(Name, TEncoding.UTF8);
+    Assert.AreEqual(20001, Integer(Length(Lines)));
+    Assert.AreEqual('Time (s),ECT (' + #$B0 + 'C)', Lines[0]);
+    Assert.AreEqual('20000,18', Lines[20000]);
+  finally
+    TFile.Delete(Name);
+  end;
+  Assert.WillRaise(
+    procedure
+    begin
+      TLogFileWriter.Open(TPath.Combine(TPath.Combine(TPath.GetTempPath, 'uvscan-no-such-folder'), 'log.csv')).Free;
+    end);
 end;
 
 procedure TEngineTests.LogsToCsv;
