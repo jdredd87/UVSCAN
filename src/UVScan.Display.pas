@@ -71,6 +71,7 @@ type
     Style: TGaugeStyle;
     Size: TGaugeSize;
     MinValue, MaxValue: Double;
+    Minimized: Boolean; // shown as a small chip (name and value) until restored
   end;
 
   { A named set of gauges (one page of the Gauges tab). }
@@ -79,7 +80,8 @@ type
     Name: string;
     Gauges: TList<TGauge>;
     BackColor: TAlphaColor;  // the page behind the gauges, NoColor = the theme's
-    BackImage: string;       // a picture behind them (file name in DataDir\images), '' = none
+    BackImage: string;
+    FitScreen: Boolean;      // gauges scaled to fill the page, no scrolling       // a picture behind them (file name in DataDir\images), '' = none
     constructor Create(const AName: string);
     destructor Destroy; override;
   end;
@@ -654,6 +656,7 @@ begin
       G.MaxValue := JFloat(E, 'max', 100);
       if G.MaxValue <= G.MinValue then
         G.MaxValue := G.MinValue + 1;
+      G.Minimized := JBool(E, 'minimized');
       List.Add(G);
     end;
 end;
@@ -714,6 +717,7 @@ begin
       LoadGauges(JArr(E, 'gauges'), FDashboards[J].Gauges);
       FDashboards[J].BackColor := HexToColor(JStr(E, 'backColor'), NoColor);
       FDashboards[J].BackImage := ExtractFileName(Trim(JStr(E, 'backImage')));
+      FDashboards[J].FitScreen := JBool(E, 'fit');
     end;
     if FDashboards.Count = 0 then
       FDashboards.Add(TDashboard.Create(MainDashboard));
@@ -788,6 +792,8 @@ begin
       DE.AddPair('backColor', ColorToHex(Dash.BackColor));
     if Dash.BackImage <> '' then
       DE.AddPair('backImage', Dash.BackImage);
+    if Dash.FitScreen then
+      DE.AddPair('fit', TJSONBool.Create(True));
     Arr := TJSONArray.Create;
     DE.AddPair('gauges', Arr);
     for G in Dash.Gauges do
@@ -798,6 +804,8 @@ begin
       E.AddPair('size', GaugeSizeKeys[G.Size]);
       E.AddPair('min', TJSONNumber.Create(G.MinValue));
       E.AddPair('max', TJSONNumber.Create(G.MaxValue));
+      if G.Minimized then
+        E.AddPair('minimized', TJSONBool.Create(True));
       Arr.AddElement(E);
     end;
     Dashes.AddElement(DE);

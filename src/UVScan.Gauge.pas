@@ -28,7 +28,10 @@ type
     FTextColor: TAlphaColor;
     FNormalColor: TAlphaColor;
     FSelected: Boolean;
+    FChip: Boolean;
     FLayout: TTextLayout;
+    procedure SetChip(Value: Boolean);
+    procedure PaintChip(Card, Text, Sub: TAlphaColor);
     procedure SetSelected(Value: Boolean);
     procedure DrawStr(const S: string; X, Y, W, H, Px: Single; Bold: Boolean; C: TAlphaColor;
       Align: TTextAlign; Fit: Boolean = False);
@@ -51,6 +54,9 @@ type
       ANormalColor: TAlphaColor; const ANote: string = '');
     { Size in logical units (DIPs). }
     class function PreferredSize(AStyle: TGaugeStyle; ASize: TGaugeSize): TSizeF;
+    { A minimized gauge: one line, the name and the value. }
+    class function ChipSize: TSizeF;
+    property Chip: Boolean read FChip write SetChip;
     property Style: TGaugeStyle read FStyle;
     property Selected: Boolean read FSelected write SetSelected;
   published
@@ -197,6 +203,53 @@ begin
   FNormalColor := ANormalColor;
   FNote := ANote;
   Repaint;
+end;
+
+class function TGaugeView.ChipSize: TSizeF;
+begin
+  Result := TSizeF.Create(200, 44);
+end;
+
+procedure TGaugeView.SetChip(Value: Boolean);
+begin
+  if FChip = Value then
+    Exit;
+  FChip := Value;
+  Repaint;
+end;
+
+{ Minimized: a pill with the name on the left and the value on the right, in
+  the level's colours like the full gauge. }
+procedure TGaugeView.PaintChip(Card, Text, Sub: TAlphaColor);
+var
+  W, H, ValW: Single;
+  Shown: string;
+  State: TCanvasSaveState;
+begin
+  W := Width;
+  H := Height;
+  Shown := FValueText;
+  if Shown = '' then
+    Shown := '-';
+  State := Canvas.SaveState;
+  try
+    Canvas.IntersectClipRect(LocalRect);
+    FillRound(1, 1, W - 2, H - 2, (H - 2) / 2, Card);
+    if FSelected then
+    begin
+      Canvas.Stroke.Kind := TBrushKind.Solid;
+      Canvas.Stroke.Color := SelectedFrame;
+      Canvas.Stroke.Thickness := 2;
+      Canvas.DrawRect(TRectF.Create(2, 2, W - 2, H - 2), (H - 4) / 2, (H - 4) / 2, AllCorners, 1);
+    end;
+    Canvas.Font.Size := H * 0.44;
+    Canvas.Font.Style := [TFontStyle.fsBold];
+    ValW := Min(W * 0.45, Max(H * 1.4, Canvas.TextWidth(Shown) + H * 0.9));
+    DrawStr(FTitle, H * 0.45, 0, W - ValW - H * 0.5, H, H * 0.3, True, Sub, TTextAlign.Leading, True);
+    DrawStr(Shown, W - ValW - H * 0.4, 0, ValW, H, H * 0.44, True, Text, TTextAlign.Trailing, True);
+  finally
+    Canvas.RestoreState(State);
+  end;
 end;
 
 procedure TGaugeView.SetSelected(Value: Boolean);
@@ -351,6 +404,11 @@ begin
   if FNote <> '' then
     UnitLine := Trim(FUnits + '   ' + FNote);
 
+  if FChip then
+  begin
+    PaintChip(Pal.Card, Pal.Text, Pal.Sub);
+    Exit;
+  end;
   State := Canvas.SaveState;
   try
     Canvas.IntersectClipRect(LocalRect);

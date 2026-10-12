@@ -49,6 +49,7 @@ type
     Theme: string;          // 'system', 'light' or 'dark'
     KeepScreenOn: Boolean;  // no sleep / screen saver while UVScan is open
     RoundReadings: Boolean; // gauges and live data: tidy decimals per PID (logs keep every digit)
+    LockRotation: Boolean;  // phone / tablet: the screen keeps the way it faces (bumps in a car)
     QuickStarts: TQuickStarts; // named ways to start in a hurry (Quick start menu, shortcuts)
     Window: TWindowSettings;
     constructor Create;
@@ -176,6 +177,7 @@ begin
   Sec.AddPair('theme', Theme);
   Sec.AddPair('keepScreenOn', TJSONBool.Create(KeepScreenOn));
   Sec.AddPair('roundReadings', TJSONBool.Create(RoundReadings));
+  Sec.AddPair('lockRotation', TJSONBool.Create(LockRotation));
   Result.AddPair('appearance', Sec);
 
   Result.AddPair('quickStarts', QuickStartsToJson(QuickStarts));
@@ -259,6 +261,7 @@ begin
     Theme := LowerCase(JStr(Sec, 'theme', Theme));
     KeepScreenOn := JBool(Sec, 'keepScreenOn', KeepScreenOn);
     RoundReadings := JBool(Sec, 'roundReadings', RoundReadings);
+    LockRotation := JBool(Sec, 'lockRotation', LockRotation);
   end;
 
   // Missing (an older file): the defaults stay; there but empty: none.

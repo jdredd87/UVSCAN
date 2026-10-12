@@ -386,10 +386,12 @@ begin
     Assert.AreEqual(1, S.Current);
     G.PidId := 14;
     S.Gauges.Add(G);
+    G.Minimized := True;
     S.Gauges.Add(G);
     Assert.AreEqual(1, S.AddDashboard('knock'), 'names are case-insensitive');
     S.Dashboards[1].BackColor := $FF000080;
     S.Dashboards[1].BackImage := 'dashboard-1.jpg';
+    S.Dashboards[1].FitScreen := True;
     S.BuiltIns := ['Knock'];
     Root := S.ToJson;
     try
@@ -406,6 +408,10 @@ begin
     Assert.AreEqual('dashboard-1.jpg', S2.Dashboards[1].BackImage, 'background picture');
     Assert.AreEqual(Cardinal(NoColor), Cardinal(S2.Dashboards[0].BackColor), 'none: the theme''s');
     Assert.AreEqual('', S2.Dashboards[0].BackImage);
+    Assert.IsTrue(S2.Dashboards[1].FitScreen, 'fit to the screen');
+    Assert.IsFalse(S2.Dashboards[0].FitScreen);
+    Assert.IsFalse(S2.Dashboards[1].Gauges[0].Minimized);
+    Assert.IsTrue(S2.Dashboards[1].Gauges[1].Minimized, 'minimized gauge');
     S2.DeleteDashboard(1);
     Assert.AreEqual(1, S2.DashboardCount);
     Assert.AreEqual(0, S2.Current);

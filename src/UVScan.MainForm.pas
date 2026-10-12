@@ -64,6 +64,7 @@ type
     cbTheme: TComboBox;
     chkKeepAwake: TCheckBox;
     chkRound: TCheckBox;
+    chkLockRotate: TCheckBox;
     gbAlerts: TGroupBox;
     chkSound: TCheckBox;
     gbStream: TGroupBox;
@@ -190,6 +191,8 @@ type
     procedure cbThemeChange(Sender: TObject);
     procedure chkKeepAwakeChange(Sender: TObject);
     procedure chkRoundChange(Sender: TObject);
+    procedure chkLockRotateChange(Sender: TObject);
+    procedure ToggleLockRotateClick(Sender: TObject);
     procedure btnRefreshPortsClick(Sender: TObject);
     procedure btnConnectClick(Sender: TObject);
     procedure btnDisconnectClick(Sender: TObject);
@@ -301,6 +304,7 @@ type
     FMenuPidId: Integer;             // PID the PID/grid menu is about
     FMenuLiveRow: Integer;           // live row the grid menu is about, -1 from the PID list
     FMoveItems: TArray<TMenuItem>;   // grid menu: move the live row up / down / top / bottom
+    FMinimizeItem: TMenuItem;        // gauge menu: Minimize / Restore
     FMenuGauge: Integer;             // gauge index the gauge menu is about
     FTestMode: Boolean;              // "Test display": made-up values instead of the PCM
     FTestStart: UInt64;
@@ -397,6 +401,9 @@ type
     procedure FullScreenClick(Sender: TObject);
     procedure SetFullScreen(Value: Boolean);
     procedure PlaceExitFull;
+    procedure GaugeClick(Sender: TObject);
+    procedure MinimizeGaugeClick(Sender: TObject);
+    procedure FitScreenClick(Sender: TObject);
     procedure ApplyDashBackground;
     procedure PlaceDashBack;
     procedure DashBackgroundClick(Sender: TObject);
@@ -980,6 +987,12 @@ begin
   Icon := AddIcon(FExitFull);
   Icon.Data.Data := 'M9 4 L9 9 L4 9 M15 4 L15 9 L20 9 M20 15 L15 15 L15 20 M9 20 L9 15 L4 15';
   Icon.Fill.Kind := TBrushKind.None;
+  // Gauge menu: minimize (to a chip) or restore.
+  FMinimizeItem := TMenuItem.Create(Self);
+  FMinimizeItem.Stored := False;
+  FMinimizeItem.Text := 'Minimize';
+  FMinimizeItem.OnClick := MinimizeGaugeClick;
+  pmGauge.InsertObject(miGaugeSep1.Index, FMinimizeItem);
   // Grid menu, live rows: move the row.
   FMenuLiveRow := -1;
   for I := 0 to 4 do
@@ -1005,6 +1018,15 @@ begin
   AddMore('Settings', 'Theme, rounding, alert sounds, log folder, stream speed', tiSettings);
   AddMore('Messages', 'Connection log and raw traffic', tiMessages);
 
+  // Settings, phones and tablets: keep the screen from turning (bumps in a car).
+  chkLockRotate := TCheckBox.Create(Self);
+  chkLockRotate.Stored := False;
+  chkLockRotate.Parent := gbAppearance;
+  chkLockRotate.Position.X := chkRound.Position.X;
+  chkLockRotate.Size.Size := chkRound.Size.Size;
+  chkLockRotate.Text := 'Lock screen rotation (it stays the way it faces now)';
+  chkLockRotate.Visible := IsMobile;
+  chkLockRotate.OnChange := chkLockRotateChange;
   // Gauges page: the dashboard's own background behind the gauges.
   FDashBack := TRectangle.Create(Self);
   FDashBack.Parent := sbDash.Parent;
@@ -1866,6 +1888,8 @@ begin
     AddPageMenuItem('Reset min / max', btnResetMinMaxClick);
     AddPageMenuItem(btnLiveTest.Text, btnTestDisplayClick, btnLiveTest.Enabled);
     AddPageMenuItem('Show min / max', ToggleMinMaxClick, True, chkMinMax.IsChecked);
+    if IsMobile then
+      AddPageMenuItem('Lock screen rotation', ToggleLockRotateClick, True, chkLockRotate.IsChecked);
     if FWide then
       AddPageMenuItem('PID list beside the pages', TogglePidPanelClick, True, not FSettings.Window.PidsHidden);
     AddPageMenuItem('-', nil);
@@ -1882,6 +1906,9 @@ begin
     AddPageMenuItem('Live chart', LiveChartClick);
     AddPageMenuItem('Full screen', FullScreenClick);
     AddPageMenuItem('Background...', DashBackgroundClick);
+    AddPageMenuItem('Fit gauges to the screen', FitScreenClick, True, FDisplay.Dashboards[FDisplay.Current].FitScreen);
+    if IsMobile then
+      AddPageMenuItem('Lock screen rotation', ToggleLockRotateClick, True, chkLockRotate.IsChecked);
     if FWide then
       AddPageMenuItem('PID list beside the pages', TogglePidPanelClick, True, not FSettings.Window.PidsHidden);
     AddPageMenuItem('-', nil);
@@ -1938,6 +1965,24 @@ begin
     Exit;
   KeepAwake(chkKeepAwake.IsChecked);
   SaveSettings;
+end;
+
+procedure TMainForm.chkLockRotateChange(Sender: TObject);
+begin
+  if not FChromeReady then
+    Exit;
+  FSettings.LockRotation := chkLockRotate.IsChecked;
+  LockRotation(FSettings.LockRotation);
+  SaveSettings;
+  if FSettings.LockRotation then
+    ShowNotice('Screen rotation locked: it stays this way until you unlock it (page menu or Settings)', False)
+  else
+    pnlNotice.Visible := False;
+end;
+
+procedure TMainForm.ToggleLockRotateClick(Sender: TObject);
+begin
+  chkLockRotate.IsChecked := not chkLockRotate.IsChecked;
 end;
 
 procedure TMainForm.chkRoundChange(Sender: TObject);
@@ -2158,7 +2203,16 @@ begin
     chkRound.TextSettings.WordWrap := True;
     chkRound.Height := Max(30, WrappedTextHeight(chkRound, chkRound.Width - 40) + 8);
     chkRound.Position.Y := Y;
-    gbAppearance.Height := Y + chkRound.Height + 10;
+    Y := Y + chkRound.Height + 4;
+    if chkLockRotate.Visible then
+    begin
+      Wide(chkLockRotate, gbAppearance);
+      chkLockRotate.TextSettings.WordWrap := True;
+      chkLockRotate.Height := Max(30, WrappedTextHeight(chkLockRotate, chkLockRotate.Width - 40) + 8);
+      chkLockRotate.Position.Y := Y;
+      Y := Y + chkLockRotate.Height + 4;
+    end;
+    gbAppearance.Height := Y + 6;
   end;
   Y := Row(lblLogFolderCaption, edtLogFolder, btnBrowseLogFolder, gbLogging);
   if cbAway.Visible then
@@ -2840,6 +2894,8 @@ begin
   chkKeepAwake.IsChecked := FSettings.KeepScreenOn;
   KeepAwake(FSettings.KeepScreenOn);
   chkRound.IsChecked := FSettings.RoundReadings;
+  chkLockRotate.IsChecked := FSettings.LockRotation;
+  LockRotation(FSettings.LockRotation);
   for N in FSettings.SelectedPids do
     if (FCatalog.FindById(N) <> nil) and FCatalog.FindById(N).Enabled and not FSelected.Contains(N) then
       FSelected.Add(N);
@@ -2926,6 +2982,11 @@ begin
       cbPort.Items.Add(P);
     cbPort.Items.Add(NetworkPort);
     cbPort.Items.Add(SimulatorPort);
+    // The port chosen before but not plugged in now stays the choice (not
+    // whatever comes first): connecting reports it missing, and a quick start
+    // that keeps trying connects once it is plugged in.
+    if (Select <> '') and (cbPort.Items.IndexOf(Select) < 0) then
+      cbPort.Items.Insert(0, Select);
   finally
     cbPort.Items.EndUpdate;
   end;
@@ -3388,6 +3449,7 @@ begin
   PortName := ComboText(cbPort);
   if PortName = '' then
   begin
+    FQuickActive := False; // trying again would not help
     ShowNotice('Choose a port first', True);
     Exit;
   end;
@@ -3408,6 +3470,8 @@ begin
   begin
     if not ParseTcpAddress(edtTcpAddress.Text, Host, TcpPort) then
     begin
+      FQuickActive := False; // trying again would not help
+      UpdateControls;
       ShowNotice(Format('Type the interface''s address, e.g. 192.168.2.99:%d', [DefaultTcpPort]), True);
       if edtTcpAddress.CanFocus then
         edtTcpAddress.SetFocus;
@@ -5507,6 +5571,8 @@ begin
       View.PopupMenu := pmGauge;
       View.OnMouseDown := GaugeMouseDown;
       View.OnDblClick := GaugeDblClick;
+      View.OnClick := GaugeClick;
+      View.Chip := G.Minimized;
       View.Touch.InteractiveGestures := [TInteractiveGesture.LongTap];
       View.OnGesture := GaugeGesture;
       View.Setup(G.Style, G.Size, Title, Units, G.MinValue, G.MaxValue,
@@ -5676,12 +5742,20 @@ end;
   leaving that room empty. }
 procedure TMainForm.LayoutDashboard;
 var
-  I, J, RowFirst: Integer;
-  Avail, K, Cap, Y, RowH, ColX, ColW, ColH, Shift, Lo, Hi, Mid: Single;
-  Sz: TSizeF;
+  J, RowFirst, InRow: Integer;
+  Avail, AvailH, K, Cap, Y, RowH, ColX, ColW, ColH, Shift, Lo, Hi, Mid, ChipsH, MainH: Single;
+  Sz, Chip: TSizeF;
   R: TArray<TRectF>;
+  Fit: Boolean;
+  ChipsW: Single;           // how far right the chips reach
+  Keep: array[0..1] of TRectF; // fitting: the chips' and the + button's corners
 const
   Gap = 12;
+
+  function IsChip(I: Integer): Boolean;
+  begin
+    Result := FDisplay.Gauges[I].Minimized;
+  end;
 
   // The gauges of a full row, centred in the width.
   procedure PlaceRow(Last: Integer);
@@ -5693,120 +5767,201 @@ const
       Exit;
     Right := 0;
     for N := RowFirst to Last do
-      Right := Max(Right, R[N].Right);
+      if not IsChip(N) then
+        Right := Max(Right, R[N].Right);
     Shift := Max(0, (Avail - (Right - Gap)) / 2 - Gap);
     for N := RowFirst to Last do
-      R[N].Offset(Shift, 0);
+      if not IsChip(N) then
+        R[N].Offset(Shift, 0);
   end;
 
-  // Lays the gauges out at Scale times their size; the height they take.
+  // Lays the gauges (not the minimized ones) out at Scale times their size;
+  // the height they take.
   function Arrange(Scale: Single): Single;
   var
     I: Integer;
   begin
-  Y := Gap;
-  RowH := 0;
-  RowFirst := 0;
-  ColX := Gap; // the column the last gauge is in: its left, width and filled height
-  ColW := 0;
-  ColH := 0;
-  for I := 0 to FGaugeViews.Count - 1 do
-  begin
-    Sz := TGaugeView.PreferredSize(FDisplay.Gauges[I].Style, FDisplay.Gauges[I].Size);
-    if (Sz.cx > 0) and (Sz.cx * 2 + 3 * Gap > Avail) and (FDisplay.Gauges[I].Style = gsBar) then
-      Sz := TSizeF.Create(Floor(Avail - 2 * Gap), Sz.cy) // a bar is wide anyway: the width, its size's height
-    else if (Sz.cx > 0) and (Sz.cx * 2 + 3 * Gap > Avail) then
+    Y := Gap;
+    RowH := 0;
+    RowFirst := 0;
+    InRow := 0;
+    ColX := Gap; // the column the last gauge is in: its left, width and filled height
+    ColW := 0;
+    ColH := 0;
+    for I := 0 to FGaugeViews.Count - 1 do
     begin
-      K := 1;
-      case FDisplay.Gauges[I].Size of
-        gzSmall:
-          K := Floor((Avail - 3 * Gap) / 2) / Sz.cx; // two to a row
-        gzLarge:
-          begin
-            // the whole width (at most double on a desktop, where it gets huge)
-            K := Floor(Avail - 2 * Gap) / Sz.cx;
-            if not IsMobile then
-              K := Min(K, 2);
-          end;
+      if IsChip(I) then
+        Continue;
+      Sz := TGaugeView.PreferredSize(FDisplay.Gauges[I].Style, FDisplay.Gauges[I].Size);
+      if (Sz.cx > 0) and (Sz.cx * 2 + 3 * Gap > Avail) and (FDisplay.Gauges[I].Style = gsBar) then
+        Sz := TSizeF.Create(Floor(Avail - 2 * Gap), Sz.cy) // a bar is wide anyway: the width, its size's height
+      else if (Sz.cx > 0) and (Sz.cx * 2 + 3 * Gap > Avail) then
+      begin
+        K := 1;
+        case FDisplay.Gauges[I].Size of
+          gzSmall:
+            K := Floor((Avail - 3 * Gap) / 2) / Sz.cx; // two to a row
+          gzLarge:
+            begin
+              // the whole width (at most double on a desktop, where it gets huge)
+              K := Floor(Avail - 2 * Gap) / Sz.cx;
+              if not IsMobile then
+                K := Min(K, 2);
+            end;
+        end;
+        // never wider than the dashboard
+        K := Min(K, Floor(Avail - 2 * Gap) / Sz.cx);
+        Sz := TSizeF.Create(Round(Sz.cx * K), Round(Sz.cy * K));
       end;
-      // never wider than the dashboard
-      K := Min(K, Floor(Avail - 2 * Gap) / Sz.cx);
-      Sz := TSizeF.Create(Round(Sz.cx * K), Round(Sz.cy * K));
+      if Scale <> 1 then
+        Sz := TSizeF.Create(Round(Min(Sz.cx * Scale, Avail - 2 * Gap)), Round(Sz.cy * Scale));
+      // A short dashboard (a phone held sideways): two rows of small gauges to
+      // the screen, a whole medium or large one. (Fitting sizes them itself.)
+      if not Fit and (FDisplay.Gauges[I].Style <> gsBar) and (AvailH > 100) then
+      begin
+        // (not so small its scale cannot be read: a small phone gets one row)
+        if FDisplay.Gauges[I].Size = gzSmall then
+          Cap := Max(120, Floor((AvailH - 3 * Gap) / 2))
+        else
+          Cap := Max(160, Floor(AvailH - 2 * Gap));
+        if Sz.cy > Cap then
+          Sz := TSizeF.Create(Round(Sz.cx * Cap / Sz.cy), Cap);
+      end;
+      if (InRow > 0) and (Sz.cx <= ColW + 0.5) and (ColH + Gap + Sz.cy <= RowH + 0.5) then
+      begin
+        // under the one before it, in its column
+        R[I] := TRectF.Create(TPointF.Create(ColX + (ColW - Sz.cx) / 2, Y + ColH + Gap), Sz.cx, Sz.cy);
+        ColH := ColH + Gap + Sz.cy;
+        Continue;
+      end;
+      if (InRow > 0) and (ColX + ColW + Gap + Sz.cx + Gap > Avail) then
+      begin
+        PlaceRow(I - 1);
+        Y := Y + RowH + Gap;
+        RowH := 0;
+        RowFirst := I;
+        InRow := 0;
+        ColX := Gap;
+        ColW := 0;
+      end
+      else if InRow > 0 then
+        ColX := ColX + ColW + Gap;
+      R[I] := TRectF.Create(TPointF.Create(ColX, Y), Sz.cx, Sz.cy);
+      Inc(InRow);
+      ColW := Sz.cx;
+      ColH := Sz.cy;
+      RowH := Max(RowH, Sz.cy);
     end;
-    // A short dashboard (a phone held sideways): two rows of small gauges to
-    // the screen, a whole medium or large one.
-    if Scale <> 1 then
-      Sz := TSizeF.Create(Round(Min(Sz.cx * Scale, Avail - 2 * Gap)), Round(Sz.cy * Scale));
-    if (FDisplay.Gauges[I].Style <> gsBar) and (sbDash.Height > 100) then
-    begin
-      // (not so small its scale cannot be read: a small phone gets one row)
-      if FDisplay.Gauges[I].Size = gzSmall then
-        Cap := Max(120, Floor((sbDash.Height - 3 * Gap) / 2))
-      else
-        Cap := Max(160, Floor(sbDash.Height - 2 * Gap));
-      if Sz.cy > Cap then
-        Sz := TSizeF.Create(Round(Sz.cx * Cap / Sz.cy), Cap);
-    end;
-    if (I > RowFirst) and (Sz.cx <= ColW + 0.5) and (ColH + Gap + Sz.cy <= RowH + 0.5) then
-    begin
-      // under the one before it, in its column
-      R[I] := TRectF.Create(TPointF.Create(ColX + (ColW - Sz.cx) / 2, Y + ColH + Gap), Sz.cx, Sz.cy);
-      ColH := ColH + Gap + Sz.cy;
-      Continue;
-    end;
-    if (I > RowFirst) and (ColX + ColW + Gap + Sz.cx + Gap > Avail) then
-    begin
-      PlaceRow(I - 1);
-      Y := Y + RowH + Gap;
-      RowH := 0;
-      RowFirst := I;
-      ColX := Gap;
-      ColW := 0;
-    end
-    else if I > RowFirst then
-      ColX := ColX + ColW + Gap;
-    R[I] := TRectF.Create(TPointF.Create(ColX, Y), Sz.cx, Sz.cy);
-    ColW := Sz.cx;
-    ColH := Sz.cy;
-    RowH := Max(RowH, Sz.cy);
+    PlaceRow(FGaugeViews.Count - 1);
+    if RowH = 0 then
+      Result := 0 // only chips
+    else
+      Result := Y + RowH + Gap;
   end;
-  PlaceRow(FGaugeViews.Count - 1);
-  Result := Y + RowH + Gap;
+
+  // The minimized gauges: chips in rows, left to right from Top; their height.
+  function PlaceChips(Top: Single): Single;
+  var
+    I: Integer;
+    X, Yc, RowW: Single;
+    Any: Boolean;
+  begin
+    // beside the + button when fitting (the band at the bottom is shared)
+    RowW := Avail;
+    if Fit and not FFullScreen and (FAddGauge <> nil) then
+      RowW := Avail - FAddGauge.Width - 24;
+    Chip := TGaugeView.ChipSize;
+    Chip.cx := Min(Chip.cx, Max(120, (RowW - 3 * Gap) / 2));
+    X := Gap;
+    Yc := Top;
+    Any := False;
+    for I := 0 to FGaugeViews.Count - 1 do
+    begin
+      if not IsChip(I) then
+        Continue;
+      if Any and (X + Chip.cx + Gap > RowW) then
+      begin
+        X := Gap;
+        Yc := Yc + Chip.cy + Gap / 2;
+      end;
+      R[I] := TRectF.Create(TPointF.Create(X, Yc), Chip.cx, Chip.cy);
+      X := X + Chip.cx + Gap / 2;
+      ChipsW := Max(ChipsW, X);
+      Any := True;
+    end;
+    if Any then
+      Result := Yc + Chip.cy + Gap - Top
+    else
+      Result := 0;
+  end;
+
+  // Fitting at Scale: all on the page, none under the chips or the +.
+  function Fits(Scale: Single): Boolean;
+  var
+    I, K2: Integer;
+  begin
+    Result := Arrange(Scale) <= AvailH;
+    if Result then
+      for I := 0 to FGaugeViews.Count - 1 do
+        if not IsChip(I) then
+          for K2 := 0 to 1 do
+            if not Keep[K2].IsEmpty and R[I].IntersectsWith(Keep[K2]) then
+              Exit(False);
   end;
 
 begin
   PlaceAddGauge;
   if (FGaugeViews = nil) or (FGaugeViews.Count = 0) then
     Exit;
+  Fit := FFullScreen or FDisplay.Dashboards[FDisplay.Current].FitScreen;
   Avail := sbDash.Width;
-  if not IsMobile and not FFullScreen then
+  if not IsMobile and not Fit then
     Avail := Avail - 16; // the scroll bar (a phone's floats over the page)
   SetLength(R, FGaugeViews.Count);
-  if FFullScreen then
+  // The chips' size first (where they go comes after).
+  ChipsW := 0;
+  ChipsH := PlaceChips(0);
+  AvailH := sbDash.Height;
+  // Fitting, the gauges keep clear of the chips (bottom left) and the +
+  // (bottom right); a short last row can still sit between them.
+  Keep[0] := TRectF.Create(0, sbDash.Height - ChipsH, ChipsW, sbDash.Height);
+  Keep[1] := TRectF.Empty;
+  if not FFullScreen and (FAddGauge <> nil) then
+    Keep[1] := TRectF.Create(sbDash.Width - FAddGauge.Width - 28, sbDash.Height - FAddGauge.Height - 28,
+      sbDash.Width, sbDash.Height);
+  if Fit then
   begin
-    // Full screen: as big as they go and still all fit on the screen
-    // (smaller too, down to 0.4, e.g. a phone held sideways).
-    Lo := 0.4;
+    // Fit to the screen (and full screen): as big as they go and still all
+    // fit, smaller too (down to 0.3, e.g. a phone held sideways).
+    Lo := 0.3;
     Hi := 4;
     while Hi - Lo > 0.02 do
     begin
       Mid := (Lo + Hi) / 2;
-      if Arrange(Mid) <= sbDash.Height then
+      if Fits(Mid) then
         Lo := Mid
       else
         Hi := Mid;
     end;
-    Arrange(Lo);
+    MainH := Arrange(Lo);
+    // the chips along the bottom of the screen
+    PlaceChips(Max(MainH, sbDash.Height - ChipsH));
   end
   else
-    Arrange(1);
+  begin
+    MainH := Arrange(1);
+    PlaceChips(MainH);
+  end;
   for J := 0 to High(R) do
+  begin
+    FGaugeViews[J].Chip := IsChip(J);
     FGaugeViews[J].SetBounds(R[J].Left, R[J].Top, R[J].Width, R[J].Height);
+  end;
   // Room below the last row so the + button does not cover a gauge.
-  if FFullScreen then
-    FDashSpacer.SetBounds(0, 0, 1, 1) // no + then, and no scrolling
+  if Fit then
+    FDashSpacer.SetBounds(0, 0, 1, 1) // no scrolling
   else if FAddGauge <> nil then
-    FDashSpacer.SetBounds(0, Y + RowH, 1, FAddGauge.Height + 40);
+    FDashSpacer.SetBounds(0, MainH + ChipsH, 1, FAddGauge.Height + 40);
 end;
 
 procedure TMainForm.sbDashResized(Sender: TObject);
@@ -5944,11 +6099,58 @@ begin
   miGaugeLater.Enabled := (FMenuGauge >= 0) and (FMenuGauge < FDisplay.Gauges.Count - 1);
   miGaugeDisplay.Enabled := (FMenuGauge >= 0) and (FMenuGauge < FDisplay.Gauges.Count) and
     (FCatalog.FindById(FDisplay.Gauges[FMenuGauge].PidId) <> nil);
+  if FMinimizeItem <> nil then
+  begin
+    FMinimizeItem.Enabled := (FMenuGauge >= 0) and (FMenuGauge < FDisplay.Gauges.Count);
+    if FMinimizeItem.Enabled and FDisplay.Gauges[FMenuGauge].Minimized then
+      FMinimizeItem.Text := 'Restore'
+    else
+      FMinimizeItem.Text := 'Minimize';
+  end;
 end;
 
 procedure TMainForm.GaugeMouseDown(Sender: TObject; Button: TMouseButton; Shift: TShiftState; X, Y: Single);
 begin
   PrepareGaugeMenu(TGaugeView(Sender).Tag);
+end;
+
+{ A minimized gauge: a tap or click restores it. }
+procedure TMainForm.GaugeClick(Sender: TObject);
+var
+  I: Integer;
+  G: TGauge;
+begin
+  I := TGaugeView(Sender).Tag;
+  if (I < 0) or (I >= FDisplay.Gauges.Count) or not FDisplay.Gauges[I].Minimized then
+    Exit;
+  G := FDisplay.Gauges[I];
+  G.Minimized := False;
+  FDisplay.Gauges[I] := G;
+  SaveDisplay;
+  LayoutDashboard;
+end;
+
+procedure TMainForm.MinimizeGaugeClick(Sender: TObject);
+var
+  G: TGauge;
+begin
+  if (FMenuGauge < 0) or (FMenuGauge >= FDisplay.Gauges.Count) then
+    Exit;
+  G := FDisplay.Gauges[FMenuGauge];
+  G.Minimized := not G.Minimized;
+  FDisplay.Gauges[FMenuGauge] := G;
+  SaveDisplay;
+  LayoutDashboard;
+end;
+
+procedure TMainForm.FitScreenClick(Sender: TObject);
+var
+  D: TDashboard;
+begin
+  D := FDisplay.Dashboards[FDisplay.Current];
+  D.FitScreen := not D.FitScreen;
+  SaveDisplay;
+  LayoutDashboard;
 end;
 
 procedure TMainForm.GaugeDblClick(Sender: TObject);

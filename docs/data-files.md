@@ -56,7 +56,7 @@ The order of `pids` is the order of the live data rows when the list is scanned;
 
 ## display.json
 
-Gauges are kept per dashboard: `"dashboard"` is the one shown, `"dashboards"` lists them (`{ "name": "Knock check", "gauges": [ ... ] }`, optionally with `"backColor": "#000000"` and `"backImage": "dashboard-….jpg"`, a file in the `images` folder beside the JSON files) and `"builtIns"` works as in `lists.json`. A file with a single `"gauges"` list (from before there were several) is read as the dashboard *Main*.
+Gauges are kept per dashboard: `"dashboard"` is the one shown, `"dashboards"` lists them (`{ "name": "Knock check", "gauges": [ ... ] }`, optionally with `"backColor": "#000000"`, `"backImage": "dashboard-….jpg"` (a file in the `images` folder beside the JSON files) and `"fit": true`; a gauge may have `"minimized": true`) and `"builtIns"` works as in `lists.json`. A file with a single `"gauges"` list (from before there were several) is read as the dashboard *Main*.
 
 ```json
 { "version": 1,
@@ -141,7 +141,7 @@ The top‑level `"defaults"` number records which set of built‑ins the file ha
 
 ## settings.json
 
-Port and baud (and `connection.tcpAddress`, the `host:port` of an AVT on the network), the ticked PIDs and active scan list, stream speed, log folder, how long a phone may be away from UVScan before it stops (`logging.backgroundStop`, seconds), raw traffic option, alert sounds, live grid zoom and min / max columns, the live rows' order for scans without a scan list (`liveGrid.order`, PID ids top first), theme, keep the screen on, rounded readings (`appearance.roundReadings`), window position, PID panel width and whether it is on its own page (`window.pidsHidden`). Written when UVScan closes. An unreadable file is renamed to `settings.json.bad` and defaults are used.
+Port and baud (and `connection.tcpAddress`, the `host:port` of an AVT on the network), the ticked PIDs and active scan list, stream speed, log folder, how long a phone may be away from UVScan before it stops (`logging.backgroundStop`, seconds), raw traffic option, alert sounds, live grid zoom and min / max columns, the live rows' order for scans without a scan list (`liveGrid.order`, PID ids top first), theme, keep the screen on, rounded readings (`appearance.roundReadings`), rotation lock (`appearance.lockRotation`), window position, PID panel width and whether it is on its own page (`window.pidsHidden`). Written when UVScan closes. An unreadable file is renamed to `settings.json.bad` and defaults are used.
 
 `quickStarts` holds the [quick starts](user-guide.md#quick-start):
 

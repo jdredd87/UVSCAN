@@ -150,6 +150,10 @@ function WrappedTextHeight(L: TPresentedTextControl; Width: Single): Single;
   the display and the PC are in use. }
 procedure KeepAwake(On: Boolean);
 
+{ Phone / tablet: Lock keeps the screen the way it faces now (it does not
+  turn with the device); False lets it turn again. Nothing on Windows. }
+procedure LockRotation(Lock: Boolean);
+
 { True on phones and tablets: windows are full screen, no mouse hover. }
 function IsMobile: Boolean;
 
@@ -333,6 +337,16 @@ begin
     SetThreadExecutionState(ES_CONTINUOUS or ES_DISPLAY_REQUIRED or ES_SYSTEM_REQUIRED)
   else
     SetThreadExecutionState(ES_CONTINUOUS);
+  {$ENDIF}
+end;
+
+procedure LockRotation(Lock: Boolean);
+begin
+  {$IFDEF ANDROID}
+  if Lock then
+    TAndroidHelper.Activity.setRequestedOrientation(TJActivityInfo.JavaClass.SCREEN_ORIENTATION_LOCKED)
+  else
+    TAndroidHelper.Activity.setRequestedOrientation(TJActivityInfo.JavaClass.SCREEN_ORIENTATION_UNSPECIFIED);
   {$ENDIF}
 end;
 

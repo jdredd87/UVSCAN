@@ -203,12 +203,17 @@ Each comes in small, medium or large and has its own scale. Gauges are laid out 
 They follow the **same alert levels** as the grid: the scale shows the levels as coloured bands, the value arc takes the colour of the band it is in (or the PID's normal colour), and while a level is active the whole card takes the level's colours, flashes and sounds.
 
 - **Add gauge…** or right‑click a PID → **Add to dashboard…**
-- Right‑click a gauge → **Edit gauge…**, **Display & alerts…**, **Move earlier / later**, **Remove from dashboard**. Double‑click edits.
+- Right‑click a gauge (long‑press on a phone) → **Edit gauge…**, **Display & alerts…**, **Minimize**, **Move earlier / later**, **Remove from dashboard**. Double‑click edits.
+- **Minimize** shrinks a gauge to a small chip — its name and value, still in its alert colours — in a row at the bottom, to make room for the others for a while. Tap or click the chip to restore it.
 - **Tick these PIDs** ticks the dashboard's PIDs in the PID list, ready to scan.
 
 **Full screen.** The full‑screen button in the top bar (or **F11**, or **⋮ → Full screen**) shows the dashboard alone on the whole screen — no bars, tabs or PID list, on a phone not even the status and navigation bars — with the gauges as big as they go while all of them still fit. A virtual dash for driving or a run down the strip. **Esc**, the back button or gesture, or the small round button in the top right corner come back. A [quick start](#quick-start) can open it straight away.
 
 ![The Acceleration dashboard full screen](images/dashboard-full-screen.png)
+
+**Fit gauges to the screen** (**⋮**, per dashboard) scales all the gauges up or down so they fill the page with no scrolling, keeping clear of the minimized chips and the **+** button. It works again whenever the window changes size or the phone turns; full screen always fits.
+
+**Lock screen rotation** (phones and tablets: **⋮** on *Live* and *Gauges*, or *Settings → Appearance*) keeps the screen the way it faces now, so a bump in the car does not turn it. Turn it off the same way.
 
 **Background.** **⋮ → Background…** gives each dashboard its own background: **Plain** (the theme's), a **Solid colour** (black makes a good night dash), or a **Picture** — a file on Windows, the photo picker on a phone. The picture is scaled to cover the page (cut at the edges, never stretched) and kept in UVScan's data folder (`images`), so the original can be moved or deleted. **No picture** removes it.
 
