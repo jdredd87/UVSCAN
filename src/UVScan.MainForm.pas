@@ -334,6 +334,7 @@ type
     FQuickActive: Boolean;           // ... until the user stops or disconnects
     FQuickDash: string;              // the dashboard it shows (kept when the scan starts)
     FRetryAt: UInt64;                // tick count to try connecting again, 0 = not
+    FConnecting: Boolean;            // a connect was sent and the engine has not said how it went
     FAutoChart: Boolean;             // open the live chart when the scan starts
     FQuickPicks: TComponent;         // owns the senders of the Quick start menu's items
     FQuickAction: Integer;           // what picking a quick start does: 0 run, 1 edit, 2 delete, 3 shortcut
@@ -345,6 +346,12 @@ type
     FSafeHold: UInt64;               // phone: ignore inset changes until this tick (see SetFullScreen)
     FExitFull: TCircle;              // full screen: the way back
     FFullState: TRectangle;          // full screen, not scanning: what is going on (no status strip there)
+    FFocusGauge: Integer;            // the one gauge filling the screen, -1 = all of them
+    FFocusWasFull: Boolean;          // full screen was on before (stays on after)
+    FFocusBtn: TCircle;              // shown on a tapped gauge: fill the screen with it (or back)
+    FFocusFor: Integer;              // the gauge FFocusBtn is for
+    FFocusHideAt: UInt64;            // tick count FFocusBtn goes again
+    FFocusItem: TMenuItem;           // gauge menu: Fill the screen
     btnPidPanel: TSpeedButton;       // wide windows: the PID list beside the pages or on its own page
     btnFullScreen: TSpeedButton;     // Gauges: the dashboard on the whole screen
     FRail: Boolean;                  // short window (a phone held sideways): the tabs go down the left side
@@ -403,6 +410,9 @@ type
     procedure SetFullScreen(Value: Boolean);
     procedure PlaceExitFull;
     procedure UpdateFullState;
+    procedure FocusBtnClick(Sender: TObject);
+    procedure FocusGauge(Index: Integer);
+    procedure FocusItemClick(Sender: TObject);
     procedure GaugeClick(Sender: TObject);
     procedure MinimizeGaugeClick(Sender: TObject);
     procedure FitScreenClick(Sender: TObject);
@@ -989,6 +999,28 @@ begin
   Icon := AddIcon(FExitFull);
   Icon.Data.Data := 'M9 4 L9 9 L4 9 M15 4 L15 9 L20 9 M20 15 L15 15 L15 20 M9 20 L9 15 L4 15';
   Icon.Fill.Kind := TBrushKind.None;
+  // A tapped gauge gets a round button to fill the screen with it.
+  FFocusGauge := -1;
+  FFocusBtn := TCircle.Create(Self);
+  FFocusBtn.Parent := tiDashboard;
+  FFocusBtn.Stored := False;
+  FFocusBtn.SetBounds(0, 0, 46, 46);
+  FFocusBtn.Stroke.Kind := TBrushKind.None;
+  FFocusBtn.Fill.Color := $E0FFFFFF;
+  FFocusBtn.HitTest := True;
+  FFocusBtn.Cursor := crHandPoint;
+  FFocusBtn.ShowHint := True;
+  FFocusBtn.OnClick := FocusBtnClick;
+  FFocusBtn.Visible := False;
+  Icon := AddIcon(FFocusBtn);
+  Icon.Data.Data := 'M4 9 L4 4 L9 4 M15 4 L20 4 L20 9 M20 15 L20 20 L15 20 M9 20 L4 20 L4 15';
+  Icon.Fill.Kind := TBrushKind.None;
+  Icon.Stroke.Color := $FF1E242C;
+  FFocusItem := TMenuItem.Create(Self);
+  FFocusItem.Stored := False;
+  FFocusItem.Text := 'Fill the screen';
+  FFocusItem.OnClick := FocusItemClick;
+  pmGauge.InsertObject(miGaugeSep1.Index, FFocusItem);
   // Gauge menu: minimize (to a chip) or restore.
   FMinimizeItem := TMenuItem.Create(Self);
   FMinimizeItem.Stored := False;
@@ -1699,6 +1731,8 @@ begin
   if Value = FFullScreen then
     Exit;
   CloseActionMenu;
+  if not Value then
+    FFocusGauge := -1; // Esc / Back / the corner button: all the gauges again
   if Value then
   begin
     FWasMaximized := WindowState = TWindowState.wsMaximized;
@@ -3553,6 +3587,7 @@ begin
         Result := CreateSerialPort(PortName, Baud, fcRtsCts);
       end;
   SetStatus(spPort, PortName);
+  FConnecting := True; // until the engine reports a state (a slow network AVT takes seconds)
   Post(Cmd);
 end;
 
@@ -3653,6 +3688,8 @@ begin
       end;
     eeError:
       begin
+        if FState = esDisconnected then
+          FConnecting := False; // the port did not open (no state change follows)
         AddMessage('Error: ' + Ev.Text);
         ShowNotice(Ev.Text, True);
       end;
@@ -3665,6 +3702,7 @@ begin
     eeState:
       begin
         FState := Ev.State;
+        FConnecting := False;
         SetStatus(spState, StateNames[FState]);
         if FState <> esScanning then
         begin
@@ -3873,7 +3911,12 @@ begin
   end;
   // Quick start with Retry: not connected (it failed, or the link went) -
   // again in 3 s. (A port that does not open never leaves Disconnected.)
-  if FQuickActive and FQuick.Retry and (FState = esDisconnected) then
+  if (FFocusHideAt <> 0) and (TThread.GetTickCount64 >= FFocusHideAt) then
+  begin
+    FFocusHideAt := 0;
+    FFocusBtn.Visible := False;
+  end;
+  if FQuickActive and FQuick.Retry and (FState = esDisconnected) and not FConnecting then
   begin
     if FRetryAt = 0 then
     begin
@@ -5610,6 +5653,10 @@ var
 begin
   FillDashboards;
   ApplyDashBackground;
+  if FFocusGauge >= FDisplay.Gauges.Count then
+    FFocusGauge := -1;
+  if FFocusBtn <> nil then
+    FFocusBtn.Visible := False;
   for View in FGaugeViews do
     View.Free;
   FGaugeViews.Clear;
@@ -5978,6 +6025,24 @@ begin
   if (FGaugeViews = nil) or (FGaugeViews.Count = 0) then
     Exit;
   Fit := FFullScreen or FDisplay.Dashboards[FDisplay.Current].FitScreen;
+  // One gauge filling the screen (tapped, then its round button).
+  if (FFocusGauge >= 0) and (FFocusGauge < FGaugeViews.Count) then
+  begin
+    for J := 0 to FGaugeViews.Count - 1 do
+      FGaugeViews[J].Visible := J = FFocusGauge;
+    Sz := TGaugeView.PreferredSize(FDisplay.Gauges[FFocusGauge].Style, FDisplay.Gauges[FFocusGauge].Size);
+    K := Min((sbDash.Width - 2 * Gap) / Sz.cx, (sbDash.Height - 2 * Gap) / Sz.cy);
+    if FDisplay.Gauges[FFocusGauge].Style = gsBar then
+      Sz := TSizeF.Create(sbDash.Width - 2 * Gap, Min(sbDash.Height - 2 * Gap, Sz.cy * K))
+    else
+      Sz := TSizeF.Create(Sz.cx * K, Sz.cy * K);
+    FGaugeViews[FFocusGauge].Chip := False;
+    FGaugeViews[FFocusGauge].SetBounds((sbDash.Width - Sz.cx) / 2, (sbDash.Height - Sz.cy) / 2, Sz.cx, Sz.cy);
+    FDashSpacer.SetBounds(0, 0, 1, 1);
+    Exit;
+  end;
+  for J := 0 to FGaugeViews.Count - 1 do
+    FGaugeViews[J].Visible := True;
   Avail := sbDash.Width;
   if not IsMobile and not Fit then
     Avail := Avail - 16; // the scroll bar (a phone's floats over the page)
@@ -6163,6 +6228,14 @@ begin
   miGaugeLater.Enabled := (FMenuGauge >= 0) and (FMenuGauge < FDisplay.Gauges.Count - 1);
   miGaugeDisplay.Enabled := (FMenuGauge >= 0) and (FMenuGauge < FDisplay.Gauges.Count) and
     (FCatalog.FindById(FDisplay.Gauges[FMenuGauge].PidId) <> nil);
+  if FFocusItem <> nil then
+  begin
+    FFocusItem.Enabled := (FMenuGauge >= 0) and (FMenuGauge < FDisplay.Gauges.Count);
+    if FFocusGauge >= 0 then
+      FFocusItem.Text := 'Back to all gauges'
+    else
+      FFocusItem.Text := 'Fill the screen';
+  end;
   if FMinimizeItem <> nil then
   begin
     FMinimizeItem.Enabled := (FMenuGauge >= 0) and (FMenuGauge < FDisplay.Gauges.Count);
@@ -6185,13 +6258,78 @@ var
   G: TGauge;
 begin
   I := TGaugeView(Sender).Tag;
-  if (I < 0) or (I >= FDisplay.Gauges.Count) or not FDisplay.Gauges[I].Minimized then
+  if (I < 0) or (I >= FDisplay.Gauges.Count) then
     Exit;
+  if not FDisplay.Gauges[I].Minimized then
+  begin
+    // A round button on its top right corner for a few seconds: fill the
+    // screen with this gauge (or, filling it, back to all of them).
+    FFocusFor := I;
+    if FFocusGauge >= 0 then
+      TPath(FFocusBtn.Controls[0]).Data.Data := 'M9 4 L9 9 L4 9 M15 4 L15 9 L20 9 M20 15 L15 15 L15 20 M9 20 L9 15 L4 15'
+    else
+      TPath(FFocusBtn.Controls[0]).Data.Data := 'M4 9 L4 4 L9 4 M15 4 L20 4 L20 9 M20 15 L20 20 L15 20 M9 20 L4 20 L4 15';
+    if FFocusGauge >= 0 then
+      FFocusBtn.Hint := 'Back to all gauges'
+    else
+      FFocusBtn.Hint := 'Fill the screen with this gauge';
+    with TControl(Sender) do
+      FFocusBtn.Position.Point := FFocusBtn.ParentControl.AbsoluteToLocal(
+        LocalToAbsolute(TPointF.Create(Width - FFocusBtn.Width - 6, 6)));
+    FFocusBtn.Visible := True;
+    FFocusBtn.BringToFront;
+    FFocusHideAt := TThread.GetTickCount64 + 5000;
+    Exit;
+  end;
   G := FDisplay.Gauges[I];
   G.Minimized := False;
   FDisplay.Gauges[I] := G;
   SaveDisplay;
   LayoutDashboard;
+end;
+
+procedure TMainForm.FocusBtnClick(Sender: TObject);
+begin
+  FFocusBtn.Visible := False;
+  FFocusHideAt := 0;
+  if FFocusGauge >= 0 then
+    FocusGauge(-1)
+  else
+    FocusGauge(FFocusFor);
+end;
+
+procedure TMainForm.FocusItemClick(Sender: TObject);
+begin
+  if FFocusGauge >= 0 then
+    FocusGauge(-1)
+  else
+    FocusGauge(FMenuGauge);
+end;
+
+{ Index >= 0: that gauge alone, as big as the screen allows (full screen on).
+  -1: all of them again (full screen off, unless it was on before). }
+procedure TMainForm.FocusGauge(Index: Integer);
+begin
+  if (Index >= FDisplay.Gauges.Count) then
+    Index := -1;
+  if Index >= 0 then
+  begin
+    if FFocusGauge < 0 then
+      FFocusWasFull := FFullScreen;
+    FFocusGauge := Index;
+    if not FFullScreen then
+      SetFullScreen(True)
+    else
+      LayoutDashboard;
+  end
+  else
+  begin
+    FFocusGauge := -1;
+    if FFullScreen and not FFocusWasFull then
+      SetFullScreen(False)
+    else
+      LayoutDashboard;
+  end;
 end;
 
 procedure TMainForm.MinimizeGaugeClick(Sender: TObject);

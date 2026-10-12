@@ -211,6 +211,8 @@ They follow the **same alert levels** as the grid: the scale shows the levels as
 
 ![The Acceleration dashboard full screen](images/dashboard-full-screen.png)
 
+**One gauge, whole screen.** Tap or click a gauge and a round button shows on its top right corner for a few seconds; tap it and that gauge alone fills the screen (or right‑click / long‑press → **Fill the screen**). Tap the big gauge and its button again (or **Esc**, back, the corner button) for all the gauges; started from the normal page, that also leaves full screen.
+
 **Fit gauges to the screen** (**⋮**, per dashboard) scales all the gauges up or down so they fill the page with no scrolling, keeping clear of the minimized chips and the **+** button. It works again whenever the window changes size or the phone turns; full screen always fits.
 
 **Lock screen rotation** (phones and tablets: **⋮** on *Live* and *Gauges*, or *Settings → Appearance*) keeps the screen the way it faces now, so a bump in the car does not turn it. Turn it off the same way.
