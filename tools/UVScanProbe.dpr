@@ -17,6 +17,8 @@ uses
   UVScan.Hex in '..\src\UVScan.Hex.pas',
   UVScan.Serial in '..\src\UVScan.Serial.pas',
   UVScan.Avt in '..\src\UVScan.Avt.pas',
+  UVScan.Elm in '..\src\UVScan.Elm.pas',
+  UVScan.Adapter in '..\src\UVScan.Adapter.pas',
   UVScan.Class2 in '..\src\UVScan.Class2.pas',
   UVScan.Formula in '..\src\UVScan.Formula.pas',
   UVScan.Pids in '..\src\UVScan.Pids.pas',
@@ -733,11 +735,22 @@ begin
         Engine.StreamSpeed := StrToInt(RateText);
       Say(Format('Stream speed %d', [Engine.StreamSpeed]));
       Cmd := Command(ecConnect);
-      Cmd.Factory :=
-        function: ISerialPort
-        begin
-          Result := CreatePort(PortName, 115200, fcRtsCts);
-        end;
+      // -elm: an ELM327 type adapter on the port (38400, no handshake).
+      if FindCmdLineSwitch('elm') then
+      begin
+        Cmd.Adapter := akElm327;
+        Cmd.Factory :=
+          function: ISerialPort
+          begin
+            Result := CreatePort(PortName, 38400, fcNone);
+          end;
+      end
+      else
+        Cmd.Factory :=
+          function: ISerialPort
+          begin
+            Result := CreatePort(PortName, 115200, fcRtsCts);
+          end;
       Engine.Post(Cmd);
       Pump(500);
       if not WaitState(esConnected, 10000) then
@@ -761,7 +774,8 @@ begin
         Cmd.PidIds := Ids;
         Engine.Post(Cmd);
         WaitState(esScanning, 20000);
-        Engine.SetTrace(False); // don't flood the console with stream frames
+        // Don't flood the console with stream frames (-trace: do).
+        Engine.SetTrace(FindCmdLineSwitch('trace'));
         W := TStopwatch.StartNew;
         while W.Elapsed.TotalSeconds < Seconds do
         begin

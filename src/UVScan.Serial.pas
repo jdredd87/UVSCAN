@@ -5,10 +5,11 @@ unit UVScan.Serial;
   and used by exactly one thread (the scan engine), so no locking.
 
   On Android the ports are USB serial adapters plugged in through USB OTG
-  (FTDI, CP210x, CH34x, CDC-ACM; see UVScan.Serial.Android). Other platforms
-  have none: CreateSerialPort raises there and ListSerialPorts is empty, so
-  only the Simulator connects. Another transport (Bluetooth, TCP) only has
-  to implement ISerialPort.
+  (FTDI, CP210x, CH34x, CDC-ACM; see UVScan.Serial.Android) and paired
+  Bluetooth adapters (an ELM327; UVScan.Bluetooth.Android), named
+  'BT <name> [<address>]'. On Windows a paired Bluetooth adapter is a COM
+  port already. Other platforms have none: CreateSerialPort raises there and
+  ListSerialPorts is empty, so only the Simulator connects.
 
   An AVT on the network (an AVT with a serial-to-Ethernet port, as the old
   UVSCAN drove) is TTcpSerialPort: the same bytes over a raw TCP
@@ -62,6 +63,7 @@ type
 
 const
   DefaultTcpPort = 10001; // the old UVSCAN's default: a serial server's raw TCP port
+  ElmTcpPort = 35000;     // a Wi-Fi ELM327's usual port (most are at 192.168.0.10)
 
 type
   { An AVT reached over the network: a raw TCP stream to Host:Port carrying
@@ -105,8 +107,11 @@ function SocketSend(S: System.Net.Socket.TSocket; const Buf; Count: Integer): In
 function SocketReceive(S: System.Net.Socket.TSocket; var Buf; Count: Integer): Integer;
 
 { True when Name is a network address rather than a serial port name: it
-  starts with 'tcp:', or has a dot or a colon (192.168.2.99, myavt:5000). }
+  starts with 'tcp:', or has a dot or a colon (192.168.2.99, myavt:5000),
+  and is no Bluetooth port name (whose address has colons). }
 function IsTcpAddress(const Name: string): Boolean;
+{ True for a Bluetooth port name: 'BT <name> [<address>]'. }
+function IsBluetoothPortName(const Name: string): Boolean;
 
 { The port Name stands for: a network address (TTcpSerialPort) or a serial
   port (CreateSerialPort). Not opened yet. }
@@ -131,7 +136,7 @@ implementation
 uses
   {$IFDEF MSWINDOWS}System.Win.Registry, Winapi.Winsock2,{$ENDIF}
   {$IFDEF POSIX}Posix.SysSocket, Posix.NetinetIn, Posix.NetinetTCP,{$ENDIF}
-  {$IFDEF ANDROID}UVScan.Serial.Android,{$ENDIF}
+  {$IFDEF ANDROID}UVScan.Serial.Android, UVScan.Bluetooth.Android,{$ENDIF}
   System.Generics.Collections, System.Generics.Defaults, System.StrUtils, System.SyncObjs;
 
 { TTcpSerialPort }
@@ -232,7 +237,12 @@ end;
 
 function IsTcpAddress(const Name: string): Boolean;
 begin
-  Result := StartsText('tcp:', Trim(Name)) or (Name.IndexOfAny(['.', ':']) >= 0);
+  Result := StartsText('tcp:', Trim(Name)) or ((Name.IndexOfAny(['.', ':']) >= 0) and not IsBluetoothPortName(Name));
+end;
+
+function IsBluetoothPortName(const Name: string): Boolean;
+begin
+  Result := StartsText('BT ', Name) and Name.TrimRight.EndsWith(']') and (Name.LastIndexOf('[') > 0);
 end;
 
 function CreatePort(const Name: string; BaudRate: Cardinal; FlowControl: TFlowControl): ISerialPort;
@@ -608,12 +618,15 @@ end;
 
 function CreateSerialPort(const PortName: string; BaudRate: Cardinal; FlowControl: TFlowControl): ISerialPort;
 begin
-  Result := CreateUsbSerialPort(PortName, BaudRate, FlowControl);
+  if IsBluetoothPort(PortName) then
+    Result := CreateBluetoothPort(PortName)
+  else
+    Result := CreateUsbSerialPort(PortName, BaudRate, FlowControl);
 end;
 
 function ListSerialPorts: TArray<string>;
 begin
-  Result := ListUsbSerialPorts;
+  Result := ListUsbSerialPorts + ListBluetoothPorts;
 end;
 
 function SerialPortsSupported: Boolean;
@@ -622,8 +635,13 @@ begin
 end;
 
 function SerialPortDiagnostics: TArray<string>;
+var
+  Bt: string;
 begin
   Result := DescribeUsbDevices;
+  Bt := BluetoothDiagnostics;
+  if Bt <> '' then
+    Result := Result + ['Bluetooth: ' + Bt];
 end;
 
 {$ELSE}

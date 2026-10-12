@@ -34,7 +34,8 @@ type
   public
     Port: string;
     Baud: Integer;
-    TcpAddress: string;     // host:port of an AVT on the network (port 'Network (TCP/IP)')
+    Adapter: string;        // what is on the port: 'avt' (AVT-841) or 'elm327'
+    TcpAddress: string;     // host:port of an adapter on the network (port 'Network (TCP/IP)')
     SelectedPids: TArray<Integer>;
     ActiveList: string;     // name of the scan list last chosen, '' if none
     StreamSpeed: TStreamSpeed;
@@ -110,6 +111,7 @@ procedure TAppSettings.ResetToDefaults;
 begin
   Port := '';
   Baud := 115200;
+  Adapter := 'avt';
   TcpAddress := '';
   SelectedPids := nil;
   ActiveList := '';
@@ -140,6 +142,7 @@ begin
   Sec := TJSONObject.Create;
   Sec.AddPair('port', Port);
   Sec.AddPair('baud', TJSONNumber.Create(Baud));
+  Sec.AddPair('adapter', Adapter);
   Sec.AddPair('tcpAddress', TcpAddress);
   Result.AddPair('connection', Sec);
 
@@ -210,6 +213,7 @@ begin
   begin
     Port := JStr(Sec, 'port', Port);
     Baud := JInt(Sec, 'baud', Baud);
+    Adapter := JStr(Sec, 'adapter', Adapter);
     TcpAddress := JStr(Sec, 'tcpAddress', TcpAddress);
   end;
 

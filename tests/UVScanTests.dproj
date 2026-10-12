@@ -77,6 +77,9 @@
         <DCCReference Include="..\src\UVScan.Dpid.pas"/>
         <DCCReference Include="..\src\UVScan.Serial.pas"/>
         <DCCReference Include="..\src\UVScan.Simulator.pas"/>
+        <DCCReference Include="..\src\UVScan.Elm.pas"/>
+        <DCCReference Include="..\src\UVScan.Adapter.pas"/>
+        <DCCReference Include="..\src\UVScan.Simulator.Elm.pas"/>
         <DCCReference Include="..\src\UVScan.Engine.pas"/>
         <DCCReference Include="UVScan.Tests.Core.pas"/>
         <DCCReference Include="UVScan.Tests.Engine.pas"/>
@@ -94,6 +97,7 @@
         <DCCReference Include="..\src\UVScan.LogViews.pas"/>
         <DCCReference Include="..\src\UVScan.LogChart.pas"/>
         <DCCReference Include="UVScan.Tests.Logs.pas"/>
+        <DCCReference Include="UVScan.Tests.Elm.pas"/>
         <RcCompile Include="..\UVScan.Defaults.rc">
             <Form>UVScan.Defaults.res</Form>
         </RcCompile>

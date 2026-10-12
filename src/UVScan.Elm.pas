@@ -36,6 +36,7 @@ type
     FHeadersOn: Boolean;
     FLastMs: Cardinal;
     FListening: Boolean;       // sent something, the prompt has not come back yet
+    FKept: TArray<string>;     // lines that came in while it was being stopped, for ReadLine
     procedure Trace(const Dir, Text: string);
     function Fill(TimeoutMs: Cardinal): Boolean;
   public
@@ -59,12 +60,19 @@ type
     function ReadLine(TimeoutMs: Cardinal; out Line: string; out Prompt: Boolean): Boolean;
     { Ends a listening (a request still receiving, ATMA): sends a character
       and waits for the prompt. Nothing when at the prompt already (a CR
-      there would repeat the last command). }
+      there would repeat the last command). The lines that come before
+      "STOPPED" (a Bluetooth link can have a few frames on their way) are
+      kept: ReadLine returns them first. }
     procedure Interrupt(TimeoutMs: Cardinal = 1000);
     { Sent something and the prompt has not come back yet. }
     property Listening: Boolean read FListening;
-    { Drops anything received and not taken yet. }
+    { Drops anything received and not taken yet (and what is waiting in the
+      port); a prompt among it means the ELM is idle. }
     procedure Flush;
+    { Drops the text received and not taken yet (not the port's). }
+    procedure DropReceived;
+    { Reads and drops whatever arrives for Ms milliseconds. }
+    procedure Discard(Ms: Cardinal);
     property HeadersOn: Boolean read FHeadersOn write FHeadersOn;
     { How long the last Command / Request took to reach its prompt. }
     property LastMs: Cardinal read FLastMs;
@@ -156,8 +164,30 @@ end;
 
 procedure TElmLink.Flush;
 begin
+  while Fill(0) do
+    ;
+  DropReceived;
+end;
+
+procedure TElmLink.DropReceived;
+begin
+  if FRx.Contains('>') then
+    FListening := False;
   FRx := '';
-  FPort.Purge;
+  FKept := nil;
+end;
+
+procedure TElmLink.Discard(Ms: Cardinal);
+var
+  Deadline: UInt64;
+begin
+  Deadline := TThread.GetTickCount64 + Ms;
+  while TThread.GetTickCount64 < Deadline do
+  begin
+    Fill(Max(1, Integer(Deadline - TThread.GetTickCount64)));
+    DropReceived;
+  end;
+  DropReceived;
 end;
 
 procedure TElmLink.Send(const Cmd: string);
@@ -242,6 +272,12 @@ var
 begin
   Line := '';
   Prompt := False;
+  if Length(FKept) > 0 then
+  begin
+    Line := FKept[0];
+    Delete(FKept, 0, 1);
+    Exit(True);
+  end;
   Deadline := TThread.GetTickCount64 + TimeoutMs;
   repeat
     // A whole line, or the prompt, in what has arrived?
@@ -275,6 +311,8 @@ end;
 procedure TElmLink.Interrupt(TimeoutMs: Cardinal);
 var
   Deadline: UInt64;
+  P: Integer;
+  S: string;
 begin
   if not FListening and not FRx.Contains('>') then
     Exit;
@@ -286,6 +324,11 @@ begin
   Deadline := TThread.GetTickCount64 + TimeoutMs;
   while not FRx.Contains('>') and (TThread.GetTickCount64 < Deadline) do
     Fill(Max(1, Integer(Deadline - TThread.GetTickCount64)));
+  P := FRx.LastIndexOf('>');
+  if P >= 0 then
+    for S in FRx.Substring(0, P).Split([#13, #10]) do
+      if (S.Trim <> '') and not S.ToUpper.Contains('STOPPED') then
+        FKept := FKept + [S.Trim];
   FRx := '';
   FListening := False;
 end;

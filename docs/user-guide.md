@@ -83,12 +83,25 @@ A tablet held sideways keeps the PID list docked beside the pages:
 
 ## Connecting
 
-1. Plug the AVT into the PC and the vehicle (key on).
-2. On the *Connect* page pick its COM port, or on Android its USB adapter (**Refresh** re‑reads the list), and the baud rate (115200 for the AVT‑841). Choose **Simulator** to try UVScan without hardware.
+1. Plug the adapter into the vehicle (key on): an **AVT‑841** on the PC or phone (serial, USB, or the network), or an **ELM327** type adapter (Bluetooth, USB or Wi‑Fi; see [ELM327 adapters](#elm327-adapters)).
+2. On the *Connect* page choose the adapter (**AVT‑841** or **ELM327**), then its COM port, or on Android its USB adapter or paired Bluetooth adapter (**Refresh** re‑reads the list), and the baud rate (115200 for the AVT‑841, usually 38400 for a USB ELM327; Bluetooth has none). Choose **Simulator** to try UVScan without hardware: it acts as the adapter you chose.
    An AVT with an **Ethernet port** (or any AVT behind a serial‑to‑network adapter) is **Network (TCP/IP)**: type its address and port in the box that appears, e.g. `192.168.2.99:10001` (port 10001 if you leave it out). It works the same from a PC or a phone on the same network. UVScan gives up after 5 seconds if nothing answers. (So far this has been tried only against the simulator; [testing with a network AVT](network-avt-testing.md) is a checklist for anyone who has one.)
-3. Press **Connect** (on the page or in the top bar). UVScan initialises the AVT, reads its firmware version, the VIN and the PCM operating system ID (shown in the status strip and under *Vehicle* on the *Connect* page).
+3. Press **Connect** (on the page or in the top bar). UVScan initialises the adapter, reads its firmware version, the VIN and the PCM operating system ID (shown in the status strip and under *Vehicle* on the *Connect* page).
 
-Everything that talks to the AVT runs on a background thread, so the window stays responsive while the PCM is busy.
+Everything that talks to the adapter runs on a background thread, so the window stays responsive while the PCM is busy.
+
+### ELM327 adapters
+
+Any ELM327 type adapter that supports **J1850 VPW** works: clones, OBDLink / STN based ones (the vLinker FD was used to test it), Bluetooth, USB or Wi‑Fi. UVScan uses only the standard ELM327 commands. Many cheap "v2.1" clones have no VPW at all; UVScan says so when it connects.
+
+| Adapter | How |
+|---|---|
+| **Bluetooth, Android** | Pair it first in Android's Bluetooth settings (the PIN is usually **1234** or **0000**). Paired devices show in the port list as **BT** *name* **[address]**; choosing one sets the adapter to ELM327. Android 12 and later ask once to let UVScan use nearby devices. |
+| **Bluetooth, Windows** | Pair it in Windows' Bluetooth settings. Windows makes it a COM port (*Standard Serial over Bluetooth link (COM4)*, say); choose that port and **ELM327**. |
+| **Wi‑Fi** | Join the adapter's own Wi‑Fi network, then choose **Network (TCP/IP)** and type its address, usually `192.168.0.10:35000` (port 35000 if you leave it out with ELM327 chosen). |
+| **USB** | Its COM port (on Android its USB adapter), usually at 38400. |
+
+Everything works as with the AVT (live data at about 10 updates a second, logging, dashboard, trouble codes, PID test and search, real‑time controls, VIN write) except the **analog inputs**, which are the AVT's own: an ELM327 scan leaves them empty. A Bluetooth or Wi‑Fi link can delay data a little now and then (a phone's Bluetooth more than a PC's); none of it is lost. The ELM327 has to stop listening for a moment every 2 seconds to send the "tester present" message that keeps the PCM streaming.
 
 ## Quick start
 
@@ -446,6 +459,9 @@ Everything UVScan reads or writes, apart from CSV logs, is in **`C:\ProgramData\
 | *Could not open COM…* | Another program (or another UVScan) has the port. Close it, check the port in Device Manager. |
 | *No answer from …* / *Could not connect to …* (network) | The AVT is off, on another network, or at another address or port. Check it answers from this PC or phone (same Wi‑Fi). |
 | *… accepted the connection but no AVT answered* (network) | Something is at that address but it isn't answering as an AVT: the AVT is off behind its network module, or the address is another device's. |
+| *No answer from an ELM327 adapter* | The adapter has no power (plugged in, key on?), the Bluetooth adapter is not paired or is connected to another phone or PC (it takes one at a time), the wrong port, or (USB) the wrong baud rate. Is the adapter set to **ELM327**? |
+| *This ELM327 adapter does not support J1850 VPW* | The adapter cannot talk to a GM Class 2 PCM (common on cheap clones). Another adapter is needed. |
+| An AVT‑841 says *No response from the AVT interface* | Is the adapter set to **AVT‑841**? |
 | Connect works but no data | Key on? The status strip's update rate stays at 0 and a notice says *No data from the PCM*. Check the AVT's vehicle connection. |
 | *Selected PIDs need N bytes; the limit is 48* | Untick some PIDs; the PCM cannot stream more than 48 bytes. |
 | A PID shows *rejected* | The PCM refused it in a DPID. Use **Test PIDs**, or remove it. |

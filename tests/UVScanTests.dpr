@@ -19,6 +19,9 @@ uses
   UVScan.Dpid in '..\src\UVScan.Dpid.pas',
   UVScan.Serial in '..\src\UVScan.Serial.pas',
   UVScan.Simulator in '..\src\UVScan.Simulator.pas',
+  UVScan.Elm in '..\src\UVScan.Elm.pas',
+  UVScan.Adapter in '..\src\UVScan.Adapter.pas',
+  UVScan.Simulator.Elm in '..\src\UVScan.Simulator.Elm.pas',
   UVScan.Engine in '..\src\UVScan.Engine.pas',
   UVScan.Tests.Core in 'UVScan.Tests.Core.pas',
   UVScan.Tests.Engine in 'UVScan.Tests.Engine.pas',
@@ -35,7 +38,8 @@ uses
   UVScan.LogData in '..\src\UVScan.LogData.pas',
   UVScan.LogViews in '..\src\UVScan.LogViews.pas',
   UVScan.LogChart in '..\src\UVScan.LogChart.pas',
-  UVScan.Tests.Logs in 'UVScan.Tests.Logs.pas';
+  UVScan.Tests.Logs in 'UVScan.Tests.Logs.pas',
+  UVScan.Tests.Elm in 'UVScan.Tests.Elm.pas';
 
 {$R 'UVScan.Defaults.res' '..\UVScan.Defaults.rc'}
 

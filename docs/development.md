@@ -49,7 +49,19 @@ The factory data in `data\` is compiled into the exe through `UVScan.Defaults.rc
 
 `tests\` holds DUnitX tests for the protocol pieces (AVT framing, Class 2 messages, DPID planning, the formula evaluator), the JSON files, the legacy CSV import, display levels and alerts, real‑time controls (including how active device controls are merged), log reading and saved views, and end‑to‑end engine runs against the simulator (connect, scan, log, PID test, discovery, stop/restart). They run on both platforms and report memory leaks.
 
+## Adapters
+
+The engine (`UVScan.Engine`) speaks Class 2 messages; `UVScan.Adapter` turns them into what the hardware wants. `TAvtAdapter` is the AVT's binary framing (`UVScan.Avt`). `TElmAdapter` drives an ELM327 through `TElmLink` (`UVScan.Elm`: commands, the prompt, reply lines) and hands the engine the same frames an AVT would (status byte 00, then the message), so matching replies, DPID data and logs are the same for both. Standard ELM327 commands only: `ATZ ATE0 ATL0 ATS0 ATH1 ATAL ATSP2`, `ATSH` when the header changes, `ATSR`/`ATAR` for replies to F0 (the PID test asks from F0), `ATMA`.
+
+How the ELM keeps a DPID stream coming (worked out with `tools\ElmProbe`, see below): a request makes it listen until the bus is quiet for its timeout, and the PCM's bursts have gaps, so while streaming the adapter answers its prompt with `ATMA`. Every request (the tester present every 2 s) has to stop that first: a space (at the prompt a space is ignored, where a CR would repeat the last command), then the request, whose own listening carries the stream on. Frames that arrive between the space and "STOPPED" are kept (over a phone's Bluetooth that is two or three frames).
+
+On Android a paired Bluetooth adapter is a port of its own (`UVScan.Bluetooth.Android`, an RFCOMM socket with a reader thread), listed by `ListSerialPorts` as `BT <name> [<address>]`. `IsBluetoothPortName` keeps those names from being taken for network addresses (they have colons).
+
+Measured with the vLinker FD on the bench PCM, 10 PIDs in 3 DPIDs: UVScan on the laptop (COM4) 9.7 rows/s; on the S9+ 9.4 rows/s: a phone's Bluetooth now and then holds data back ~0.15 s (late, not lost), and stopping the ELM for the tester present takes longer there (~0.3 s). `UVScanProbe COM4 run 30 1,3,12 -elm [-trace] -notest -nodtc` runs the engine against an ELM; `-trace` keeps the raw traffic on while streaming.
+
 ## Simulator
+
+`UVScan.Simulator.Elm.pas` puts a simulated ELM327 v1.5 in front of the same PCM: ELM text, echo / spaces / headers as after ATZ, listening until the bus is quiet ("NO DATA" when nothing came), ATMA, "STOPPED" on any character while listening, replies only for the receive address, CRC bytes, at most 7 data bytes without ATAL. Port **Simulator** with **ELM327** chosen uses it; so do the tests in `UVScan.Tests.Elm`.
 
 `UVScan.Simulator.pas` is an `ISerialPort` that behaves like an AVT‑841 with a PCM behind it, built from what the bench PCM actually did: AVT init answers, `01 60` transmit confirmations, DPID definition replies, the two stream slots and their rates, `2A 00` pausing, NRC codes for bad requests, mode $22 PIDs, trouble codes in several modules, VIN blocks, and mode $AE device control (CPIDs $01‑$04 with exactly 6 bytes, NRC $12 / $31 otherwise). Choose port **Simulator** in the app; the tests use it too. When the bench shows new behaviour, add it here.
 
@@ -136,6 +148,10 @@ Every request but `/ping` needs the token from the kit (kept in `%LOCALAPPDATA%\
 | `src/UVScan.Formula.pas` | PID formula evaluator (replaces ArtFormula) |
 | `src/UVScan.Engine.pas` | Background thread that owns the port: connect, scan, log, codes, PID search, real‑time controls |
 | `src/UVScan.Simulator.pas` | Simulated AVT + PCM, and the simulator served on the network |
+| `src/UVScan.Simulator.Elm.pas` | Simulated ELM327 in front of the simulated PCM |
+| `src/UVScan.Adapter.pas` | The adapter layer: AVT and ELM327 |
+| `src/UVScan.Elm.pas` | The ELM327 text protocol |
+| `src/UVScan.Bluetooth.Android.pas` | Paired Bluetooth adapters on Android |
 | `src/UVScan.Pids.pas` | `TPidCatalog` (pids.json): load / save, validation, value formatting |
 | `src/UVScan.PidLists.pas` | `TPidLists` (lists.json) |
 | `src/UVScan.Display.pas` | `TDisplaySettings` (display.json): looks, alert levels, gauge zones |

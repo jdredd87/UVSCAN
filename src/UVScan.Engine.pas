@@ -1,8 +1,9 @@
 unit UVScan.Engine;
 
-{ The scan engine: one background thread that owns the serial port.
+{ The scan engine: one background thread that owns the serial port and the
+  adapter on it (an AVT, or an ELM327: UVScan.Adapter).
 
-  Everything that touches the AVT happens on this thread, strictly in
+  Everything that touches the adapter happens on this thread, strictly in
   sequence: request, wait for the matching reply (or timeout), next request.
   The heartbeat (tester present) is sent from the same loop, so it can never
   land in the middle of another exchange. The UI talks to the engine through
@@ -14,7 +15,8 @@ interface
 uses
   System.SysUtils, System.Classes, System.SyncObjs, System.Diagnostics, System.Math,
   System.StrUtils, System.Generics.Collections,
-  UVScan.Serial, UVScan.Avt, UVScan.Class2, UVScan.Pids, UVScan.Dpid, UVScan.Hex, UVScan.Formula;
+  UVScan.Serial, UVScan.Avt, UVScan.Adapter, UVScan.Class2, UVScan.Pids, UVScan.Dpid, UVScan.Hex,
+  UVScan.Formula;
 
 type
   TEngineState = (esDisconnected, esConnected, esScanning, esBusy);
@@ -118,6 +120,7 @@ type
     Text: string;
     Flag: Boolean;
     Factory: TPortFactory;
+    Adapter: TAdapterKind;       // ecConnect: what is on the port
     Data: TBytes;
     Release: TBytes;
     Seconds: Integer;
@@ -141,9 +144,7 @@ type
 
     // Owned by the engine thread only
     FPort: ISerialPort;
-    FParser: TAvtFrameParser;
-    FPending: TQueue<TAvtFrame>;
-    FReadBuf: array[0..1023] of Byte;
+    FAdapter: TBusAdapter;
     FState: TEngineState;
     FVehicle: TVehicleInfo;
     FStreaming: Boolean;
@@ -193,8 +194,8 @@ type
     function Cancelled: Boolean;
 
     // Transport
-    procedure SendFrame(const Frame: TBytes);
     procedure SendBus(const Msg: TBytes);
+    procedure SetStreaming(Value: Boolean);
     function NextFrame(TimeoutMs: Cardinal; out F: TAvtFrame): Boolean;
     function WaitFor(const Match: TFrameMatch; TimeoutMs: Cardinal; out Reply: TAvtFrame): Boolean;
     function Exchange(const Msg: TBytes; const Match: TFrameMatch; TimeoutMs: Cardinal;
@@ -205,7 +206,7 @@ type
 
     // Commands
     procedure Execute_(const Cmd: TEngineCommand);
-    procedure DoConnect(const Factory: TPortFactory);
+    procedure DoConnect(const Factory: TPortFactory; Kind: TAdapterKind);
     procedure DoDisconnect;
     procedure DoReadVehicleInfo;
     function ReadBlock(Block: Byte; MinLen: Integer; out Msg: TClass2Message): Boolean;
@@ -394,8 +395,6 @@ begin
   FCatalog := Catalog;
   FOnEvent := OnEvent;
   FCommands := TThreadedQueue<TEngineCommand>.Create(256, 1000, 0);
-  FParser := TAvtFrameParser.Create;
-  FPending := TQueue<TAvtFrame>.Create;
   FHeld := TDictionary<string, THeldControl>.Create;
   FLock := TCriticalSection.Create;
   FSamples := TList<TLiveSample>.Create;
@@ -410,8 +409,7 @@ begin
   FCommands.DoShutDown;
   inherited; // waits for Execute to finish
   FCommands.Free;
-  FParser.Free;
-  FPending.Free;
+  FAdapter.Free;
   FHeld.Free;
   FLock.Free;
   FSamples.Free;
@@ -518,38 +516,24 @@ end;
 
 { Transport }
 
-procedure TScanEngine.SendFrame(const Frame: TBytes);
-begin
-  if FTrace <> 0 then
-    Log('TX  ' + BytesToHex(Frame));
-  FPort.Write(Frame);
-end;
-
 procedure TScanEngine.SendBus(const Msg: TBytes);
 begin
-  SendFrame(EncodeBusMessage(Msg));
+  FAdapter.SendBus(Msg);
+end;
+
+procedure TScanEngine.SetStreaming(Value: Boolean);
+begin
+  FStreaming := Value;
+  if FAdapter <> nil then
+    FAdapter.Streaming := Value;
 end;
 
 function TScanEngine.NextFrame(TimeoutMs: Cardinal; out F: TAvtFrame): Boolean;
-var
-  N: Integer;
 begin
-  if FPending.Count > 0 then
-  begin
-    F := FPending.Dequeue;
-    Exit(True);
-  end;
-  Result := FParser.TryNext(F);
-  if not Result then
-  begin
-    N := FPort.Read(FReadBuf, SizeOf(FReadBuf), TimeoutMs);
-    if N > 0 then
-      FParser.Push(FReadBuf, N);
-    Result := FParser.TryNext(F);
-  end;
+  Result := FAdapter.NextFrame(TimeoutMs, F);
   // Trace everything except the high-rate stream data.
   if Result and (FTrace <> 0) and not (FStreaming and F.IsBusMessage) then
-    Log('RX  ' + F.ToHex);
+    Log('RX  ' + FAdapter.FrameText(F));
 end;
 
 function TScanEngine.WaitFor(const Match: TFrameMatch; TimeoutMs: Cardinal; out Reply: TAvtFrame): Boolean;
@@ -637,12 +621,12 @@ begin
         Log('Late negative response from %s: %s', [ModuleName(Msg.Source), Msg.ToHex]);
     end
     else if FTrace = 0 then
-      Log('RX  ' + F.ToHex);
+      Log('RX  ' + FAdapter.FrameText(F));
   end
   else if (F.Kind = $6) and (Length(F.Data) = 4) and (F.Data[0] = $58) then
     HandleAnalog(F)
   else if FTrace = 0 then
-    Log('RX  ' + F.ToHex);
+    Log('RX  ' + FAdapter.FrameText(F));
 end;
 
 { Called whenever the loop is idle: reads incoming data, keeps the stream alive. }
@@ -650,7 +634,7 @@ procedure TScanEngine.Service;
 var
   F: TAvtFrame;
 begin
-  if (FPort = nil) or not FPort.IsOpen then
+  if (FPort = nil) or not FPort.IsOpen or (FAdapter = nil) then
   begin
     Sleep(20);
     Exit;
@@ -736,7 +720,7 @@ end;
 procedure TScanEngine.Execute_(const Cmd: TEngineCommand);
 begin
   case Cmd.Kind of
-    ecConnect: DoConnect(Cmd.Factory);
+    ecConnect: DoConnect(Cmd.Factory, Cmd.Adapter);
     ecDisconnect: DoDisconnect;
     ecReadVehicleInfo: if RequireConnected then DoReadVehicleInfo;
     ecStartScan: if RequireConnected then DoStartScan(Cmd.PidIds);
@@ -817,11 +801,9 @@ end;
 
 { Connection }
 
-procedure TScanEngine.DoConnect(const Factory: TPortFactory);
+procedure TScanEngine.DoConnect(const Factory: TPortFactory; Kind: TAdapterKind);
 var
-  F: TAvtFrame;
-  Ok: Boolean;
-  Attempt: Integer;
+  Firmware, Problem: string;
 begin
   if not Assigned(Factory) then
     raise EArgumentException.Create('Connect: no port given');
@@ -829,51 +811,32 @@ begin
     DoDisconnect;
   FVehicle := Default(TVehicleInfo);
   FPort := Factory();
-  Log('Opening %s', [FPort.Description]);
+  FreeAndNil(FAdapter);
+  FAdapter := CreateAdapter(Kind, FPort,
+    procedure(const Text: string)
+    begin
+      Log(Text);
+    end,
+    procedure(const Text: string)
+    begin
+      if FTrace <> 0 then
+        Log(Text);
+    end);
+  Log('Opening %s (%s)', [FPort.Description, AdapterNames[Kind]]);
   FPort.Open;
   SetState(esBusy);
   // Replies to the last session's clean-up can still be on their way, or
   // waiting in the adapter, often cut off part-way: drop them.
   DiscardInput(150);
 
-  // Same initialisation the legacy app used: E1 33 (VPW mode), B0 (version).
-  // Tried three times: if a program was stopped halfway through sending a
-  // frame, the AVT takes the first bytes we send as the rest of that frame.
-  for Attempt := 1 to 3 do
+  if not FAdapter.Initialize(Firmware, Problem) then
   begin
-    SendFrame(HexToBytes('E1 33'));
-    if not WaitFor(
-      function(const Fr: TAvtFrame): Boolean
-      begin
-        Result := (Fr.Header = $91) or (Fr.Kind = $C); // AVT-841 answers 91 07
-      end, 500, F) then
-      Log('No reply to the AVT mode command (E1 33)');
-    SendFrame(HexToBytes('B0'));
-    Ok := WaitFor(
-      function(const Fr: TAvtFrame): Boolean
-      begin
-        Result := (Fr.Header = $92) and (Length(Fr.Data) >= 2);
-      end, 1000, F);
-    if Ok or Terminated then
-      Break;
-    Log('No answer from the AVT (attempt %d of 3)', [Attempt]);
-    Drain(200);
-    FlushInput;
-  end;
-  if not Ok then
-  begin
-    if (FPort as TObject) is TTcpSerialPort then
-      // The connection opened, so something is at that address: the AVT is
-      // off, or the address is another device's.
-      EmitText(eeError, Format('%s accepted the connection but no AVT answered. ' +
-        'Check the AVT has power and that this is its address and port.', [FPort.Description]))
-    else
-      EmitText(eeError, 'No response from the AVT interface. Check the port, baud rate and power.');
+    EmitText(eeError, Problem);
     DoDisconnect;
     Exit;
   end;
-  FVehicle.Firmware := BytesToHex(F.Data); // AVT-841: 92 04 13 -> '04 13'
-  Log('AVT firmware %s', [FVehicle.Firmware]);
+  FVehicle.Firmware := Firmware; // AVT-841: 92 04 13 -> '04 13'; ELM: 'ELM327 v1.5'
+  Log('%s firmware %s', [FAdapter.Name, FVehicle.Firmware]);
   // The PCM may still be streaming for an earlier session (unplugged, or
   // reconnected within its tester-present timeout): stop that and empty its
   // schedule slots, so the replies below are not buried in stream data.
@@ -885,27 +848,15 @@ end;
 
 { Reads and throws away everything that arrives for Ms milliseconds. }
 procedure TScanEngine.DiscardInput(Ms: Cardinal);
-var
-  Clock: TStopwatch;
-  Left: Int64;
 begin
-  Clock := TStopwatch.StartNew;
-  repeat
-    Left := Int64(Ms) - Clock.ElapsedMilliseconds;
-    if Left <= 0 then
-      Break;
-    FPort.Read(FReadBuf, SizeOf(FReadBuf), Min(Left, 50));
-  until Terminated;
-  FlushInput;
+  FAdapter.Discard(Ms);
 end;
 
-{ Drops whatever has arrived but not been handled yet: frames waiting in
-  FPending, half a frame in the parser, and bytes still in the adapter. }
+{ Drops whatever has arrived but not been handled yet: half a frame in the
+  adapter's parser, and bytes still in the port. }
 procedure TScanEngine.FlushInput;
 begin
-  FPending.Clear;
-  FParser.Clear;
-  FPort.Purge;
+  FAdapter.Flush;
 end;
 
 procedure TScanEngine.DoDisconnect;
@@ -929,10 +880,17 @@ begin
     // port may already be gone
   end;
   DoStopLog;
-  FStreaming := False;
+  SetStreaming(False);
   ForgetScan;
+  try
+    if FPort.IsOpen and (FAdapter <> nil) then
+      FAdapter.Finish;
+  except
+    // port may already be gone
+  end;
   FPort.Close;
   FPort := nil;
+  FreeAndNil(FAdapter);
   Log('Disconnected');
   SetState(esDisconnected);
 end;
@@ -1011,8 +969,8 @@ end;
 procedure TScanEngine.StopStreaming;
 begin
   if FAnalogOn then
-    SendFrame(EncodeAvtFrame($5, BytesOf([$59, $00])));
-  FStreaming := False;
+    FAdapter.SetAnalog(False);
+  SetStreaming(False);
   FAnalogOn := False;
   ResetStreamSlots;
 end;
@@ -1037,7 +995,6 @@ begin
       end, ReplyTimeoutMs, Msg);
   SendBus(StopDpidsRequest);
   Drain(100);
-  FPending.Clear;
 end;
 
 procedure TScanEngine.DoStartScan(const Ids: TArray<Integer>);
@@ -1092,6 +1049,18 @@ begin
           end;
         pkAnalog: HasAnalog := True;
       end;
+    if HasAnalog and not FAdapter.HasAnalog then
+    begin
+      // The AVT's own inputs (a wideband, say): an ELM327 has none.
+      if Length(Reqs) = 0 then
+      begin
+        EmitText(eeError, Format('The analog inputs are the AVT''s own: an %s has none. ' +
+          'Choose vehicle PIDs to scan.', [FAdapter.Name]));
+        Exit;
+      end;
+      Warn(Format('The analog inputs are the AVT''s own: an %s has none, so they stay empty', [FAdapter.Name]));
+      HasAnalog := False;
+    end;
     if (Length(Reqs) = 0) and not HasAnalog then
     begin
       EmitText(eeError, 'Select at least one vehicle or analog PID to scan');
@@ -1145,9 +1114,7 @@ begin
     end;
 
     SetState(esBusy);
-    FPending.Clear;
-    FParser.Clear;
-    FPort.Purge;
+    FlushInput;
     SetLength(FRejected, Length(FScanPids));
     for I := 0 to High(FRejected) do
       FRejected[I] := False;
@@ -1207,13 +1174,10 @@ begin
     FNoDataWarned := False;
 
     if HasAnalog then
-    begin
-      SendFrame(EncodeAvtFrame($5, BytesOf([$59, $01])));
-      FAnalogOn := True;
-    end;
+      FAnalogOn := FAdapter.SetAnalog(True);
     // Streaming must be on before the requests go out so the first data
     // frames, which can arrive before the PCM's status reply, are decoded.
-    FStreaming := True;
+    SetStreaming(True);
     for Request in FPlan.StreamRequests(FStreamSpeed) do
     begin
       if Exchange(Request,
@@ -1885,7 +1849,12 @@ begin
   SetState(esBusy);
   TraceWas := TInterlocked.Exchange(FTrace, 1);
   try
-    SendFrame(Frame);
+    if (FAdapter is TElmAdapter) and (Length(Frame) < 4) then
+    begin
+      EmitText(eeError, 'Type a whole Class 2 message: header and data, e.g. 6C 10 F1 3C 01');
+      Exit;
+    end;
+    FAdapter.SendRaw(Frame);
     Drain(1000);
   finally
     TInterlocked.Exchange(FTrace, TraceWas);

@@ -312,13 +312,17 @@
         <DCCReference Include="src\UVScan.Hex.pas"/>
         <DCCReference Include="src\UVScan.Serial.pas"/>
         <DCCReference Include="src\UVScan.Serial.Android.pas"/>
+        <DCCReference Include="src\UVScan.Bluetooth.Android.pas"/>
         <DCCReference Include="src\UVScan.Avt.pas"/>
+        <DCCReference Include="src\UVScan.Elm.pas"/>
+        <DCCReference Include="src\UVScan.Adapter.pas"/>
         <DCCReference Include="src\UVScan.Class2.pas"/>
         <DCCReference Include="src\UVScan.Formula.pas"/>
         <DCCReference Include="src\UVScan.Pids.pas"/>
         <DCCReference Include="src\UVScan.Dpid.pas"/>
         <DCCReference Include="src\UVScan.Dtc.pas"/>
         <DCCReference Include="src\UVScan.Simulator.pas"/>
+        <DCCReference Include="src\UVScan.Simulator.Elm.pas"/>
         <DCCReference Include="src\UVScan.Engine.pas"/>
         <DCCReference Include="src\UVScan.Paths.pas"/>
         <DCCReference Include="src\UVScan.JsonFile.pas"/>

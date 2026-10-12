@@ -1,4 +1,4 @@
-unit UVScan.MainForm;
+﻿unit UVScan.MainForm;
 
 { The main window: connection bar, PID list, and the tabs (live data,
   dashboard, real-time controls, vehicle & codes, tools, messages).
@@ -15,7 +15,7 @@ uses
   FMX.Types, FMX.Controls, FMX.Forms, FMX.Graphics, FMX.Dialogs, FMX.StdCtrls, FMX.Edit,
   FMX.ListBox, FMX.Layouts, FMX.Objects, FMX.TabControl, FMX.Menus, FMX.Controls.Presentation,
   FMX.Platform, System.Messaging, System.Notification,
-  UVScan.Serial, UVScan.Simulator, UVScan.Pids, UVScan.Dpid, UVScan.Dtc, UVScan.Engine,
+  UVScan.Serial, UVScan.Simulator, UVScan.Simulator.Elm, UVScan.Adapter, UVScan.Pids, UVScan.Dpid, UVScan.Dtc, UVScan.Engine,
   UVScan.Class2, UVScan.Paths, UVScan.Settings, UVScan.PidLists, UVScan.Defaults,
   UVScan.Display, UVScan.Alerts, UVScan.Controls, UVScan.Gauge, UVScan.UI.DataGrid, UVScan.LogData,
   UVScan.QuickStart;
@@ -286,6 +286,9 @@ type
     FAutoScan: Boolean;
     FAutoLog: Boolean;
     edtTcpAddress: TEdit; // the network AVT's host:port (port NetworkPort)
+    cbAdapter: TComboBox;            // AVT-841 or ELM327 (first in the Adapter box)
+    FConnectedAdapter: TAdapterKind;
+    FBluetoothAsked: Boolean;        // Android 12+: the "Nearby devices" question was asked
     FSettings: TAppSettings;
     FLists: TPidLists;
     FPendingLog: TStringList;   // message lines waiting for the next timer tick
@@ -524,6 +527,8 @@ type
     function AppEvent(AAppEvent: TApplicationEvent; AContext: TObject): Boolean;
     procedure FillPorts(const Select: string);
     procedure PortChanged(Sender: TObject);
+    procedure AdapterChanged(Sender: TObject);
+    function ChosenAdapter: TAdapterKind;
     procedure FillPidList;
     procedure SetSelected(Id: Integer; Checked: Boolean);
     procedure UpdateBudget;
@@ -1191,7 +1196,24 @@ begin
   cbAway.Visible := IsMobile;
   tiConnect.Text := 'Connection';
 
-  // Connection: the address of an AVT on the network, when that is the port.
+  // Connection: what is on the port, first in the row.
+  cbAdapter := TComboBox.Create(Self);
+  cbAdapter.Stored := False;
+  cbAdapter.Parent := flAdapter;
+  cbAdapter.Index := 0;
+  cbAdapter.Size.Size := TSizeF.Create(130, cbPort.Height);
+  for var K := Low(TAdapterKind) to High(TAdapterKind) do
+    cbAdapter.Items.Add(AdapterNames[K]);
+  cbAdapter.ItemIndex := 0;
+  cbAdapter.Hint := 'The interface on the port: an AVT-841, or an ELM327 type adapter (Bluetooth, Wi-Fi or USB)';
+  cbAdapter.ShowHint := True;
+  cbAdapter.OnChange := AdapterChanged;
+  // A USB ELM327 usually runs at 38400.
+  for var B in ['38400', '9600', '230400'] do
+    if cbBaud.Items.IndexOf(B) < 0 then
+      cbBaud.Items.Add(B);
+
+  // Connection: the address of an adapter on the network, when that is the port.
   edtTcpAddress := TEdit.Create(Self);
   edtTcpAddress.Stored := False;
   edtTcpAddress.Parent := flAdapter;
@@ -2999,6 +3021,7 @@ begin
     FSettings.PendingNotice := '';
   end;
   edtTcpAddress.Text := FSettings.TcpAddress;
+  cbAdapter.ItemIndex := Ord(AdapterKindFromKey(FSettings.Adapter));
   FillPorts(FSettings.Port);
   cbBaud.ItemIndex := Max(0, cbBaud.Items.IndexOf(IntToStr(FSettings.Baud)));
   edtLogFolder.Text := FSettings.LogFolder;
@@ -3050,6 +3073,7 @@ procedure TMainForm.SaveSettings;
 begin
   FSettings.Port := ComboText(cbPort);
   FSettings.Baud := StrToIntDef(ComboText(cbBaud), 115200);
+  FSettings.Adapter := AdapterKeys[ChosenAdapter];
   FSettings.TcpAddress := Trim(edtTcpAddress.Text);
   FSettings.LogFolder := edtLogFolder.Text;
   if cbAway.ItemIndex >= 0 then
@@ -3095,6 +3119,23 @@ procedure TMainForm.FillPorts(const Select: string);
 var
   P: string;
 begin
+  {$IFDEF ANDROID}
+  // Android 12+: paired Bluetooth adapters are only listed once UVScan may
+  // use them ("Nearby devices"). Asked once; allowed, the list is made again.
+  if TOSVersion.Check(12) and not FBluetoothAsked and
+    not PermissionsService.IsPermissionGranted('android.permission.BLUETOOTH_CONNECT') then
+  begin
+    FBluetoothAsked := True;
+    PermissionsService.RequestPermissions(['android.permission.BLUETOOTH_CONNECT'],
+      procedure(const APermissions: TClassicStringDynArray; const AGrantResults: TClassicPermissionStatusDynArray)
+      begin
+        if (Length(AGrantResults) > 0) and (AGrantResults[0] = TPermissionStatus.Granted) then
+          FillPorts(ComboText(cbPort))
+        else
+          AddMessage('Bluetooth adapters are not listed: UVScan may not use nearby devices');
+      end);
+  end;
+  {$ENDIF}
   cbPort.Items.BeginUpdate;
   try
     cbPort.Items.Clear;
@@ -3116,22 +3157,54 @@ begin
   PortChanged(nil);
 end;
 
-{ A network AVT has an address instead of a baud rate (the interface's
+{ A network adapter has an address instead of a baud rate (the interface's
   serial side has its own), and no port list to refresh (the page menu
-  still has Refresh ports). }
+  still has Refresh ports). A Bluetooth one has no baud rate either, and is
+  an ELM327 (an AVT has no Bluetooth). }
 procedure TMainForm.PortChanged(Sender: TObject);
 var
-  Network: Boolean;
+  Network, Bluetooth: Boolean;
 begin
   if edtTcpAddress = nil then
     Exit;
   Network := ComboText(cbPort) = NetworkPort;
-  if (edtTcpAddress.Visible = Network) and (cbBaud.Visible = not Network) then
+  Bluetooth := IsBluetoothPortName(ComboText(cbPort));
+  if Bluetooth and (cbAdapter <> nil) and (cbAdapter.ItemIndex <> Ord(akElm327)) then
+    cbAdapter.ItemIndex := Ord(akElm327);
+  if (edtTcpAddress.Visible = Network) and (cbBaud.Visible = not (Network or Bluetooth)) then
     Exit;
   edtTcpAddress.Visible := Network;
-  cbBaud.Visible := not Network;
+  cbBaud.Visible := not (Network or Bluetooth);
   btnRefreshPorts.Visible := not Network;
   FlowBoxResized(nil); // the row's height may change
+end;
+
+function TMainForm.ChosenAdapter: TAdapterKind;
+begin
+  if IsBluetoothPortName(ComboText(cbPort)) then
+    Exit(akElm327);
+  if (cbAdapter = nil) or (cbAdapter.ItemIndex < 0) then
+    Exit(akAvt);
+  Result := TAdapterKind(cbAdapter.ItemIndex);
+end;
+
+{ The usual speeds follow the adapter: an AVT 115200 (or 57600), a USB
+  ELM327 38400; and the network address its usual port. }
+procedure TMainForm.AdapterChanged(Sender: TObject);
+var
+  Elm: Boolean;
+begin
+  Elm := ChosenAdapter = akElm327;
+  if Elm and ((ComboText(cbBaud) = '115200') or (ComboText(cbBaud) = '57600')) then
+    cbBaud.ItemIndex := cbBaud.Items.IndexOf('38400')
+  else if not Elm and (ComboText(cbBaud) = '38400') then
+    cbBaud.ItemIndex := cbBaud.Items.IndexOf('115200');
+  if Elm then
+    edtTcpAddress.TextPrompt := Format('e.g. 192.168.0.10:%d', [ElmTcpPort])
+  else
+    edtTcpAddress.TextPrompt := Format('e.g. 192.168.2.99:%d', [DefaultTcpPort]);
+  if Sender <> nil then
+    SettingsChanged;
 end;
 
 procedure TMainForm.btnRefreshPortsClick(Sender: TObject);
@@ -3586,6 +3659,8 @@ begin
       end);
   {$ENDIF}
   Cmd := Command(ecConnect);
+  Cmd.Adapter := ChosenAdapter;
+  FConnectedAdapter := Cmd.Adapter;
   if PortName = NetworkPort then
   begin
     if not ParseTcpAddress(edtTcpAddress.Text, Host, TcpPort) then
@@ -3597,6 +3672,9 @@ begin
         edtTcpAddress.SetFocus;
       Exit;
     end;
+    // A Wi-Fi ELM327's usual port when none is given.
+    if (Cmd.Adapter = akElm327) and not edtTcpAddress.Text.Trim.Contains(':') then
+      TcpPort := ElmTcpPort;
     Cmd.Factory :=
       function: ISerialPort
       begin
@@ -3604,11 +3682,23 @@ begin
       end;
     PortName := Format('%s:%d', [Host, TcpPort]);
   end
+  else if (PortName = SimulatorPort) and (Cmd.Adapter = akElm327) then
+    Cmd.Factory :=
+      function: ISerialPort
+      begin
+        Result := TSimulatedElm.Create;
+      end
   else if PortName = SimulatorPort then
     Cmd.Factory :=
       function: ISerialPort
       begin
         Result := TSimulatedAvt.Create;
+      end
+  else if Cmd.Adapter = akElm327 then
+    Cmd.Factory :=
+      function: ISerialPort
+      begin
+        Result := CreateSerialPort(PortName, Baud, fcNone); // an ELM327 has no handshake lines
       end
   else
     Cmd.Factory :=
@@ -3760,6 +3850,7 @@ begin
       end;
     eeVehicleInfo:
       begin
+        lblFirmwareCaption.Text := IfThen(FConnectedAdapter = akElm327, 'Adapter', 'AVT firmware');
         lblFirmware.Text := IfThen(Ev.Vehicle.Firmware = '', '-', Ev.Vehicle.Firmware);
         lblVin.Text := IfThen(Ev.Vehicle.Vin = '', '-', Ev.Vehicle.Vin);
         lblOsid.Text := IfThen(Ev.Vehicle.Osid = '', '-', Ev.Vehicle.Osid);
