@@ -17,7 +17,7 @@ unit UVScan.Settings;
 interface
 
 uses
-  System.SysUtils, System.JSON;
+  System.SysUtils, System.JSON, UVScan.QuickStart;
 
 type
   TStreamSpeed = (ssFast, ssMedium, ssSlow);
@@ -26,6 +26,7 @@ type
     Left, Top, Width, Height: Integer;
     Maximized: Boolean;
     PidPanelWidth: Integer;
+    PidsHidden: Boolean; // wide window: the PID list on its own page, not beside the others
     Saved: Boolean;   // False until a window position has been stored
   end;
 
@@ -43,10 +44,12 @@ type
     Trace: Boolean;
     AlertSounds: Boolean;   // play the sounds of the PID alert levels
     LiveZoom: Integer;      // live data grid zoom, percent
+    LiveOrder: TArray<Integer>; // live data rows, top first, when no scan list is chosen
     ShowMinMax: Boolean;    // live data grid min / max columns
     Theme: string;          // 'system', 'light' or 'dark'
     KeepScreenOn: Boolean;  // no sleep / screen saver while UVScan is open
     RoundReadings: Boolean; // gauges and live data: tidy decimals per PID (logs keep every digit)
+    QuickStarts: TQuickStarts; // named ways to start in a hurry (Quick start menu, shortcuts)
     Window: TWindowSettings;
     constructor Create;
     procedure ResetToDefaults;
@@ -120,6 +123,7 @@ begin
   Theme := 'system';
   KeepScreenOn := True;
   RoundReadings := True;
+  QuickStarts := DefaultQuickStarts;
   Window := Default(TWindowSettings);
 end;
 
@@ -161,6 +165,10 @@ begin
 
   Sec := TJSONObject.Create;
   Sec.AddPair('zoom', TJSONNumber.Create(LiveZoom));
+  Ids := TJSONArray.Create;
+  for Id in LiveOrder do
+    Ids.Add(Id);
+  Sec.AddPair('order', Ids);
   Sec.AddPair('showMinMax', TJSONBool.Create(ShowMinMax));
   Result.AddPair('liveGrid', Sec);
 
@@ -169,6 +177,8 @@ begin
   Sec.AddPair('keepScreenOn', TJSONBool.Create(KeepScreenOn));
   Sec.AddPair('roundReadings', TJSONBool.Create(RoundReadings));
   Result.AddPair('appearance', Sec);
+
+  Result.AddPair('quickStarts', QuickStartsToJson(QuickStarts));
 
   if Window.Saved then
   begin
@@ -179,6 +189,7 @@ begin
     Sec.AddPair('height', TJSONNumber.Create(Window.Height));
     Sec.AddPair('maximized', TJSONBool.Create(Window.Maximized));
     Sec.AddPair('pidPanelWidth', TJSONNumber.Create(Window.PidPanelWidth));
+    Sec.AddPair('pidsHidden', TJSONBool.Create(Window.PidsHidden));
     Result.AddPair('window', Sec);
   end;
 end;
@@ -233,6 +244,12 @@ begin
   if Sec <> nil then
   begin
     LiveZoom := EnsureRange(JInt(Sec, 'zoom', LiveZoom), 50, 300);
+    LiveOrder := nil;
+    Ids := JArr(Sec, 'order');
+    if Ids <> nil then
+      for I := 0 to Ids.Count - 1 do
+        if Ids.Items[I] is TJSONNumber then
+          LiveOrder := LiveOrder + [TJSONNumber(Ids.Items[I]).AsInt];
     ShowMinMax := JBool(Sec, 'showMinMax', ShowMinMax);
   end;
 
@@ -244,6 +261,10 @@ begin
     RoundReadings := JBool(Sec, 'roundReadings', RoundReadings);
   end;
 
+  // Missing (an older file): the defaults stay; there but empty: none.
+  if Root.GetValue('quickStarts') is TJSONArray then
+    QuickStarts := QuickStartsFromJson(TJSONArray(Root.GetValue('quickStarts')));
+
   Sec := JObj(Root, 'window');
   if Sec <> nil then
   begin
@@ -253,6 +274,7 @@ begin
     Window.Height := JInt(Sec, 'height');
     Window.Maximized := JBool(Sec, 'maximized');
     Window.PidPanelWidth := JInt(Sec, 'pidPanelWidth');
+    Window.PidsHidden := JBool(Sec, 'pidsHidden');
     Window.Saved := (Window.Width > 0) and (Window.Height > 0);
   end;
 end;

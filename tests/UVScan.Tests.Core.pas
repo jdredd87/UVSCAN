@@ -3,10 +3,23 @@ unit UVScan.Tests.Core;
 interface
 
 uses
-  System.SysUtils, System.Classes, System.Math, DUnitX.TestFramework,
-  UVScan.Hex, UVScan.Avt, UVScan.Class2, UVScan.Formula, UVScan.Pids, UVScan.Dpid, UVScan.Dtc;
+  System.SysUtils, System.Classes, System.Math, System.JSON, DUnitX.TestFramework,
+  UVScan.Hex, UVScan.Avt, UVScan.Class2, UVScan.Formula, UVScan.Pids, UVScan.Dpid, UVScan.Dtc,
+  UVScan.QuickStart;
 
 type
+  [TestFixture]
+  TQuickStartTests = class
+  public
+    [Test] procedure LegacySwitchesStillWork;
+    [Test] procedure LogMeansScanAndConnect;
+    [Test] procedure ValuesWithSpaces;
+    [Test] procedure QuickPicksAKnownOne;
+    [Test] procedure UnknownQuickOrMissingValueIsReported;
+    [Test] procedure ArgumentsParseBack;
+    [Test] procedure JsonRoundTrip;
+  end;
+
   [TestFixture]
   THexTests = class
   public
@@ -802,7 +815,133 @@ begin
   Assert.WillRaise(Plan, EDpidPlanError);
 end;
 
+{ TQuickStartTests }
+
+procedure TQuickStartTests.LegacySwitchesStillWork;
+var
+  Q: TQuickStart;
+  Problem: string;
+begin
+  Assert.IsTrue(ParseQuickStartArgs(['-port', 'COM9', '-connect', '-scan', '-log'], nil, Q, Problem), Problem);
+  Assert.AreEqual('COM9', Q.Port);
+  Assert.IsTrue(Q.Connect and Q.Scan and Q.Log);
+  Assert.IsFalse(Q.FullScreen or Q.Chart or Q.Retry);
+  Assert.IsTrue(ParseQuickStartArgs(['-port', '192.168.2.99:10001'], nil, Q, Problem));
+  Assert.AreEqual('192.168.2.99:10001', Q.Port);
+  Assert.IsFalse(Q.Connect, 'only the port');
+  Assert.IsTrue(ParseQuickStartArgs([], nil, Q, Problem));
+  Assert.IsFalse(Q.Any, 'no switches: nothing to do');
+  Assert.IsTrue(ParseQuickStartArgs(['-NSHighResolutionCapable', 'x.csv'], nil, Q, Problem), 'not ours: ignored');
+  Assert.IsFalse(Q.Any);
+end;
+
+procedure TQuickStartTests.LogMeansScanAndConnect;
+var
+  Q: TQuickStart;
+  Problem: string;
+begin
+  Assert.IsTrue(ParseQuickStartArgs(['/log', '/fullscreen'], nil, Q, Problem));
+  Assert.IsTrue(Q.Log and Q.Scan and Q.Connect and Q.FullScreen);
+  Assert.IsTrue(ParseQuickStartArgs(['-retry'], nil, Q, Problem));
+  Assert.IsFalse(Q.Retry, 'retry without connecting means nothing');
+end;
+
+procedure TQuickStartTests.ValuesWithSpaces;
+var
+  Q: TQuickStart;
+  Problem: string;
+begin
+  // Windows hands a quoted value over as one parameter, without the quotes.
+  Assert.IsTrue(ParseQuickStartArgs(['-list', 'Basic engine', '-dashboard', 'Fuel trims', '-scan', '-chart'], nil, Q,
+    Problem), Problem);
+  Assert.AreEqual('Basic engine', Q.List);
+  Assert.AreEqual('Fuel trims', Q.Dashboard);
+  Assert.IsTrue(Q.Scan and Q.Connect and Q.Chart);
+end;
+
+procedure TQuickStartTests.QuickPicksAKnownOne;
+var
+  Q: TQuickStart;
+  Problem: string;
+begin
+  Assert.IsTrue(ParseQuickStartArgs(['-quick', 'drag STRIP', '-port', 'COM3'], DefaultQuickStarts, Q, Problem), Problem);
+  Assert.AreEqual('Drag strip', Q.Name);
+  Assert.AreEqual('Acceleration', Q.List);
+  Assert.AreEqual('COM3', Q.Port, 'switches add to it');
+  Assert.IsTrue(Q.Log and Q.Scan and Q.Connect and Q.FullScreen and Q.Retry);
+end;
+
+procedure TQuickStartTests.UnknownQuickOrMissingValueIsReported;
+var
+  Q: TQuickStart;
+  Problem: string;
+begin
+  Assert.IsFalse(ParseQuickStartArgs(['-quick', 'Nope'], DefaultQuickStarts, Q, Problem));
+  Assert.Contains(Problem, 'Nope');
+  Assert.IsFalse(ParseQuickStartArgs(['-list'], nil, Q, Problem));
+  Assert.Contains(Problem, 'needs a value');
+  Assert.IsFalse(ParseQuickStartArgs(['-list', '-scan'], nil, Q, Problem), 'a switch is not a value');
+end;
+
+procedure TQuickStartTests.ArgumentsParseBack;
+var
+  A, B: TQuickStart;
+  Args: TArray<string>;
+  Problem, S: string;
+  Quoted: Boolean;
+  Part: string;
+  C: Char;
+begin
+  A := DefaultQuickStarts[0];
+  A.Dashboard := 'Fuel trims';
+  A.Port := 'COM9';
+  A.Chart := True;
+  // Split like Windows does: spaces outside quotes; quotes dropped.
+  Args := nil;
+  Part := '';
+  Quoted := False;
+  S := A.Arguments + ' ';
+  for C in S do
+    if C = '"' then
+      Quoted := not Quoted
+    else if (C = ' ') and not Quoted then
+    begin
+      if Part <> '' then
+        Args := Args + [Part];
+      Part := '';
+    end
+    else
+      Part := Part + C;
+  Assert.IsTrue(ParseQuickStartArgs(Args, nil, B, Problem), Problem);
+  Assert.AreEqual(A.Port, B.Port);
+  Assert.AreEqual(A.List, B.List);
+  Assert.AreEqual(A.Dashboard, B.Dashboard);
+  Assert.IsTrue((A.Connect = B.Connect) and (A.Scan = B.Scan) and (A.Log = B.Log) and (A.FullScreen = B.FullScreen) and
+    (A.Chart = B.Chart) and (A.Retry = B.Retry), A.Arguments);
+end;
+
+procedure TQuickStartTests.JsonRoundTrip;
+var
+  A: TQuickStarts;
+  B: TQuickStarts;
+  J: TJSONArray;
+begin
+  A := DefaultQuickStarts;
+  J := QuickStartsToJson(A);
+  try
+    B := QuickStartsFromJson(J);
+  finally
+    J.Free;
+  end;
+  Assert.AreEqual(1, Integer(Length(B)));
+  Assert.AreEqual(A[0].Name, B[0].Name);
+  Assert.AreEqual(A[0].List, B[0].List);
+  Assert.IsTrue(B[0].Log and B[0].FullScreen and B[0].Retry);
+  Assert.AreEqual(0, IndexOfQuickStart(B, 'DRAG strip'));
+end;
+
 initialization
+  TDUnitX.RegisterTestFixture(TQuickStartTests);
   TDUnitX.RegisterTestFixture(THexTests);
   TDUnitX.RegisterTestFixture(TAvtFramingTests);
   TDUnitX.RegisterTestFixture(TClass2Tests);

@@ -17,7 +17,8 @@ uses
   FMX.Platform, System.Messaging, System.Notification,
   UVScan.Serial, UVScan.Simulator, UVScan.Pids, UVScan.Dpid, UVScan.Dtc, UVScan.Engine,
   UVScan.Class2, UVScan.Paths, UVScan.Settings, UVScan.PidLists, UVScan.Defaults,
-  UVScan.Display, UVScan.Alerts, UVScan.Controls, UVScan.Gauge, UVScan.UI.DataGrid, UVScan.LogData;
+  UVScan.Display, UVScan.Alerts, UVScan.Controls, UVScan.Gauge, UVScan.UI.DataGrid, UVScan.LogData,
+  UVScan.QuickStart;
 
 type
   { Parts of the one-line status strip. }
@@ -262,8 +263,10 @@ type
     FSupport: TDictionary<Integer, Boolean>; // PID test results
     FRejected: TList<Integer>;
     FPidRows: TArray<Integer>;      // PID list rows: PID id, or -(category + 1) for a group row
-    FLiveIds: TArray<Integer>;
-    FLive: TLiveSnapshot;
+    FLiveIds: TArray<Integer>;       // live rows, top first (the order the user chose)
+    FEngineIds: TArray<Integer>;     // the same PIDs in the scan's own order (its snapshots)
+    FRowEngine: TArray<Integer>;     // live row -> index in FEngineIds
+    FLive: TLiveSnapshot;            // in row order (see DisplaySnapshot)
     FAwaySince: TDateTime;    // phone: when the app left the screen, 0 = on screen
     FSaveDue: UInt64;         // tick count when changed settings are saved, 0 = nothing to save
     FNotes: TNotificationCenter; // phone: the notification while away
@@ -296,6 +299,8 @@ type
     FFlashOn: Boolean;
     FGaugeViews: TList<TGaugeView>;
     FMenuPidId: Integer;             // PID the PID/grid menu is about
+    FMenuLiveRow: Integer;           // live row the grid menu is about, -1 from the PID list
+    FMoveItems: TArray<TMenuItem>;   // grid menu: move the live row up / down / top / bottom
     FMenuGauge: Integer;             // gauge index the gauge menu is about
     FTestMode: Boolean;              // "Test display": made-up values instead of the PCM
     FTestStart: UInt64;
@@ -319,6 +324,24 @@ type
     FMorePages: TArray<TTabItem>;    // lbMore row -> page
     FPageMenu: TPopupMenu;
     FPidsDocked: Boolean;            // wide window: the PID list sits beside the pages
+    FWide: Boolean;                  // the window is wide enough for the PID list beside the pages
+    FFullScreen: Boolean;            // the dashboard alone on the whole screen
+    FQuick: TQuickStart;             // the quick start (or command line) being carried out
+    FQuickActive: Boolean;           // ... until the user stops or disconnects
+    FQuickDash: string;              // the dashboard it shows (kept when the scan starts)
+    FRetryAt: UInt64;                // tick count to try connecting again, 0 = not
+    FAutoChart: Boolean;             // open the live chart when the scan starts
+    FQuickPicks: TComponent;         // owns the senders of the Quick start menu's items
+    FQuickAction: Integer;           // what picking a quick start does: 0 run, 1 edit, 2 delete, 3 shortcut
+    btnQuick: TButton;               // Connect page: the Quick start menu
+    FWasMaximized: Boolean;          // before full screen
+    FWasBounds: TRectF;              // Windows: the window before full screen
+    FWasBorder: TFmxFormBorderStyle;
+    FWasPadding: TRectF;             // phone: the safe area insets before full screen
+    FSafeHold: UInt64;               // phone: ignore inset changes until this tick (see SetFullScreen)
+    FExitFull: TCircle;              // full screen: the way back
+    btnPidPanel: TSpeedButton;       // wide windows: the PID list beside the pages or on its own page
+    btnFullScreen: TSpeedButton;     // Gauges: the dashboard on the whole screen
     FRail: Boolean;                  // short window (a phone held sideways): the tabs go down the left side
     FCtlRunHeight: Single;           // the control panel's height under the list, while it is beside it
     FChromeReady: Boolean;
@@ -359,6 +382,25 @@ type
     procedure AddPageMenuItem(const Text: string; Handler: TNotifyEvent; Enabled: Boolean = True;
       Checked: Boolean = False);
     procedure ToggleMinMaxClick(Sender: TObject);
+    procedure TogglePidPanelClick(Sender: TObject);
+    procedure RunQuickStart(const Q: TQuickStart);
+    procedure QuickConnect;
+    procedure QuickStartClick(Sender: TObject);
+    procedure QuickPickClick(Sender: TObject);
+    procedure QuickNewClick(Sender: TObject);
+    procedure QuickChooseClick(Sender: TObject);
+    procedure ShowQuickMenu(Action: Integer);
+    procedure EditQuick(Index: Integer);
+    procedure FullScreenClick(Sender: TObject);
+    procedure SetFullScreen(Value: Boolean);
+    procedure PlaceExitFull;
+    procedure SafeAreaChanged(Sender: TObject; const AInsets: TRectF);
+    function RankLiveIds(const Ids: TArray<Integer>): TArray<Integer>;
+    function DisplaySnapshot(const S: TLiveSnapshot): TLiveSnapshot;
+    procedure MoveLiveRow(From, ToRow: Integer);
+    procedure SaveLiveOrder;
+    procedure MoveRowClick(Sender: TObject);
+    procedure LiveKeyDown(Sender: TObject; var Key: Word; var KeyChar: WideChar; Shift: TShiftState);
     // theme
     procedure ApplyPalette;
     procedure ThemeChanged(const Sender: TObject; const M: TMessage);
@@ -472,7 +514,7 @@ implementation
 uses
   System.JSON, UVScan.JsonFile, UVScan.UI.Common, UVScan.UI.Theme, UVScan.Sound, UVScan.PidEditor,
   UVScan.PidDiscovery, UVScan.DisplayEditor, UVScan.GaugeEditor, UVScan.ControlEditor, UVScan.LogViewer,
-  System.DateUtils, System.Permissions;
+  UVScan.QuickStartEditor, System.DateUtils, System.Permissions;
 
 const
   AwayNote = 'uvscan_away';       // the notification's name
@@ -674,6 +716,7 @@ begin
   grdLive.OnGetStyle := LiveGetStyle;
   grdLive.OnRowDblClick := LiveDblClick;
   grdLive.OnMouseDown := GridMouseDown;
+  grdLive.OnKeyDown := LiveKeyDown;
   grdLive.OnMouseWheel := LiveMouseWheel;
   grdLive.PopupMenu := pmPid;
   grdLive.Touch.InteractiveGestures := [TInteractiveGesture.LongTap];
@@ -876,6 +919,76 @@ begin
   Icon := AddIcon(btnChart);
   Icon.Data.Data := 'M3 4 L3 20 L21 20 M6 15 L10 10 L14 13 L20 6';
   Icon.Fill.Kind := TBrushKind.None;
+  // Connect page: the Quick start menu, beside Start / Stop scan.
+  btnQuick := TButton.Create(Self);
+  btnQuick.Stored := False;
+  btnQuick.Parent := btnStopScan.Parent;
+  btnQuick.Size.Size := btnStopScan.Size.Size;
+  btnQuick.Margins := btnStopScan.Margins;
+  btnQuick.Text := 'Quick start...';
+  btnQuick.Hint := 'Get going in one go: scan list, dashboard, connect, scan, log, full screen';
+  btnQuick.ShowHint := True;
+  btnQuick.OnClick := QuickStartClick;
+  // Gauges: the dashboard on the whole screen.
+  btnFullScreen := TSpeedButton.Create(Self);
+  btnFullScreen.Parent := pnlAppBar;
+  btnFullScreen.Stored := False;
+  btnFullScreen.Width := 44;
+  btnFullScreen.Text := '';
+  btnFullScreen.Hint := 'Full screen (F11; Esc to come back)';
+  btnFullScreen.ShowHint := True;
+  btnFullScreen.OnClick := FullScreenClick;
+  Icon := AddIcon(btnFullScreen);
+  Icon.Data.Data := 'M4 9 L4 4 L9 4 M15 4 L20 4 L20 9 M20 15 L20 20 L15 20 M9 20 L4 20 L4 15';
+  Icon.Fill.Kind := TBrushKind.None;
+  // Wide windows: the PID list beside the pages, or on a page of its own.
+  btnPidPanel := TSpeedButton.Create(Self);
+  btnPidPanel.Parent := pnlAppBar;
+  btnPidPanel.Stored := False;
+  btnPidPanel.Align := TAlignLayout.Left;
+  btnPidPanel.Position.X := btnBack.Position.X + btnBack.Width + 1; // after Back
+  btnPidPanel.Width := 44;
+  btnPidPanel.Text := '';
+  btnPidPanel.ShowHint := True;
+  btnPidPanel.OnClick := TogglePidPanelClick;
+  Icon := AddIcon(btnPidPanel);
+  Icon.Data.Data := 'M3 5 L21 5 L21 19 L3 19 Z M9 5 L9 19';
+  Icon.Fill.Kind := TBrushKind.None;
+  // Full screen: a quiet round button to come back.
+  FExitFull := TCircle.Create(Self);
+  FExitFull.Parent := tiDashboard;
+  FExitFull.Stored := False;
+  FExitFull.SetBounds(0, 0, 44, 44);
+  FExitFull.Stroke.Kind := TBrushKind.None;
+  FExitFull.Opacity := 0.55;
+  FExitFull.HitTest := True;
+  FExitFull.Cursor := crHandPoint;
+  FExitFull.Hint := 'Leave full screen (Esc)';
+  FExitFull.ShowHint := True;
+  FExitFull.OnClick := FullScreenClick;
+  FExitFull.Visible := False;
+  Icon := AddIcon(FExitFull);
+  Icon.Data.Data := 'M9 4 L9 9 L4 9 M15 4 L15 9 L20 9 M20 15 L15 15 L15 20 M9 20 L9 15 L4 15';
+  Icon.Fill.Kind := TBrushKind.None;
+  // Grid menu, live rows: move the row.
+  FMenuLiveRow := -1;
+  for I := 0 to 4 do
+  begin
+    FMoveItems := FMoveItems + [TMenuItem.Create(Self)];
+    FMoveItems[I].Stored := False;
+    FMoveItems[I].Tag := I - 1; // -1: the separator
+    case I of
+      0: FMoveItems[I].Text := '-';
+      1: FMoveItems[I].Text := 'Move up';
+      2: FMoveItems[I].Text := 'Move down';
+      3: FMoveItems[I].Text := 'Move to the top';
+    else
+      FMoveItems[I].Text := 'Move to the bottom';
+    end;
+    if I > 0 then
+      FMoveItems[I].OnClick := MoveRowClick;
+    pmPid.AddObject(FMoveItems[I]);
+  end;
 
   AddMore('Real-time controls', 'Switch outputs, hold values, reset learned values', tiControls);
   AddMore('Tools', 'Write VIN, raw AVT frames, PID discovery', tiTools);
@@ -970,12 +1083,13 @@ begin
     lblDashHint.Text := 'Long-press a gauge to change, move or remove it.';
     WindowState := TWindowState.wsMaximized;
     KeepInSafeArea(Self);
+    OnSafeAreaChanged := SafeAreaChanged; // like KeepInSafeArea's, but full screen keeps its own
   end;
 end;
 
 procedure TMainForm.ArrangeLayout;
 var
-  Wide: Boolean;
+  Wide, Docked: Boolean;
   W, H: Single;
 begin
   if not FChromeReady then
@@ -983,7 +1097,10 @@ begin
   W := InnerWidth(Self);
   H := InnerHeight(Self);
   Wide := W >= WideLayoutWidth; // a big window or a tablet held sideways
-  if Wide and (pnlPids.Parent <> Self) then
+  FWide := Wide;
+  // Beside the pages unless the user put it on its own page (or full screen).
+  Docked := Wide and not FSettings.Window.PidsHidden and not FFullScreen;
+  if Docked and (pnlPids.Parent <> Self) then
   begin
     pnlPids.Parent := Self;
     pnlPids.Align := TAlignLayout.Left;
@@ -995,7 +1112,7 @@ begin
     splLeft.Visible := True;
     splLeft.Position.X := pnlPids.Width + 1;
   end
-  else if not Wide and (pnlPids.Parent <> tiPids) then
+  else if not Docked and (pnlPids.Parent <> tiPids) then
   begin
     if FPidsDocked then
       FSettings.Window.PidPanelWidth := Round(pnlPids.Width);
@@ -1003,13 +1120,19 @@ begin
     pnlPids.Align := TAlignLayout.Client;
     splLeft.Visible := False;
   end;
-  FPidsDocked := Wide;
-  FNavButtons[1].Visible := not Wide;
-  if Wide and (tcMain.ActiveTab = tiPids) then
+  FPidsDocked := Docked;
+  FNavButtons[1].Visible := not Docked;
+  if Docked then
+    lblLiveHint.Text := 'Tick PIDs on the left, connect, then press Start scan.'
+  else
+    lblLiveHint.Text := 'Tick PIDs on the PIDs page, connect, then press Start scan.';
+  if Docked and (tcMain.ActiveTab = tiPids) then
     ShowPage(tiLive);
   // Wide windows show the page tool bars; otherwise their buttons are in the menu.
   pnlLiveFooter.Visible := Wide;
-  pnlDashBar.Visible := Wide;
+  pnlDashBar.Visible := Wide and not FFullScreen;
+  if btnPidPanel <> nil then
+    btnPidPanel.Visible := Wide and not btnBack.Visible;
   pnlCtlBar.Visible := Wide;
   // A short window (a phone held sideways): the tabs down the left side, and the
   // PID search beside the scan list, so the pages keep their height.
@@ -1151,6 +1274,12 @@ begin
   btnMenu.Visible := (P = tiLive) or (P = tiDashboard) or (P = tiPids) or (P = tiMessages) or (P = tiConnect) or
     (P = tiControls);
   btnChart.Visible := (P = tiLive) or (P = tiDashboard);
+  btnFullScreen.Visible := P = tiDashboard;
+  btnPidPanel.Visible := FWide and not btnBack.Visible;
+  if FSettings.Window.PidsHidden then
+    btnPidPanel.Hint := 'Show the PID list beside the pages (Ctrl+L)'
+  else
+    btnPidPanel.Hint := 'Hide the PID list - it gets a page of its own (Ctrl+L)';
   // Without the menu button, the main button keeps a gap to the edge.
   if btnMenu.Visible then
     btnAction.Margins.Right := 4
@@ -1185,6 +1314,11 @@ begin
     btnChart.SetBounds(R - btnChart.Width, 0, btnChart.Width, H);
     R := R - btnChart.Width;
   end;
+  if (btnFullScreen <> nil) and btnFullScreen.Visible then
+  begin
+    btnFullScreen.SetBounds(R - btnFullScreen.Width, 0, btnFullScreen.Width, H);
+    R := R - btnFullScreen.Width;
+  end;
   lblTitle.Margins.Right := pnlAppBar.Width - R + 4;
 end;
 
@@ -1206,6 +1340,108 @@ begin
   FAddGauge.Position.Point := TPointF.Create(sbDash.Position.X + sbDash.Width - FAddGauge.Width - 20,
     sbDash.Position.Y + sbDash.Height - FAddGauge.Height - 20);
   FAddGauge.BringToFront;
+  PlaceExitFull;
+end;
+
+procedure TMainForm.SafeAreaChanged(Sender: TObject; const AInsets: TRectF);
+begin
+  if FFullScreen or (TThread.GetTickCount64 < FSafeHold) or (Padding.Rect = AInsets) then
+    Exit;
+  Padding.Rect := AInsets;
+  FormResize(Self); // the insets move when the phone turns
+end;
+
+procedure TMainForm.PlaceExitFull;
+begin
+  if (FExitFull = nil) or not FExitFull.Visible then
+    Exit;
+  FExitFull.Position.Point := TPointF.Create(sbDash.Position.X + sbDash.Width - FExitFull.Width - 4,
+    sbDash.Position.Y + 4);
+  FExitFull.BringToFront;
+end;
+
+{ Wide windows: the PID list beside the pages, or (more room for them) on a
+  page of its own, like on a phone. }
+procedure TMainForm.TogglePidPanelClick(Sender: TObject);
+begin
+  if FPidsDocked then
+    FSettings.Window.PidPanelWidth := Round(pnlPids.Width);
+  FSettings.Window.PidsHidden := not FSettings.Window.PidsHidden;
+  SettingsChanged;
+  FormResize(Self);
+  UpdateAppBar;
+end;
+
+procedure TMainForm.FullScreenClick(Sender: TObject);
+begin
+  SetFullScreen(not FFullScreen);
+end;
+
+{ The dashboard alone on the whole screen - no bars, tabs or PID list - for
+  driving. Esc, Back or the round button top right come back. }
+procedure TMainForm.SetFullScreen(Value: Boolean);
+begin
+  if Value = FFullScreen then
+    Exit;
+  CloseActionMenu;
+  if Value then
+  begin
+    FWasMaximized := WindowState = TWindowState.wsMaximized;
+    if CurrentPage <> tiDashboard then
+      ShowPage(tiDashboard);
+  end;
+  FFullScreen := Value;
+  pnlAppBar.Visible := not Value;
+  pnlNav.Visible := not Value;
+  pnlStatus.Visible := not Value;
+  if Value then
+    pnlNotice.Visible := False;
+  FAddGauge.Visible := not Value;
+  FExitFull.Visible := Value;
+  if IsMobile then
+  begin
+    // No status or navigation bar. The insets Android reports around this
+    // are off (room for a navigation bar that is gone, or kept after it is
+    // back), so full screen has none, and coming back has those from before.
+    if Value then
+      FWasPadding := Padding.Rect;
+    FSafeHold := TThread.GetTickCount64 + 2000;
+    FullScreen := Value;
+    if Value then
+      Padding.Rect := TRectF.Empty
+    else
+      Padding.Rect := FWasPadding;
+  end
+  else if Value then
+  begin
+    // Windows (FMX's FullScreen left the window without its frame afterwards):
+    // no frame, over the whole screen it is on, taskbar too.
+    FWasBorder := BorderStyle;
+    FWasBounds := TRectF.Create(Left, Top, Left + Width, Top + Height);
+    if FWasMaximized then
+      WindowState := TWindowState.wsNormal;
+    BorderStyle := TFmxFormBorderStyle.None;
+    with Screen.DisplayFromForm(Self).Bounds do
+      SetBoundsF(Left, Top, Width, Height);
+  end
+  else
+  begin
+    BorderStyle := FWasBorder;
+    if FNormalBounds.Width > 0 then
+      SetBoundsF(FNormalBounds.Left, FNormalBounds.Top, FNormalBounds.Width, FNormalBounds.Height)
+    else
+      SetBoundsF(FWasBounds.Left, FWasBounds.Top, FWasBounds.Width, FWasBounds.Height);
+    if FWasMaximized then
+      WindowState := TWindowState.wsMaximized;
+  end;
+  FormResize(Self);
+  UpdateAppBar;
+  TThread.ForceQueue(nil,
+    procedure
+    begin
+      LayoutDashboard;
+      PlaceExitFull;
+    end);
 end;
 
 procedure TMainForm.NavClick(Sender: TObject);
@@ -1299,6 +1535,12 @@ begin
     Key := 0;
     Exit;
   end;
+  if ((Key = vkEscape) or (Key = vkHardwareBack)) and FFullScreen then
+  begin
+    SetFullScreen(False);
+    Key := 0;
+    Exit;
+  end;
   if Key <> vkHardwareBack then
     Exit;
   // Android back: an open menu closes; out of a More page, then back to Live;
@@ -1336,6 +1578,15 @@ end;
 
 procedure TMainForm.btnActionClick(Sender: TObject);
 begin
+  if (FState = esDisconnected) and FQuickActive and FQuick.Retry then
+  begin
+    FQuickActive := False;
+    FRetryAt := 0;
+    SetStatus(spRate, '');
+    AddMessage('Stopped trying to connect');
+    UpdateControls;
+    Exit;
+  end;
   case FState of
     esDisconnected: btnConnectClick(nil);
     esConnected: btnStartScanClick(nil);
@@ -1377,6 +1628,8 @@ begin
     AddPageMenuItem('Reset min / max', btnResetMinMaxClick);
     AddPageMenuItem(btnLiveTest.Text, btnTestDisplayClick, btnLiveTest.Enabled);
     AddPageMenuItem('Show min / max', ToggleMinMaxClick, True, chkMinMax.IsChecked);
+    if FWide then
+      AddPageMenuItem('PID list beside the pages', TogglePidPanelClick, True, not FSettings.Window.PidsHidden);
     AddPageMenuItem('-', nil);
     AddPageMenuItem('Bigger text', btnZoomInClick);
     AddPageMenuItem('Smaller text', btnZoomOutClick);
@@ -1389,6 +1642,9 @@ begin
     AddPageMenuItem('Tick these PIDs', btnTickDashPidsClick);
     AddPageMenuItem(btnDashTest.Text, btnTestDisplayClick, btnDashTest.Enabled);
     AddPageMenuItem('Live chart', LiveChartClick);
+    AddPageMenuItem('Full screen', FullScreenClick);
+    if FWide then
+      AddPageMenuItem('PID list beside the pages', TogglePidPanelClick, True, not FSettings.Window.PidsHidden);
     AddPageMenuItem('-', nil);
     AddPageMenuItem('New dashboard...', NewDashboardClick);
     AddPageMenuItem('Rename dashboard...', RenameDashboardClick);
@@ -1406,7 +1662,10 @@ begin
     AddPageMenuItem('Clear', btnClearMessagesClick);
   end
   else if P = tiConnect then
-    AddPageMenuItem('Refresh ports', btnRefreshPortsClick, btnRefreshPorts.Enabled)
+  begin
+    AddPageMenuItem('Quick start...', QuickStartClick);
+    AddPageMenuItem('Refresh ports', btnRefreshPortsClick, btnRefreshPorts.Enabled);
+  end
   else if P = tiControls then
   begin
     AddPageMenuItem('Add...', btnCtlAddClick, btnCtlAdd.Enabled);
@@ -1519,6 +1778,13 @@ begin
   Icon(btnBack);
   Icon(btnMenu);
   Icon(btnChart);
+  Icon(btnFullScreen);
+  Icon(btnPidPanel);
+  if FExitFull <> nil then
+  begin
+    FExitFull.Fill.Color := P.Panel;
+    TPath(FExitFull.Controls[0]).Stroke.Color := P.Text;
+  end;
   if FAddGauge <> nil then
   begin
     FAddGauge.Fill.Color := P.Accent;
@@ -1847,16 +2113,52 @@ begin
     Fit(flCtlRun, pnlCtlRun, lblCtlName.Height + lblCtlNotes.Height + pnlCtlRun.Padding.Top + pnlCtlRun.Padding.Bottom);
 end;
 
-{ Same switches as legacy UVSCAN: -connect [-scan [-log]], plus -port <name>. }
+{ The legacy UVSCAN switches -port, -connect, -scan, -log, and the quick
+  start ones (-list, -dashboard, -fullscreen, -chart, -retry, -quick <name>):
+  see UVScan.QuickStart. A desktop shortcut made by Quick start has them. }
 procedure TMainForm.ApplyCommandLine;
 var
-  PortName: string;
+  Q: TQuickStart;
+  Problem: string;
 begin
-  if FindCmdLineSwitch('port', PortName, True, [clstValueNextParam]) then
+  if not QuickStartFromCommandLine(FSettings.QuickStarts, Q, Problem) then
   begin
+    ShowNotice('Command line: ' + Problem, True);
+    Exit;
+  end;
+  if Q.Any then
+    TThread.ForceQueue(nil,
+      procedure
+      begin
+        RunQuickStart(Q);
+      end);
+end;
+
+{ Carries out a quick start: the scan list and dashboard at once, then
+  connect, scan, log and the live chart one after the other as each is ready
+  (see the engine events). With Retry a failed or lost connection is tried
+  again every 3 s, until the user stops the scan or disconnects. }
+procedure TMainForm.RunQuickStart(const Q: TQuickStart);
+var
+  PortName: string;
+  I, D: Integer;
+begin
+  CloseActionMenu;
+  if FTestMode then
+    StopTest;
+  FQuick := Q;
+  FQuickActive := Q.Connect;
+  FRetryAt := 0;
+  if Q.Name <> '' then
+    AddMessage(Format('Quick start "%s": %s', [Q.Name, Q.Describe]))
+  else
+    AddMessage('Starting: ' + Q.Describe);
+  if Q.Port <> '' then
+  begin
+    PortName := Q.Port;
     if IsTcpAddress(PortName) then
     begin
-      // -port 192.168.2.99:10001 (or tcp:...): the network AVT at that address
+      // 192.168.2.99:10001 (or tcp:...): the network AVT at that address
       edtTcpAddress.Text := PortName;
       PortName := NetworkPort;
     end;
@@ -1865,14 +2167,237 @@ begin
     cbPort.ItemIndex := cbPort.Items.IndexOf(PortName);
     PortChanged(nil);
   end;
-  if not FindCmdLineSwitch('connect') then
-    Exit;
-  FAutoScan := FindCmdLineSwitch('scan');
-  FAutoLog := FAutoScan and FindCmdLineSwitch('log');
+  if Q.List <> '' then
+  begin
+    I := FLists.IndexOf(Q.List);
+    if I < 0 then
+      ShowNotice(Format('There is no scan list "%s"; scanning the ticked PIDs', [Q.List]), True)
+    else if FState in [esDisconnected, esConnected] then
+    begin
+      cbLists.ItemIndex := cbLists.Items.IndexOf(FLists[I].Name);
+      cbListsChange(nil); // ticks its PIDs (also when it was chosen already)
+    end
+    else if not SameText(ComboText(cbLists), FLists[I].Name) then
+      ShowNotice('Scanning already: stop the scan to change the scan list', True);
+  end;
+  // The dashboard: the one asked for, or the scan list's.
+  D := -1;
+  if Q.Dashboard <> '' then
+  begin
+    D := FDisplay.IndexOfDashboard(Q.Dashboard);
+    if D < 0 then
+      ShowNotice(Format('There is no dashboard "%s"', [Q.Dashboard]), True);
+  end
+  else if Q.List <> '' then
+    D := FDisplay.IndexOfDashboard(Q.List);
+  FQuickDash := '';
+  if D >= 0 then
+  begin
+    SelectDashboard(D);
+    FQuickDash := FDisplay.Dashboards[D].Name;
+  end;
+  if Q.FullScreen then
+    SetFullScreen(True)
+  else if (D >= 0) and not Q.Chart then
+    ShowPage(tiDashboard);
+  if Q.Connect then
+    QuickConnect;
+end;
+
+{ The next step of the quick start from where things are now. }
+procedure TMainForm.QuickConnect;
+begin
+  FAutoScan := FQuick.Scan;
+  FAutoLog := FQuick.Log;
+  FAutoChart := FQuick.Chart;
+  case FState of
+    esDisconnected:
+      btnConnectClick(nil);
+    esConnected:
+      if FAutoScan then
+      begin
+        FAutoScan := False;
+        btnStartScanClick(nil);
+      end;
+    esScanning:
+      begin
+        FAutoScan := False;
+        if FAutoLog and not FLogging then
+          btnLogClick(nil);
+        FAutoLog := False;
+        if FAutoChart then
+          LiveChartClick(nil);
+        FAutoChart := False;
+      end;
+  end;
+end;
+
+procedure TMainForm.QuickStartClick(Sender: TObject);
+begin
+  ShowQuickMenu(0);
+end;
+
+{ The Quick start menu. Action 0: each quick start runs, with New / Edit /
+  Delete / Desktop shortcut below; 1..3: pick the quick start to edit,
+  delete or make a shortcut for. }
+procedure TMainForm.ShowQuickMenu(Action: Integer);
+var
+  Items: TArray<TActionItem>;
+  It: TActionItem;
+  Pick: TComponent;
+  I: Integer;
+  Pt: TPointF;
+
+  procedure Add(const Text: string; Handler: TNotifyEvent; Tag: Integer; Enabled: Boolean = True);
+  begin
+    Pick := TComponent.Create(FQuickPicks);
+    Pick.Tag := Tag;
+    It := Default(TActionItem);
+    It.Text := Text;
+    It.Enabled := Enabled;
+    It.OnClick := Handler;
+    It.Sender := Pick;
+    Items := Items + [It];
+  end;
+
+begin
+  FQuickPicks.Free;
+  FQuickPicks := TComponent.Create(Self);
+  FQuickAction := Action;
+  Items := nil;
+  case Action of
+    1: Add('Edit which quick start?', nil, -1, False);
+    2: Add('Delete which quick start?', nil, -1, False);
+    3: Add('Desktop shortcut for which?', nil, -1, False);
+  end;
+  for I := 0 to High(FSettings.QuickStarts) do
+    if Action = 0 then
+      Add(FSettings.QuickStarts[I].Name + '  -  ' + FSettings.QuickStarts[I].Describe, QuickPickClick, I)
+    else
+      Add(FSettings.QuickStarts[I].Name, QuickPickClick, I);
+  if Action = 0 then
+  begin
+    if Items <> nil then
+      Add('-', nil, -1);
+    Add('New quick start...', QuickNewClick, -1);
+    Add('Edit a quick start...', QuickChooseClick, 1, FSettings.QuickStarts <> nil);
+    Add('Delete a quick start...', QuickChooseClick, 2, FSettings.QuickStarts <> nil);
+    {$IFDEF MSWINDOWS}
+    Add('Desktop shortcut for one...', QuickChooseClick, 3, FSettings.QuickStarts <> nil);
+    {$ENDIF}
+  end;
+  if (CurrentPage = tiConnect) and btnQuick.IsVisible then
+    Pt := btnQuick.LocalToAbsolute(TPointF.Create(0, btnQuick.Height))
+  else
+    Pt := btnMenu.LocalToAbsolute(TPointF.Create(btnMenu.Width, btnMenu.Height));
+  ShowActionMenu(Self, Items, Pt);
+end;
+
+procedure TMainForm.QuickChooseClick(Sender: TObject);
+begin
+  // the menu is closing: open the next one after it
   TThread.ForceQueue(nil,
     procedure
     begin
-      btnConnectClick(nil);
+      ShowQuickMenu(TComponent(Sender).Tag);
+    end);
+end;
+
+procedure TMainForm.QuickPickClick(Sender: TObject);
+var
+  I: Integer;
+  Q: TQuickStart;
+  FileName: string;
+begin
+  I := TComponent(Sender).Tag;
+  if (I < 0) or (I > High(FSettings.QuickStarts)) then
+    Exit;
+  Q := FSettings.QuickStarts[I];
+  case FQuickAction of
+    0: TThread.ForceQueue(nil,
+         procedure
+         begin
+           RunQuickStart(Q);
+         end);
+    1: TThread.ForceQueue(nil,
+         procedure
+         begin
+           EditQuick(I);
+         end);
+    2: Confirm(Format('Delete the quick start "%s"?', [Q.Name]),
+         procedure
+         var
+           J: Integer;
+         begin
+           J := IndexOfQuickStart(FSettings.QuickStarts, Q.Name);
+           if J >= 0 then
+             Delete(FSettings.QuickStarts, J, 1);
+           SaveSettings;
+         end);
+    3:
+      {$IFDEF MSWINDOWS}
+      try
+        FileName := CreateQuickStartShortcut(Q);
+        AddMessage('Desktop shortcut: ' + FileName + '  (UVScan.exe ' + Q.Arguments + ')');
+        ShowNotice(Format('Made "%s" on the desktop', [ExtractFileName(FileName)]), False);
+      except
+        on E: Exception do
+          ShowWarning('Could not make the shortcut: ' + E.Message);
+      end;
+      {$ELSE}
+      ;
+      {$ENDIF}
+  end;
+end;
+
+procedure TMainForm.QuickNewClick(Sender: TObject);
+begin
+  TThread.ForceQueue(nil,
+    procedure
+    begin
+      EditQuick(-1);
+    end);
+end;
+
+{ Index -1: a new one, starting from what is chosen now. }
+procedure TMainForm.EditQuick(Index: Integer);
+var
+  Q: TQuickStart;
+  Taken: TArray<string>;
+  I: Integer;
+begin
+  if Index >= 0 then
+    Q := FSettings.QuickStarts[Index]
+  else
+  begin
+    Q := Default(TQuickStart);
+    if cbLists.ItemIndex > 0 then
+    begin
+      Q.List := ComboText(cbLists);
+      Q.Name := Q.List;
+    end;
+    if FDisplay.DashboardCount > 0 then
+      Q.Dashboard := FDisplay.Dashboards[FDisplay.Current].Name;
+    Q.Scan := True;
+    Q.Normalize;
+  end;
+  Taken := nil;
+  for I := 0 to High(FSettings.QuickStarts) do
+    if I <> Index then
+      Taken := Taken + [FSettings.QuickStarts[I].Name];
+  EditQuickStart(Q, FLists.Names, FDisplay.DashboardNames, Taken,
+    IfThen(Index >= 0, 'Edit quick start', 'New quick start'),
+    procedure(R: TQuickStart)
+    var
+      J: Integer;
+    begin
+      J := IndexOfQuickStart(FSettings.QuickStarts, Q.Name);
+      if (Index >= 0) and (J >= 0) then
+        FSettings.QuickStarts[J] := R
+      else
+        FSettings.QuickStarts := FSettings.QuickStarts + [R];
+      SaveSettings;
+      AddMessage(Format('Quick start "%s": %s  (command line: %s)', [R.Name, R.Describe, R.Arguments]));
     end);
 end;
 
@@ -1923,7 +2448,18 @@ end;
 
 procedure TMainForm.FormKeyDown(Sender: TObject; var Key: Word; var KeyChar: WideChar; Shift: TShiftState);
 begin
-  if (Key = vkF7) and (Shift = []) then
+  if (Key = vkF11) and (Shift = []) then
+  begin
+    SetFullScreen(not FFullScreen);
+    Key := 0;
+  end
+  else if (Shift = [ssCtrl]) and ((Key = vkL) or (KeyChar = 'l') or (KeyChar = 'L')) and FWide then
+  begin
+    TogglePidPanelClick(nil);
+    Key := 0;
+    KeyChar := #0;
+  end
+  else if (Key = vkF7) and (Shift = []) then
   begin
     btnLogViewerClick(nil);
     Key := 0;
@@ -1957,7 +2493,7 @@ procedure TMainForm.FormResize(Sender: TObject);
 begin
   if grdLive = nil then
     Exit; // the form is still loading
-  if WindowState = TWindowState.wsNormal then
+  if (WindowState = TWindowState.wsNormal) and not FFullScreen then
     FNormalBounds := TRect.Create(Left, Top, Left + Width, Top + Height);
   ArrangeLayout;
   QueueGridLayout;
@@ -2125,7 +2661,10 @@ begin
       FSettings.Window.Height := FNormalBounds.Height;
       FSettings.Window.Saved := True;
     end;
-    FSettings.Window.Maximized := WindowState = TWindowState.wsMaximized;
+    if FFullScreen then
+      FSettings.Window.Maximized := FWasMaximized
+    else
+      FSettings.Window.Maximized := WindowState = TWindowState.wsMaximized;
     if FPidsDocked then
       FSettings.Window.PidPanelWidth := Round(pnlPids.Width);
   end;
@@ -2484,7 +3023,7 @@ begin
       Save :=
         procedure
         begin
-          FLists.Put(Name, FSelected.ToArray);
+          FLists.Put(Name, RankLiveIds(FSelected.ToArray)); // in the live rows' order
           SaveLists;
           FillLists(Name);
           AddMessage(Format('Saved scan list "%s" (%d PIDs)', [Name, FSelected.Count]));
@@ -2660,6 +3199,8 @@ end;
 
 procedure TMainForm.btnDisconnectClick(Sender: TObject);
 begin
+  FQuickActive := False; // no more retries
+  FRetryAt := 0;
   Post(ecDisconnect);
 end;
 
@@ -2682,6 +3223,8 @@ end;
 
 procedure TMainForm.btnStopScanClick(Sender: TObject);
 begin
+  FQuickActive := False; // no more retries
+  FRetryAt := 0;
   Post(ecStopScan);
 end;
 
@@ -2773,6 +3316,7 @@ begin
         begin
           FAutoScan := False;
           FAutoLog := False;
+          FAutoChart := False;
           FControlActive.Clear; // the engine released everything
           FillControls('');
           FLogging := False;
@@ -2793,10 +3337,17 @@ begin
         if FTestMode then
           StopTest;
         SetupLiveRows(Ev.PidIds);
+        if FQuickActive and (FQuickDash <> '') and (FDisplay.IndexOfDashboard(FQuickDash) >= 0) then
+          SelectDashboard(FDisplay.IndexOfDashboard(FQuickDash)); // the quick start's
         if FAutoLog then
         begin
           FAutoLog := False;
           btnLogClick(nil);
+        end;
+        if FAutoChart then
+        begin
+          FAutoChart := False;
+          LiveChartClick(nil);
         end;
       end;
     eePidRejected:
@@ -2905,6 +3456,12 @@ begin
   // The top bar's main action follows the connection.
   case FState of
     esDisconnected:
+      if FQuickActive and FQuick.Retry then
+      begin
+        btnAction.Text := 'Stop trying'; // a quick start that keeps connecting
+        btnAction.Enabled := True;
+      end
+      else
       begin
         btnAction.Text := 'Connect';
         btnAction.Enabled := cbPort.ItemIndex >= 0;
@@ -2939,6 +3496,7 @@ var
   V: Double;
   Phase, Repaint, Charted: Boolean;
   Samples: TArray<TLiveSample>;
+  Raw: TLiveSnapshot;
 begin
   FlushMessages;
   if (FSaveDue <> 0) and (TThread.GetTickCount64 >= FSaveDue) then
@@ -2946,6 +3504,25 @@ begin
     FSaveDue := 0;
     SaveSettings;
   end;
+  // Quick start with Retry: not connected (it failed, or the link went) -
+  // again in 3 s. (A port that does not open never leaves Disconnected.)
+  if FQuickActive and FQuick.Retry and (FState = esDisconnected) then
+  begin
+    if FRetryAt = 0 then
+    begin
+      FRetryAt := TThread.GetTickCount64 + 3000;
+      SetStatus(spRate, 'trying again in 3 s');
+      UpdateControls; // the main button: Stop trying
+    end
+    else if TThread.GetTickCount64 >= FRetryAt then
+    begin
+      FRetryAt := 0;
+      SetStatus(spRate, 'connecting again');
+      QuickConnect;
+    end;
+  end
+  else
+    FRetryAt := 0;
   if not LiveActive then
     Exit;
   Repaint := False;
@@ -2959,20 +3536,22 @@ begin
   end;
   Samples := nil;
   if FTestMode then
-    FLive := TestSnapshot
+    Raw := TestSnapshot
   else
   begin
-    FLive := FEngine.GetSnapshot;
+    Raw := FEngine.GetSnapshot;
     Samples := FEngine.TakeSamples;
   end;
+  FLive := DisplaySnapshot(Raw);
   if Length(FLive.Values) <> Length(FLiveIds) then
     Exit;
-  // The live chart: every cycle of the scan; the test display as shown.
+  // The live chart (its channels in the scan's order): every cycle of the
+  // scan; the test display as shown.
   Charted := False;
   if FTestMode then
   begin
     if FLive.Cycles <> FShownCycles then
-      Charted := AddLiveSample((TThread.GetTickCount64 - FLiveStart) / 1000, FLive.Text);
+      Charted := AddLiveSample((TThread.GetTickCount64 - FLiveStart) / 1000, Raw.Text);
   end
   else
     for var S in Samples do
@@ -3016,11 +3595,15 @@ procedure TMainForm.SetupLiveRows(const Ids: TArray<Integer>);
 var
   Names, Units: TArray<string>;
   Switches: TArray<Boolean>;
-  Id: Integer;
+  Id, R: Integer;
   P: TPidDef;
   Fmt: string;
 begin
-  FLiveIds := Ids;
+  FEngineIds := Copy(Ids);
+  FLiveIds := RankLiveIds(Ids);
+  SetLength(FRowEngine, Length(FLiveIds));
+  for R := 0 to High(FLiveIds) do
+    FRowEngine[R] := TArray.IndexOf<Integer>(FEngineIds, FLiveIds[R]);
   FLive := Default(TLiveSnapshot);
   SetLength(FMin, Length(FLiveIds));
   SetLength(FMax, Length(FLiveIds));
@@ -3234,13 +3817,13 @@ var
   P: TPidDef;
 begin
   Result := Default(TLiveSnapshot);
-  Result.PidIds := FLiveIds;
-  SetLength(Result.Values, Length(FLiveIds));
-  SetLength(Result.Text, Length(FLiveIds));
+  Result.PidIds := FEngineIds; // like the engine's: DisplaySnapshot puts it in row order
+  SetLength(Result.Values, Length(FEngineIds));
+  SetLength(Result.Text, Length(FEngineIds));
   T := (TThread.GetTickCount64 - FTestStart) / 1000;
-  for I := 0 to High(FLiveIds) do
+  for I := 0 to High(FEngineIds) do
   begin
-    P := FCatalog.FindById(FLiveIds[I]);
+    P := FCatalog.FindById(FEngineIds[I]);
     if (P = nil) or (I > High(FTestLo)) then
     begin
       Result.Values[I] := NaN;
@@ -3615,6 +4198,193 @@ begin
   else
     Name := '';
   miPidDisplay.Text := 'Display && alerts' + Name + '...';
+  // Live rows: move up / down / top / bottom.
+  for var M in FMoveItems do
+  begin
+    M.Visible := (FMenuLiveRow >= 0) and (FMenuLiveRow <= High(FLiveIds)) and (Length(FLiveIds) > 1);
+    case M.Tag of
+      0, 2: M.Enabled := FMenuLiveRow > 0;
+      1, 3: M.Enabled := FMenuLiveRow < High(FLiveIds);
+    end;
+  end;
+end;
+
+{ Alt+Up / Alt+Down move the selected live row (before the grid moves the selection). }
+procedure TMainForm.LiveKeyDown(Sender: TObject; var Key: Word; var KeyChar: WideChar; Shift: TShiftState);
+begin
+  if (Shift = [ssAlt]) and ((Key = vkUp) or (Key = vkDown)) and (grdLive.ItemIndex >= 0) then
+  begin
+    if Key = vkUp then
+      MoveLiveRow(grdLive.ItemIndex, grdLive.ItemIndex - 1)
+    else
+      MoveLiveRow(grdLive.ItemIndex, grdLive.ItemIndex + 1);
+    Key := 0;
+  end;
+end;
+
+procedure TMainForm.MoveRowClick(Sender: TObject);
+var
+  Row: Integer;
+begin
+  Row := FMenuLiveRow;
+  case TMenuItem(Sender).Tag of
+    0: MoveLiveRow(Row, Row - 1);
+    1: MoveLiveRow(Row, Row + 1);
+    2: MoveLiveRow(Row, 0);
+    3: MoveLiveRow(Row, High(FLiveIds));
+  end;
+end;
+
+type
+  TArrayMove = record
+    { Takes A[From] out and puts it back at index ToIndex. }
+    class procedure Move<T>(var A: TArray<T>; From, ToIndex: Integer); static;
+  end;
+
+class procedure TArrayMove.Move<T>(var A: TArray<T>; From, ToIndex: Integer);
+var
+  Item: T;
+  I: Integer;
+begin
+  if (From < 0) or (From > High(A)) or (ToIndex < 0) or (ToIndex > High(A)) or (From = ToIndex) then
+    Exit;
+  Item := A[From];
+  if From < ToIndex then
+    for I := From to ToIndex - 1 do
+      A[I] := A[I + 1]
+  else
+    for I := From downto ToIndex + 1 do
+      A[I] := A[I - 1];
+  A[ToIndex] := Item;
+end;
+
+{ Moves a live row (while scanning too: only what is shown changes, not what
+  is asked of the PCM) and remembers the order for the scan list. }
+procedure TMainForm.MoveLiveRow(From, ToRow: Integer);
+var
+  N: Integer;
+begin
+  N := Length(FLiveIds);
+  if (From < 0) or (From >= N) or (ToRow < 0) or (ToRow >= N) or (From = ToRow) then
+    Exit;
+  TArrayMove.Move<Integer>(FLiveIds, From, ToRow);
+  if Length(FRowEngine) = N then
+    TArrayMove.Move<Integer>(FRowEngine, From, ToRow);
+  if Length(FMin) = N then
+    TArrayMove.Move<Double>(FMin, From, ToRow);
+  if Length(FMax) = N then
+    TArrayMove.Move<Double>(FMax, From, ToRow);
+  if Length(FRowStyles) = N then
+    TArrayMove.Move<TResolvedStyle>(FRowStyles, From, ToRow);
+  if Length(FLive.Values) = N then
+    TArrayMove.Move<Double>(FLive.Values, From, ToRow);
+  if Length(FLive.Text) = N then
+    TArrayMove.Move<string>(FLive.Text, From, ToRow);
+  if Length(FLive.PidIds) = N then
+    TArrayMove.Move<Integer>(FLive.PidIds, From, ToRow);
+  FShownRows := nil;
+  ApplyRowHeights;
+  grdLive.ItemIndex := ToRow;
+  grdLive.Refresh;
+  SaveLiveOrder;
+end;
+
+{ The live rows' order goes to the chosen scan list (lists.json) and, for
+  scans without one, to the settings. }
+procedure TMainForm.SaveLiveOrder;
+var
+  Order, Ids: TArray<Integer>;
+  Id, I: Integer;
+begin
+  Order := Copy(FLiveIds);
+  for Id in FSettings.LiveOrder do
+    if TArray.IndexOf<Integer>(Order, Id) < 0 then
+      Order := Order + [Id];
+  FSettings.LiveOrder := Order;
+  SettingsChanged;
+  if cbLists.ItemIndex <= 0 then
+    Exit;
+  I := FLists.IndexOf(ComboText(cbLists));
+  if I < 0 then
+    Exit;
+  // The list's PIDs in the rows' order; ones not on screen keep their places after.
+  Ids := nil;
+  for Id in FLiveIds do
+    if TArray.IndexOf<Integer>(FLists[I].PidIds, Id) >= 0 then
+      Ids := Ids + [Id];
+  for Id in FLists[I].PidIds do
+    if TArray.IndexOf<Integer>(Ids, Id) < 0 then
+      Ids := Ids + [Id];
+  FLists.Put(FLists[I].Name, Ids);
+  SaveLists;
+end;
+
+{ Ids in the order the rows should show them: the chosen scan list's order,
+  then the order last set without a list, then as given. }
+function TMainForm.RankLiveIds(const Ids: TArray<Integer>): TArray<Integer>;
+var
+  ListIds: TArray<Integer>;
+  Keys: TArray<Integer>;
+  I, J, K, Id: Integer;
+begin
+  ListIds := nil;
+  if (cbLists.ItemIndex > 0) and (FLists.IndexOf(ComboText(cbLists)) >= 0) then
+    ListIds := FLists[FLists.IndexOf(ComboText(cbLists))].PidIds;
+  Result := Copy(Ids);
+  SetLength(Keys, Length(Result));
+  for I := 0 to High(Result) do
+  begin
+    K := TArray.IndexOf<Integer>(ListIds, Result[I]);
+    if K < 0 then
+    begin
+      K := TArray.IndexOf<Integer>(FSettings.LiveOrder, Result[I]);
+      if K >= 0 then
+        K := 100000 + K
+      else
+        K := 200000 + I;
+    end;
+    Keys[I] := K;
+  end;
+  // insertion sort: few rows, and it keeps equal keys in place
+  for I := 1 to High(Result) do
+  begin
+    Id := Result[I];
+    K := Keys[I];
+    J := I - 1;
+    while (J >= 0) and (Keys[J] > K) do
+    begin
+      Result[J + 1] := Result[J];
+      Keys[J + 1] := Keys[J];
+      Dec(J);
+    end;
+    Result[J + 1] := Id;
+    Keys[J + 1] := K;
+  end;
+end;
+
+{ A snapshot (in the scan's order) in the order of the live rows. }
+function TMainForm.DisplaySnapshot(const S: TLiveSnapshot): TLiveSnapshot;
+var
+  R: Integer;
+begin
+  Result := S;
+  if (Length(S.Values) <> Length(FRowEngine)) or (Length(FRowEngine) = 0) then
+    Exit;
+  SetLength(Result.Values, Length(FRowEngine));
+  for R := 0 to High(FRowEngine) do
+    Result.Values[R] := S.Values[FRowEngine[R]];
+  if Length(S.Text) = Length(FRowEngine) then
+  begin
+    SetLength(Result.Text, Length(FRowEngine));
+    for R := 0 to High(FRowEngine) do
+      Result.Text[R] := S.Text[FRowEngine[R]];
+  end;
+  if Length(S.PidIds) = Length(FRowEngine) then
+  begin
+    SetLength(Result.PidIds, Length(FRowEngine));
+    for R := 0 to High(FRowEngine) do
+      Result.PidIds[R] := S.PidIds[FRowEngine[R]];
+  end;
 end;
 
 function GridPidAt(Form: TMainForm; Grid: TDataGrid; Row: Integer): Integer;
@@ -3631,7 +4401,13 @@ end;
 procedure TMainForm.GridMouseDown(Sender: TObject; Button: TMouseButton; Shift: TShiftState; X, Y: Single);
 begin
   if Button = TMouseButton.mbRight then
+  begin
+    if Sender = grdLive then
+      FMenuLiveRow := grdLive.RowAt(Y)
+    else
+      FMenuLiveRow := -1;
     PreparePidMenu(GridPidAt(Self, TDataGrid(Sender), TDataGrid(Sender).RowAt(Y)));
+  end;
 end;
 
 procedure TMainForm.GridGesture(Sender: TObject; const EventInfo: TGestureEventInfo; var Handled: Boolean);
@@ -3648,6 +4424,10 @@ begin
   if Row < 0 then
     Exit;
   Grid.ItemIndex := Row;
+  if Grid = grdLive then
+    FMenuLiveRow := Row
+  else
+    FMenuLiveRow := -1;
   PreparePidMenu(GridPidAt(Self, Grid, Row));
   if FMenuPidId < 0 then
     Exit;
@@ -4657,7 +5437,7 @@ end;
 procedure TMainForm.LayoutDashboard;
 var
   I, J, RowFirst: Integer;
-  Avail, K, Cap, Y, RowH, ColX, ColW, ColH, Shift: Single;
+  Avail, K, Cap, Y, RowH, ColX, ColW, ColH, Shift, Lo, Hi, Mid: Single;
   Sz: TSizeF;
   R: TArray<TRectF>;
 const
@@ -4679,14 +5459,11 @@ const
       R[N].Offset(Shift, 0);
   end;
 
-begin
-  PlaceAddGauge;
-  if (FGaugeViews = nil) or (FGaugeViews.Count = 0) then
-    Exit;
-  Avail := sbDash.Width;
-  if not IsMobile then
-    Avail := Avail - 16; // the scroll bar (a phone's floats over the page)
-  SetLength(R, FGaugeViews.Count);
+  // Lays the gauges out at Scale times their size; the height they take.
+  function Arrange(Scale: Single): Single;
+  var
+    I: Integer;
+  begin
   Y := Gap;
   RowH := 0;
   RowFirst := 0;
@@ -4718,6 +5495,8 @@ begin
     end;
     // A short dashboard (a phone held sideways): two rows of small gauges to
     // the screen, a whole medium or large one.
+    if Scale <> 1 then
+      Sz := TSizeF.Create(Round(Min(Sz.cx * Scale, Avail - 2 * Gap)), Round(Sz.cy * Scale));
     if (FDisplay.Gauges[I].Style <> gsBar) and (sbDash.Height > 100) then
     begin
       // (not so small its scale cannot be read: a small phone gets one row)
@@ -4752,13 +5531,41 @@ begin
     RowH := Max(RowH, Sz.cy);
   end;
   PlaceRow(FGaugeViews.Count - 1);
+  Result := Y + RowH + Gap;
+  end;
+
+begin
+  PlaceAddGauge;
+  if (FGaugeViews = nil) or (FGaugeViews.Count = 0) then
+    Exit;
+  Avail := sbDash.Width;
+  if not IsMobile and not FFullScreen then
+    Avail := Avail - 16; // the scroll bar (a phone's floats over the page)
+  SetLength(R, FGaugeViews.Count);
+  if FFullScreen and (Arrange(1) < sbDash.Height) then
+  begin
+    // Full screen: as big as they go and still all fit on the screen.
+    Lo := 1;
+    Hi := 4;
+    while Hi - Lo > 0.02 do
+    begin
+      Mid := (Lo + Hi) / 2;
+      if Arrange(Mid) <= sbDash.Height then
+        Lo := Mid
+      else
+        Hi := Mid;
+    end;
+    Arrange(Lo);
+  end
+  else
+    Arrange(1);
   for J := 0 to High(R) do
     FGaugeViews[J].SetBounds(R[J].Left, R[J].Top, R[J].Width, R[J].Height);
   // Room below the last row so the + button does not cover a gauge.
-  if FAddGauge <> nil then
-  begin
+  if FFullScreen then
+    FDashSpacer.SetBounds(0, 0, 1, 1) // no + then, and no scrolling
+  else if FAddGauge <> nil then
     FDashSpacer.SetBounds(0, Y + RowH, 1, FAddGauge.Height + 40);
-  end;
 end;
 
 procedure TMainForm.sbDashResized(Sender: TObject);
