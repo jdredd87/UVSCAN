@@ -84,6 +84,19 @@ UVScanProbe COM9 cpidconfirm 01 1104,110C 3 repeat single-bit tests, keep effect
 
 `cpids`, `cpidlen`, `cpidmap` and `cpidconfirm` **send device control commands**; `cpidmap` on CPID $02 resets learned values. They end with mode $20 (return to normal). See [protocol notes](protocol.md#device-control-mode-ae).
 
+## ELM327 probe
+
+`tools\ElmProbe\ElmProbe.dproj` is a small FMX app (Windows and Android) for trying ELM327 type adapters on Class 2 before UVScan supports them. It uses `src\UVScan.Elm.pas` (the ELM's text protocol over any `ISerialPort`) and `src\UVScan.Bluetooth.Android.pas` (a paired classic Bluetooth adapter as an `ISerialPort`), both meant for UVScan later. Pick the adapter (Android: a paired Bluetooth device; Windows: a COM port, which is what a paired Bluetooth adapter becomes, or a Wi-Fi address such as `192.168.0.10:35000`) and **Run tests**: adapter id and voltage, J1850 VPW, VIN and OSID, mode $22 reads and their speed, DTCs, DPID definitions, then four 20-second DPID streams (one slot or both, kept listening by ATMA or by the request, a tester present every 2 s). Every byte both ways is logged with times, on screen and in `ElmProbe\ElmProbe_<time>.txt` (Documents on Windows, the app's files folder on Android). It can be started straight into the tests:
+
+```
+ElmProbe.exe -port COM12 [-baud 38400] -run [-exit]
+adb shell am start -n com.jdredd87.elmprobe/com.embarcadero.firemonkey.FMXNativeActivity --es port vLinker --ez run true
+```
+
+Build it as UVScan: `msbuild tools\ElmProbe\ElmProbe.dproj /t:Build;Deploy /p:Platform=Android64 /p:PlatformSDK=AndroidAPI36.1_64bit.sdk` (or `/p:Platform=Win32`).
+
+What it found with a vLinker FD (an STN1151 chip, answers as "ELM327 v2.2") over Bluetooth on the S9+, against the bench PCM: Bluetooth connect 0.3-1.9 s; VIN and OSID read; mode $22 9 reads/s; DPID streams at the AVT's rates: each DPID 9.5 rows/s with both slots, 4.8 with one. The ELM stops listening when the bus is quiet for a moment (with one slot the PCM pauses ~150 ms between bursts), so it is kept listening by ATMA, by both slots, or by ATAT0 + ATST FF; and the PCM drops back to normal mode (`6C F1 10 60`) about 5 s after the last tester present, so a `3F` every 2 s (the ELM stopped for it, ~250 ms) keeps the stream going.
+
 ## Testing on another PC
 
 A laptop at the car (or wherever the AVT is) needs no Delphi: `tools\UVScanAgent.exe` runs there, and `tools\agent.ps1` on the development PC sends it builds, runs them, clicks and types in them, takes screenshots and fetches files, over the home network.
@@ -149,6 +162,7 @@ Every request but `/ping` needs the token from the kit (kept in `%LOCALAPPDATA%\
 | `tools/UVScanProbe.dpr` | Console bench tool |
 | `tools/UVScanSimServer.dpr` | The simulator on the network, for the Network (TCP/IP) connection |
 | `tools/UVScanAgent.dpr`, `tools/agent.ps1`, `tools/UVScanAgent-install.cmd` | Testing on another PC (see above) |
+| `tools/ElmProbe/` | ELM327 probe (see above) |
 | `tools/make_sample_log.py` | Writes the sample log (see above) |
 | `docs/` | This documentation and its screenshots |
 | `legacy/` | The original 2008 source, for reference only; not used by the new app |
