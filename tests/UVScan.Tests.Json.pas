@@ -43,6 +43,7 @@ type
     [Test] procedure ComparesVersions;
     [Test] procedure ParsesGitHubRelease;
     [Test] procedure SkipsDraftsAndJunk;
+    [Test] procedure PicksTheHighlights;
   end;
 
 implementation
@@ -404,6 +405,17 @@ begin
   Assert.IsFalse(ParseRelease('<html>', Info));
   Assert.IsTrue(ParseRelease('{"tag_name":"2.0.1","assets":[]}', Info));
   Assert.AreEqual('', Info.SetupUrl);
+end;
+
+procedure TUpdateTests.PicksTheHighlights;
+const
+  Notes = 'UVScan 2.1.0 (build 120).'#13#10#13#10'**Windows:** download `setup.exe` below.'#13#10#13#10 +
+    '### Changes since v2.0.0'#13#10#13#10'- Faster **DPID** scans'#13#10'* Log viewer: `zoom`'#13#10#13#10 +
+    '## Other'#13#10'not this';
+begin
+  Assert.AreEqual('- Faster DPID scans'#13#10'- Log viewer: zoom', ReleaseHighlights(Notes));
+  Assert.AreEqual('', ReleaseHighlights('Just text, no headings.'));
+  Assert.AreEqual('- a'#13#10'...', ReleaseHighlights('# What''s new'#10'- a'#10'- b'#10'- c', 1));
 end;
 
 initialization

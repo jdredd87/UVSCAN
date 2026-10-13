@@ -64,7 +64,7 @@ A release is a GitHub release tagged `v<AppVersion>` with the setup program atta
 1. Raise `AppVersion` in `src\UVScan.Version.pas` and the version info in `UVScan.dproj` (Windows file version, Android `versionName`) to match; commit and push.
 2. `powershell -File tools\release.ps1` (`-Notes notes.md` for your own text, `-DryRun` to stop before tagging).
 
-It checks that everything is committed and pushed, the two versions agree and the tag is new; runs `build.cmd` (build and tests) and `build.cmd installer`; then tags, pushes the tag and makes the release with `gh`. Its default notes say how to install and list the commits since the previous release. Builds between releases keep the version and differ in the build number, so the update check only offers a release with a higher version.
+It checks that everything is committed and pushed, the two versions agree and the tag is new; runs `build.cmd` (build and tests) and `build.cmd installer`; then tags, pushes the tag and makes the release with `gh`. Its default notes say how to install and list the commits since the previous release. UVScan shows, in the question whether to install, only the section of the notes under the first heading that says *new* or *change* (*### What’s new*, *### Changes since v2.0.0*), as plain text; write one in your own notes. Builds between releases keep the version and differ in the build number, so the update check only offers a release with a higher version.
 
 ## Tests
 

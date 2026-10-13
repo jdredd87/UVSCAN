@@ -2042,9 +2042,7 @@ procedure TMainForm.OfferUpdate;
 var
   Notes, Ask: string;
 begin
-  Notes := Trim(FUpdate.Notes);
-  if Length(Notes) > 500 then
-    Notes := Copy(Notes, 1, 500) + '...';
+  Notes := ReleaseHighlights(FUpdate.Notes);
   if Notes <> '' then
     Notes := sLineBreak + sLineBreak + Notes;
   if CanInstallUpdate then

@@ -26,6 +26,10 @@ const
   one (2.10.0 is newer than 2.9.0); a leading 'v' and missing parts (2.1 =
   2.1.0) are fine. }
 function CompareVersions(const A, B: string): Integer;
+{ What to show in UVScan from a release's notes (Markdown): the section under
+  the first heading that says "new" or "change" (### What's new, ### Changes
+  since v2.0.0), as plain text, at most MaxLines lines; '' if there is none. }
+function ReleaseHighlights(const Notes: string; MaxLines: Integer = 12): string;
 { The GitHub API's answer for one release. False if it is not one. }
 function ParseRelease(const Json: string; out Info: TUpdateInfo): Boolean;
 { Asks GitHub (waits; not in the main thread). False with Error when it
@@ -71,6 +75,40 @@ begin
       Exit(Ord(X > Y) * 2 - 1);
   end;
   Result := 0;
+end;
+
+function ReleaseHighlights(const Notes: string; MaxLines: Integer): string;
+var
+  Line, L: string;
+  Inside: Boolean;
+  Lines: TArray<string>;
+begin
+  Inside := False;
+  Lines := nil;
+  for Line in Notes.Replace(#13, '').Split([#10]) do
+  begin
+    L := Trim(Line);
+    if L.StartsWith('#') then
+    begin
+      if Inside then
+        Break; // the next section
+      L := LowerCase(L);
+      Inside := L.Contains('new') or L.Contains('change');
+      Continue;
+    end;
+    if not Inside or ((L = '') and (Lines = nil)) then
+      Continue;
+    L := L.Replace('**', '').Replace('`', '').Replace('__', '');
+    if L.StartsWith('* ') or L.StartsWith('- ') then
+      L := '- ' + Trim(Copy(L, 3, MaxInt));
+    if Length(Lines) = MaxLines then
+    begin
+      Lines := Lines + ['...'];
+      Break;
+    end;
+    Lines := Lines + [L];
+  end;
+  Result := Trim(string.Join(sLineBreak, Lines));
 end;
 
 function ParseRelease(const Json: string; out Info: TUpdateInfo): Boolean;
