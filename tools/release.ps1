@@ -50,7 +50,7 @@ if ($Notes) {
   $text = "UVScan $ver (build $build).`n`n" +
     "**Windows:** download ``UVScan-$ver-build$build-setup.exe`` below and run it. " +
     "Already have UVScan? It offers the update itself (*More > About*), and your PIDs, lists, settings and logs stay.`n"
-  $prev = git describe --tags --abbrev=0 --match 'v*' 2>$null
+  $prev = git describe --tags --abbrev=0 --match 'v[0-9]*' 2>$null
   if ($LASTEXITCODE -eq 0 -and $prev) {
     $log = git log --pretty='- %s' "$prev..HEAD"
     $text += "`n### Changes since $prev`n`n" + ($log -join "`n") + "`n"
