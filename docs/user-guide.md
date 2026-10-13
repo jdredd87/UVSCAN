@@ -32,7 +32,7 @@ All screenshots and clips were taken with the built‑in **Simulator**, so the v
 
 ## Installing
 
-**Windows:** run `UVScan-<version>-build<n>-setup.exe`. It asks whether to install for you only (no admin needed) or for all users of the PC, then adds UVScan to the Start menu (and the desktop, if ticked). The setup program is not signed yet, so Windows may say *Windows protected your PC*: click *More info*, then *Run anyway*. Running a newer setup updates UVScan in place. To remove it, *Settings → Apps → UVScan → Uninstall*; your PIDs, lists, settings (`C:\ProgramData\UVScan`) and logs stay.
+**Windows:** run `UVScan-<version>-build<n>-setup.exe`. It asks whether to install for you only (no admin needed) or for all users of the PC, then adds UVScan to the Start menu and the desktop (untick *Create a desktop shortcut* if you dont want that one). The setup program is not signed yet, so Windows may say *Windows protected your PC*: click *More info*, then *Run anyway*. Running a newer setup updates UVScan in place. To remove it, *Settings → Apps → UVScan → Uninstall*; your PIDs, lists, settings (`C:\ProgramData\UVScan`) and logs stay.
 
 **Android:** install `UVScan.apk` (allow installs from the app that opens it, a file manager say).
 
