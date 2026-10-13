@@ -17,6 +17,7 @@ param([string]$Notes = '', [switch]$DryRun)
 $ErrorActionPreference = 'Continue' # git and gh write to stderr; their exit codes are checked
 $root = Split-Path -Parent $PSScriptRoot
 Set-Location $root
+[Environment]::CurrentDirectory = $root # for git, gh and cmd too
 function Fail($msg) { Write-Host "release: $msg"; exit 1 }
 
 $ver = [regex]::Match((Get-Content src\UVScan.Version.pas -Raw), "AppVersion\s*=\s*'([^']+)'").Groups[1].Value
@@ -33,9 +34,9 @@ if (git tag -l $tag) { Fail "$tag exists already: change AppVersion" }
 gh release view $tag *> $null
 if ($LASTEXITCODE -eq 0) { Fail "the release $tag exists already" }
 
-cmd /c build.cmd
+& (Join-Path $root 'build.cmd')
 if ($LASTEXITCODE -ne 0) { Fail 'build or tests failed' }
-cmd /c build.cmd installer
+& (Join-Path $root 'build.cmd') installer
 if ($LASTEXITCODE -ne 0) { Fail 'the setup program did not build' }
 $stamp = Get-Content src\UVScan.BuildStamp.inc -Raw
 $build = [regex]::Match($stamp, 'BuildNumber\s*=\s*(\d+)').Groups[1].Value
