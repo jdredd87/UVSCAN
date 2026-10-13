@@ -40,7 +40,7 @@ procedure DownloadFile(const Url, FileName, UserAgent: string; const OnDone: TPr
 implementation
 
 uses
-  {$IFDEF MSWINDOWS}Winapi.Windows,{$ENDIF} System.JSON, System.Net.HttpClient, System.Net.URLClient, UVScan.JsonFile;
+  System.Generics.Collections, System.JSON, System.Net.HttpClient, System.Net.URLClient, UVScan.JsonFile;
 
 function CompareVersions(const A, B: string): Integer;
 
