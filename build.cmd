@@ -5,8 +5,10 @@ rem probe, the simulator served on the network for the Network (TCP/IP) connecti
 rem agent for testing on another PC).
 rem Usage: build
 rem        build android [install]   - Android64 debug APK (install: adb install on the attached phone)
+rem        build installer           - Win32 Release and its setup program (Inno Setup 6), see installer\
 setlocal
 if /i "%~1"=="android" goto android
+if /i "%~1"=="installer" goto installer
 set UV_CONFIG=Debug
 set UV_PLATFORM=Win32
 call "C:\Program Files (x86)\Embarcadero\Studio\37.0\bin\rsvars.bat" || exit /b 1
@@ -32,4 +34,10 @@ msbuild "%~dp0UVScan.dproj" /t:Build;Deploy /p:Config=Debug /p:Platform=Android6
 echo APK: %~dp0Android64\Debug\UVScan\bin\UVScan.apk
 if /i not "%~2"=="install" exit /b 0
 "C:\Users\Public\Documents\Embarcadero\Studio\37.0\CatalogRepository\AndroidSDK-37.0.59082.6021\platform-tools\adb.exe" install -r "%~dp0Android64\Debug\UVScan\bin\UVScan.apk"
+exit /b %ERRORLEVEL%
+
+:installer
+call "C:\Program Files (x86)\Embarcadero\Studio\37.0\bin\rsvars.bat" || exit /b 1
+msbuild "%~dp0UVScan.dproj" /t:Build /p:Config=Release /p:Platform=Win32 /nologo /v:minimal || exit /b 1
+powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0tools\installer.ps1"
 exit /b %ERRORLEVEL%

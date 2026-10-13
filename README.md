@@ -50,11 +50,11 @@ Short clips of it at work, on both platforms, are on the **[wiki](https://github
 
 ## Quick start
 
-1. Build `UVScan.exe` (below).
+1. Install UVScan with the setup program (`UVScan-<version>-build<n>-setup.exe`, from `build.cmd installer`), or build `UVScan.exe` (below).
 2. Connect the AVT to the PC and the vehicle, key on.
 3. Pick the COM port (or **Network (TCP/IP)** and the AVT's address), **Connect**, tick PIDs on the left, **Start scan**.
 
-Everything UVScan stores lives in `C:\ProgramData\UVScan` and is created from built‑in defaults on first run, so the exe needs nothing else. Installer note: grant Users modify rights on that folder (a folder created there by one user is read‑only for others).
+Everything UVScan stores lives in `C:\ProgramData\UVScan` and is created from built‑in defaults on first run, so the exe needs nothing else. Installed for all users, the setup program gives Users modify rights on that folder (a folder created there by one user is read‑only for others).
 
 Command line (as in the old UVSCAN): `UVScan.exe -port COM9 -connect -scan -log`; for a quick getaway, `UVScan.exe -list "Acceleration" -log -fullscreen -retry` or `-quick "Drag strip"` (see [Quick start](docs/user-guide.md#quick-start) — UVScan makes desktop shortcuts for these).
 
@@ -65,9 +65,10 @@ Delphi 13 (RAD Studio 37.0); Win32 Debug for now:
 ```
 build.cmd
 build.cmd android [install]
+build.cmd installer
 ```
 
-Builds the app and the DUnitX tests, runs the tests, and builds the console tools (`tools\Win32\UVScanProbe.exe`, the bench tool, and `tools\Win32\UVScanSimServer.exe`, the simulator on the network). See [development](docs/development.md).
+`build.cmd installer` builds the Win32 Release exe and its setup program (Inno Setup 6). `build.cmd` builds the app and the DUnitX tests, runs the tests, and builds the console tools (`tools\Win32\UVScanProbe.exe`, the bench tool, and `tools\Win32\UVScanSimServer.exe`, the simulator on the network). See [development](docs/development.md).
 
 ## Status
 

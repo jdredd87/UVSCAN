@@ -2,7 +2,7 @@
 
 ## Building
 
-Delphi 13 (RAD Studio 37.0), FireMonkey (FMX): Win32 and Android64 (Win32 Debug is the only Windows build for now). No third‑party components: the serial port, AVT protocol, formula evaluator, JSON handling, grid, gauges and chart are all in `src\`. The last VCL version is git tag `vcl-final`.
+Delphi 13 (RAD Studio 37.0), FireMonkey (FMX): Win32 and Android64 (Win32 Debug for development; the setup program uses Win32 Release). No third‑party components: the serial port, AVT protocol, formula evaluator, JSON handling, grid, gauges and chart are all in `src\`. The last VCL version is git tag `vcl-final`.
 
 Open `UVScan.dproj` in the IDE, or from a command prompt:
 
@@ -48,6 +48,14 @@ The factory data in `data\` is compiled into the exe through `UVScan.Defaults.rc
 ### Version
 
 `AppVersion` in `src\UVScan.Version.pas` is the version, changed by hand (major.minor.patch; the rewrite started at 2.0.0, after the VCL UVSCAN's 10.18.08b). Change the version info in `UVScan.dproj` to match (*Project → Options → Version Info*: Windows file version, Android `versionName`). Before each build (IDE or `build.cmd`, either platform) the project runs `tools\stamp.ps1`, which writes `src\UVScan.BuildStamp.inc` (not in git): the build number (the commit count), the commit (with `+` when built with uncommitted changes) and the date. UVScan shows them in the title bar, *More → About* and the first line of *Messages*.
+
+### Installer
+
+```
+build.cmd installer
+```
+
+builds `Win32\Release\UVScan.exe` and the setup program `installer\Output\UVScan-<version>-build<n>-setup.exe` from `installer\UVScan.iss` with [Inno Setup 6](https://jrsoftware.org/isinfo.php) (`winget install JRSoftware.InnoSetup --scope user`; a build tool only, nothing of it is in UVScan). `tools\installer.ps1` passes the version and build number. The setup installs just `UVScan.exe`, for the current user (no admin, `%LOCALAPPDATA%\Programs\UVScan`) or, chosen in its first dialog, for all users (Program Files; it then gives Users modify rights on `C:\ProgramData\UVScan`). Start menu shortcut, desktop icon if ticked, uninstall from *Settings → Apps*, which keeps the data and the logs. Silent: `/VERYSILENT /CURRENTUSER` (or `/ALLUSERS`), `/DIR="..."`. It is not signed, so SmartScreen warns the first time (*More info → Run anyway*).
 
 ## Tests
 
@@ -171,6 +179,7 @@ Every request but `/ping` needs the token from the kit (kept in `%LOCALAPPDATA%\
 | `src/UVScan.Defaults.pas` | Factory defaults built into the exe; creates missing data files |
 | `src/UVScan.Paths.pas` | Data folder (`C:\ProgramData\UVScan`) |
 | `src/UVScan.Version.pas` | Version and build stamp (`tools\stamp.ps1`) |
+| `installer/UVScan.iss`, `tools/installer.ps1` | The Windows setup program (`build.cmd installer`) |
 | `src/UVScan.JsonFile.pas` | JSON helpers (atomic save) |
 | `src/UVScan.Hex.pas` | Hex / byte helpers |
 | `src/UVScan.MainForm.*` | Main window |

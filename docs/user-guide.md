@@ -2,6 +2,7 @@
 
 UVScan reads live data, trouble codes and vehicle information from GM vehicles on the **Class 2 / J1850 VPW** bus through an **AVT‑841** (or 838 / 842) interface or an **ELM327** type adapter (Bluetooth, USB or Wi‑Fi), logs it to CSV, shows it as a grid or as gauges with alerts, and can send real‑time control commands. It was written for the 1996‑2005 GM V6s (3100 / 3400 / 3800) but works with any Class 2 PCM.
 
+- [Installing](#installing)
 - [The main window](#the-main-window)
 - [Phones and tablets](#phones-and-tablets)
 - [Connecting](#connecting)
@@ -19,6 +20,7 @@ UVScan reads live data, trouble codes and vehicle information from GM vehicles o
 - [Tools](#tools)
 - [Editing PIDs](#editing-pids)
 - [Finding PIDs a PCM supports](#finding-pids-a-pcm-supports)
+- [About](#about)
 - [Messages](#messages)
 - [Keyboard and command line](#keyboard-and-command-line)
 - [Where things are stored](#where-things-are-stored)
@@ -27,6 +29,12 @@ UVScan reads live data, trouble codes and vehicle information from GM vehicles o
 All screenshots and clips were taken with the built‑in **Simulator**, so the values are made up (it drives a pretend car, so they behave like real ones). The clips are short animations; click one to open it as a video you can pause and scrub. More of them, for both platforms, are on the [wiki](https://github.com/jdredd87/UVSCAN/wiki/Demos).
 
 ---
+
+## Installing
+
+**Windows:** run `UVScan-<version>-build<n>-setup.exe`. It asks whether to install for you only (no admin needed) or for all users of the PC, then adds UVScan to the Start menu (and the desktop, if ticked). The setup program is not signed yet, so Windows may say *Windows protected your PC*: click *More info*, then *Run anyway*. Running a newer setup updates UVScan in place. To remove it, *Settings → Apps → UVScan → Uninstall*; your PIDs, lists, settings (`C:\ProgramData\UVScan`) and logs stay.
+
+**Android:** install `UVScan.apk` (allow installs from the app that opens it, a file manager say).
 
 ## The main window
 
