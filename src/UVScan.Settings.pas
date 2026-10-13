@@ -9,6 +9,7 @@ unit UVScan.Settings;
     "advanced":   { "trace": false, "alertSounds": true },
     "liveGrid":   { "zoom": 100, "showMinMax": true },
     "appearance": { "theme": "system", "keepScreenOn": true },
+    "updates":    { "check": true, "lastCheck": "2026-10-12T09:30:00.000Z" },
     "window":     { "left": 100, "top": 80, "width": 1180, "height": 720,
                     "maximized": false, "pidPanelWidth": 400 } }
 
@@ -52,6 +53,8 @@ type
     RoundReadings: Boolean; // gauges and live data: tidy decimals per PID (logs keep every digit)
     LockRotation: Boolean;  // phone / tablet: the screen keeps the way it faces (bumps in a car)
     QuickStarts: TQuickStarts; // named ways to start in a hurry (Quick start menu, shortcuts)
+    CheckUpdates: Boolean;  // ask GitHub for a newer UVScan when it starts (once a day)
+    UpdateChecked: TDateTime; // when it last asked, 0: never
     Window: TWindowSettings;
     constructor Create;
     procedure ResetToDefaults;
@@ -78,7 +81,7 @@ implementation
 
 uses
   {$IFDEF MSWINDOWS}Winapi.Windows,{$ELSE}Posix.Stdio, Posix.Unistd,{$ENDIF} System.IOUtils, System.Generics.Collections, System.Math,
-  UVScan.JsonFile, UVScan.Class2;
+  System.DateUtils, UVScan.JsonFile, UVScan.Class2;
 
 function StreamSpeedNibble(Speed: TStreamSpeed): Byte;
 begin
@@ -127,6 +130,8 @@ begin
   KeepScreenOn := True;
   RoundReadings := True;
   QuickStarts := DefaultQuickStarts;
+  CheckUpdates := True;
+  UpdateChecked := 0;
   Window := Default(TWindowSettings);
 end;
 
@@ -184,6 +189,12 @@ begin
   Result.AddPair('appearance', Sec);
 
   Result.AddPair('quickStarts', QuickStartsToJson(QuickStarts));
+
+  Sec := TJSONObject.Create;
+  Sec.AddPair('check', TJSONBool.Create(CheckUpdates));
+  if UpdateChecked > 0 then
+    Sec.AddPair('lastCheck', DateToISO8601(UpdateChecked, False));
+  Result.AddPair('updates', Sec);
 
   if Window.Saved then
   begin
@@ -271,6 +282,14 @@ begin
   // Missing (an older file): the defaults stay; there but empty: none.
   if Root.GetValue('quickStarts') is TJSONArray then
     QuickStarts := QuickStartsFromJson(TJSONArray(Root.GetValue('quickStarts')));
+
+  Sec := JObj(Root, 'updates');
+  if Sec <> nil then
+  begin
+    CheckUpdates := JBool(Sec, 'check', CheckUpdates);
+    if not TryISO8601ToDate(JStr(Sec, 'lastCheck'), UpdateChecked, False) then
+      UpdateChecked := 0;
+  end;
 
   Sec := JObj(Root, 'window');
   if Sec <> nil then

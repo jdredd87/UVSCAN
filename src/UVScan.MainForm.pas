@@ -18,7 +18,7 @@ uses
   UVScan.Serial, UVScan.Simulator, UVScan.Simulator.Elm, UVScan.Adapter, UVScan.Pids, UVScan.Dpid, UVScan.Dtc, UVScan.Engine,
   UVScan.Class2, UVScan.Paths, UVScan.Settings, UVScan.PidLists, UVScan.Defaults,
   UVScan.Display, UVScan.Alerts, UVScan.Controls, UVScan.Gauge, UVScan.UI.DataGrid, UVScan.LogData,
-  UVScan.QuickStart;
+  UVScan.QuickStart, UVScan.Update;
 
 type
   { Parts of the one-line status strip. }
@@ -364,6 +364,15 @@ type
     FAboutLabels: TArray<TLabel>;    // their heights follow the width
     FAboutHeads: TArray<TLabel>;     // the small grey headings
     FAboutLink: TLabel;              // the repository address
+    FUpdateLabel: TLabel;            // About: what the update check found
+    FUpdateCheck: TCheckBox;         // About: check at start
+    FUpdateButton: TButton;          // About: Check now / Install 2.1.0
+    FUpdate: TUpdateInfo;            // the newer release, when FUpdateFound
+    FUpdateFound: Boolean;
+    FUpdateChecking: Boolean;
+    FUpdateCheckedNow: Boolean;      // asked GitHub since UVScan started
+    FUpdateDownloading: Boolean;
+    FUpdateError: string;            // why the last check failed
     btnLiveLog: TButton;             // Start / Stop log on the Live page's bar
     btnDashLog: TButton;             // and on the dashboard's
     FPidsShow: TRectangle;           // the strip down the left edge that brings it back
@@ -417,6 +426,14 @@ type
     procedure AboutResized(Sender: TObject);
     procedure AboutLinkClick(Sender: TObject);
     procedure AboutCopyClick(Sender: TObject);
+    procedure StartUpdateCheck(Manual: Boolean);
+    procedure UpdateCheckDone(Manual, Ok: Boolean; const Info: TUpdateInfo; const Error: string);
+    procedure OfferUpdate;
+    procedure InstallUpdate;
+    function CanInstallUpdate: Boolean;
+    procedure ShowUpdateStatus;
+    procedure UpdateButtonClick(Sender: TObject);
+    procedure UpdateCheckChange(Sender: TObject);
     function PidsLocked: Boolean;
     procedure RunQuickStart(const Q: TQuickStart);
     procedure QuickConnect;
@@ -676,6 +693,13 @@ begin
   HookBackGesture; // Android 16 no longer sends the back key
   ApplyCommandLine;
   TThread.ForceQueue(nil, FitFlowHeights);
+  // Once a day, a few seconds in: is there a newer UVScan on GitHub?
+  TThread.ForceQueue(nil,
+    procedure
+    begin
+      if not FClosing then
+        StartUpdateCheck(False);
+    end, 4000);
 end;
 
 function TMainForm.AppEvent(AAppEvent: TApplicationEvent; AContext: TObject): Boolean;
@@ -1881,6 +1905,34 @@ begin
   Add('A data logger and scan tool for GM vehicles on J1850 VPW (GM Class 2), with an AVT (838, 841 or 842) ' +
     'or an ELM327 adapter.', 15, False, 4);
   Section('VERSION', FullVersionText);
+  FAboutHeads := FAboutHeads + [Add('UPDATES', 12, False, 16)];
+  FUpdateLabel := Add('', 15, False, 2);
+  FUpdateCheck := TCheckBox.Create(Self);
+  FUpdateCheck.Stored := False;
+  FUpdateCheck.Parent := FAboutBox;
+  FUpdateCheck.Position.Y := Y;
+  Y := Y + 1000;
+  FUpdateCheck.Align := TAlignLayout.Top;
+  FUpdateCheck.Margins.Top := 4;
+  FUpdateCheck.Height := 30;
+  FUpdateCheck.Text := 'Check for updates at start';
+  FUpdateCheck.IsChecked := True;
+  FUpdateCheck.OnChange := UpdateCheckChange;
+  Row := TLayout.Create(Self);
+  Row.Stored := False;
+  Row.Parent := FAboutBox;
+  Row.Position.Y := Y;
+  Y := Y + 1000;
+  Row.Align := TAlignLayout.Top;
+  Row.Margins.Top := 4;
+  Row.Height := 36;
+  FUpdateButton := TButton.Create(Self);
+  FUpdateButton.Stored := False;
+  FUpdateButton.Parent := Row;
+  FUpdateButton.Align := TAlignLayout.Left;
+  FUpdateButton.Width := 170;
+  FUpdateButton.Text := 'Check now';
+  FUpdateButton.OnClick := UpdateButtonClick;
   Section('WRITTEN BY', 'StevenC - author of UVSCAN' + sLineBreak +
     'Claude (Anthropic) - helped write this version');
   Section('SOURCE CODE', '');
@@ -1919,6 +1971,184 @@ begin
     Exit;
   for L in FAboutLabels do
     L.Height := WrappedTextHeight(L, W) + 2;
+end;
+
+{ Updates: GitHub's latest release (tools\release.ps1 makes them) against
+  AppVersion. At start once a day (About > Check for updates at start), or
+  Check now. A newer one is offered when nothing is scanning or logging (else
+  a notice); on Windows its setup program is downloaded and run, and UVScan
+  closes so it can be replaced. A phone gets the release page. }
+procedure TMainForm.StartUpdateCheck(Manual: Boolean);
+begin
+  if FUpdateChecking or FUpdateDownloading then
+    Exit;
+  if not Manual and (not FSettings.CheckUpdates or (HoursBetween(Now, FSettings.UpdateChecked) < 20)) then
+    Exit;
+  FUpdateChecking := True;
+  ShowUpdateStatus;
+  CheckForUpdate('UVScan/' + AppVersion,
+    procedure(Ok: Boolean; Info: TUpdateInfo; Error: string)
+    begin
+      if not FClosing then
+        UpdateCheckDone(Manual, Ok, Info, Error);
+    end);
+end;
+
+procedure TMainForm.UpdateCheckDone(Manual, Ok: Boolean; const Info: TUpdateInfo; const Error: string);
+begin
+  FUpdateChecking := False;
+  if not Ok then
+  begin
+    FUpdateError := Error;
+    AddMessage('Update check: ' + Error);
+    if Manual then
+      ShowNotice('Could not check for updates: ' + Error, True);
+    ShowUpdateStatus;
+    Exit;
+  end;
+  FUpdateError := '';
+  FUpdateCheckedNow := True;
+  FSettings.UpdateChecked := Now;
+  SaveSettings;
+  FUpdateFound := CompareVersions(Info.Version, AppVersion) > 0;
+  if FUpdateFound then
+  begin
+    FUpdate := Info;
+    AddMessage(Format('Update check: UVScan %s is out (this is %s), %s', [Info.Version, AppVersion, Info.PageUrl]));
+    if (FState in [esScanning, esBusy]) or FLogging then
+      ShowNotice(Format('UVScan %s is out: More > About to install it', [Info.Version]), False)
+    else
+      OfferUpdate;
+  end
+  else
+  begin
+    AddMessage(Format('Update check: this is the latest version (%s on GitHub)', [Info.Version]));
+    if Manual then
+      ShowNotice('This is the latest version', False);
+  end;
+  ShowUpdateStatus;
+end;
+
+function TMainForm.CanInstallUpdate: Boolean;
+begin
+  {$IFDEF MSWINDOWS}
+  Result := FUpdate.SetupUrl <> '';
+  {$ELSE}
+  Result := False;
+  {$ENDIF}
+end;
+
+procedure TMainForm.OfferUpdate;
+var
+  Notes, Ask: string;
+begin
+  Notes := Trim(FUpdate.Notes);
+  if Length(Notes) > 500 then
+    Notes := Copy(Notes, 1, 500) + '...';
+  if Notes <> '' then
+    Notes := sLineBreak + sLineBreak + Notes;
+  if CanInstallUpdate then
+    Ask := 'Download and install it now? UVScan closes while it installs; your PIDs, lists, settings and logs stay.'
+  else
+    Ask := 'Open its download page?';
+  Confirm(Format('UVScan %s is out (this is %s).%s', [FUpdate.Version, AppVersion, Notes]) + sLineBreak +
+    sLineBreak + Ask, InstallUpdate);
+end;
+
+procedure TMainForm.InstallUpdate;
+var
+  FileName: string;
+begin
+  if not CanInstallUpdate then
+  begin
+    OpenUrl(FUpdate.PageUrl);
+    Exit;
+  end;
+  if (FState in [esScanning, esBusy]) or FLogging then
+  begin
+    ShowNotice('Stop the scan and the log first, then install the update', True);
+    Exit;
+  end;
+  if FUpdateDownloading then
+    Exit;
+  FUpdateDownloading := True;
+  FileName := System.IOUtils.TPath.Combine(System.IOUtils.TPath.GetTempPath, FUpdate.SetupName);
+  AddMessage('Downloading ' + FUpdate.SetupUrl);
+  ShowNotice(Format('Downloading UVScan %s...', [FUpdate.Version]), False);
+  ShowUpdateStatus;
+  DownloadFile(FUpdate.SetupUrl, FileName, 'UVScan/' + AppVersion,
+    procedure(Error: string)
+    begin
+      if FClosing then
+        Exit;
+      FUpdateDownloading := False;
+      ShowUpdateStatus;
+      if Error <> '' then
+      begin
+        AddMessage('Update download: ' + Error);
+        ShowNotice('The download did not work: ' + Error, True);
+        Exit;
+      end;
+      if (FState in [esScanning, esBusy]) or FLogging then // started while it downloaded
+      begin
+        ShowNotice('Stop the scan and the log first, then install the update', True);
+        Exit;
+      end;
+      AddMessage('Starting ' + FileName);
+      if not RunProgram(FileName) then
+      begin
+        ShowNotice('Could not start ' + FileName, True);
+        Exit;
+      end;
+      Close; // the setup program replaces UVScan.exe
+    end);
+end;
+
+procedure TMainForm.ShowUpdateStatus;
+var
+  S: string;
+begin
+  if FUpdateLabel = nil then
+    Exit;
+  if FUpdateDownloading then
+    S := Format('Downloading UVScan %s...', [FUpdate.Version])
+  else if FUpdateChecking then
+    S := 'Checking GitHub for a new version...'
+  else if FUpdateFound then
+    S := Format('UVScan %s is out (this is %s).', [FUpdate.Version, AppVersion])
+  else if FUpdateError <> '' then
+    S := 'Could not check: ' + FUpdateError
+  else if FUpdateCheckedNow then
+    S := 'This is the latest version.'
+  else if FSettings.UpdateChecked > 0 then
+    S := 'Last checked ' + FormatDateTime('yyyy-mm-dd hh:nn', FSettings.UpdateChecked) + '.'
+  else
+    S := 'Not checked yet.';
+  FUpdateLabel.Text := S;
+  if not FUpdateFound then
+    FUpdateButton.Text := 'Check now'
+  else if CanInstallUpdate then
+    FUpdateButton.Text := 'Install ' + FUpdate.Version
+  else
+    FUpdateButton.Text := 'Get ' + FUpdate.Version;
+  FUpdateButton.Enabled := not (FUpdateChecking or FUpdateDownloading);
+  AboutResized(nil);
+end;
+
+procedure TMainForm.UpdateButtonClick(Sender: TObject);
+begin
+  if FUpdateFound then
+    InstallUpdate
+  else
+    StartUpdateCheck(True);
+end;
+
+procedure TMainForm.UpdateCheckChange(Sender: TObject);
+begin
+  if not FChromeReady then // LoadSettings is setting it
+    Exit;
+  FSettings.CheckUpdates := FUpdateCheck.IsChecked;
+  SaveSettings;
 end;
 
 procedure TMainForm.AboutLinkClick(Sender: TObject);
@@ -3239,6 +3469,8 @@ begin
   chkRound.IsChecked := FSettings.RoundReadings;
   chkLockRotate.IsChecked := FSettings.LockRotation;
   LockRotation(FSettings.LockRotation);
+  FUpdateCheck.IsChecked := FSettings.CheckUpdates;
+  ShowUpdateStatus;
   for N in FSettings.SelectedPids do
     if (FCatalog.FindById(N) <> nil) and FCatalog.FindById(N).Enabled and not FSelected.Contains(N) then
       FSelected.Add(N);

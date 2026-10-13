@@ -12,6 +12,7 @@ uses
   UVScan.Class2 in '..\src\UVScan.Class2.pas',
   UVScan.Formula in '..\src\UVScan.Formula.pas',
   UVScan.JsonFile in '..\src\UVScan.JsonFile.pas',
+  UVScan.Update in '..\src\UVScan.Update.pas',
   UVScan.Pids in '..\src\UVScan.Pids.pas',
   UVScan.Paths in '..\src\UVScan.Paths.pas',
   UVScan.Dtc in '..\src\UVScan.Dtc.pas',

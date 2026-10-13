@@ -70,6 +70,7 @@
         <DCCReference Include="..\src\UVScan.Class2.pas"/>
         <DCCReference Include="..\src\UVScan.Formula.pas"/>
         <DCCReference Include="..\src\UVScan.JsonFile.pas"/>
+        <DCCReference Include="..\src\UVScan.Update.pas"/>
         <DCCReference Include="..\src\UVScan.Pids.pas"/>
         <DCCReference Include="..\src\UVScan.Paths.pas"/>
         <DCCReference Include="..\src\UVScan.Dtc.pas"/>

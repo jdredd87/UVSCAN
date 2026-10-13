@@ -4,6 +4,8 @@ A data logger and scan tool for GM vehicles on **J1850 VPW (GM Class 2)**, using
 
 It is a rewrite of the 2008 UVSCAN (Delphi 2007, kept in [`legacy/`](legacy) for reference) for **Delphi 13 FireMonkey (FMX)**, with no third‑party components. It runs on Windows (Win32) and builds for **Android** (64‑bit); the last VCL version is git tag `vcl-final`.
 
+**Download:** the Windows setup program is on the [latest release](https://github.com/jdredd87/UVSCAN/releases/latest). UVScan checks for newer ones itself and offers to install them.
+
 ![Live data](docs/images/live-data.png)
 
 ## What it does
@@ -50,7 +52,7 @@ Short clips of it at work, on both platforms, are on the **[wiki](https://github
 
 ## Quick start
 
-1. Install UVScan with the setup program (`UVScan-<version>-build<n>-setup.exe`, from `build.cmd installer`), or build `UVScan.exe` (below).
+1. Install UVScan with the setup program from the [latest release](https://github.com/jdredd87/UVSCAN/releases/latest), or build `UVScan.exe` (below).
 2. Connect the AVT to the PC and the vehicle, key on.
 3. Pick the COM port (or **Network (TCP/IP)** and the AVT's address), **Connect**, tick PIDs on the left, **Start scan**.
 

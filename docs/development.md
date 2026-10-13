@@ -57,6 +57,15 @@ build.cmd installer
 
 builds `Win32\Release\UVScan.exe` and the setup program `installer\Output\UVScan-<version>-build<n>-setup.exe` from `installer\UVScan.iss` with [Inno Setup 6](https://jrsoftware.org/isinfo.php) (`winget install JRSoftware.InnoSetup --scope user`; a build tool only, nothing of it is in UVScan). `tools\installer.ps1` passes the version and build number. The setup installs just `UVScan.exe`, for the current user (no admin, `%LOCALAPPDATA%\Programs\UVScan`) or, chosen in its first dialog, for all users (Program Files; it then gives Users modify rights on `C:\ProgramData\UVScan`). Start menu shortcut, desktop icon (ticked by default), uninstall from *Settings → Apps*, which keeps the data and the logs. Silent: `/VERYSILENT /CURRENTUSER` (or `/ALLUSERS`), `/DIR="..."`. It is not signed, so SmartScreen warns the first time (*More info → Run anyway*).
 
+### Releases
+
+A release is a GitHub release tagged `v<AppVersion>` with the setup program attached; UVScan's update check (`src\UVScan.Update.pas`) reads `releases/latest` from the GitHub API, compares its tag with `AppVersion` and, on Windows, downloads the asset ending in `-setup.exe` (a phone opens the release page; an `.apk` asset is recognised for later). Drafts and pre-releases are not offered. To release:
+
+1. Raise `AppVersion` in `src\UVScan.Version.pas` and the version info in `UVScan.dproj` (Windows file version, Android `versionName`) to match; commit and push.
+2. `powershell -File tools\release.ps1` (`-Notes notes.md` for your own text, `-DryRun` to stop before tagging).
+
+It checks that everything is committed and pushed, the two versions agree and the tag is new; runs `build.cmd` (build and tests) and `build.cmd installer`; then tags, pushes the tag and makes the release with `gh`. Its default notes say how to install and list the commits since the previous release. Builds between releases keep the version and differ in the build number, so the update check only offers a release with a higher version.
+
 ## Tests
 
 `tests\` holds DUnitX tests for the protocol pieces (AVT framing, Class 2 messages, DPID planning, the formula evaluator), the JSON files, the legacy CSV import, display levels and alerts, real‑time controls (including how active device controls are merged), log reading and saved views, and end‑to‑end engine runs against the simulator (connect, scan, log, PID test, discovery, stop/restart). They run on both platforms and report memory leaks.
@@ -180,6 +189,7 @@ Every request but `/ping` needs the token from the kit (kept in `%LOCALAPPDATA%\
 | `src/UVScan.Paths.pas` | Data folder (`C:\ProgramData\UVScan`) |
 | `src/UVScan.Version.pas` | Version and build stamp (`tools\stamp.ps1`) |
 | `installer/UVScan.iss`, `tools/installer.ps1` | The Windows setup program (`build.cmd installer`) |
+| `src/UVScan.Update.pas`, `tools/release.ps1` | Update check, and making a release |
 | `src/UVScan.JsonFile.pas` | JSON helpers (atomic save) |
 | `src/UVScan.Hex.pas` | Hex / byte helpers |
 | `src/UVScan.MainForm.*` | Main window |

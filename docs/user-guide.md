@@ -32,9 +32,11 @@ All screenshots and clips were taken with the built‑in **Simulator**, so the v
 
 ## Installing
 
-**Windows:** run `UVScan-<version>-build<n>-setup.exe`. It asks whether to install for you only (no admin needed) or for all users of the PC, then adds UVScan to the Start menu and the desktop (untick *Create a desktop shortcut* if you dont want that one). The setup program is not signed yet, so Windows may say *Windows protected your PC*: click *More info*, then *Run anyway*. Running a newer setup updates UVScan in place. To remove it, *Settings → Apps → UVScan → Uninstall*; your PIDs, lists, settings (`C:\ProgramData\UVScan`) and logs stay.
+**Windows:** download `UVScan-<version>-build<n>-setup.exe` from the [latest release](https://github.com/jdredd87/UVSCAN/releases/latest) and run it. It asks whether to install for you only (no admin needed) or for all users of the PC, then adds UVScan to the Start menu and the desktop (untick *Create a desktop shortcut* if you don't want that one). The setup program is not signed yet, so Windows may say *Windows protected your PC*: click *More info*, then *Run anyway*. Running a newer setup updates UVScan in place. To remove it, *Settings → Apps → UVScan → Uninstall*; your PIDs, lists, settings (`C:\ProgramData\UVScan`) and logs stay.
 
 **Android:** install `UVScan.apk` (allow installs from the app that opens it, a file manager say).
+
+**Updates:** once a day, a few seconds after it starts, UVScan asks GitHub whether there is a newer release. If there is, it says what is new and offers to install it: on Windows it downloads the setup program, runs it and closes so it can be replaced (your data and logs stay); on a phone it opens the release page. While a scan or a log is running it only shows a notice, so a drive is never interrupted. *More → About* shows what the last check found, has **Check now**, and **Check for updates at start** turns the daily check off (nothing is sent but the request for the latest release).
 
 ## The main window
 
@@ -419,7 +421,7 @@ Each PID that answers is listed with its size, raw value and what it is already 
 
 ## About
 
-*More → About* shows the version (also in the Windows title bar, e.g. *UVScan 2.0.0 (build 98)*, and under *About* in the *More* list), who wrote UVScan, the source code on GitHub, and what this copy runs on. **Copy version info** puts that on the clipboard, for a bug report. The first line in *Messages* says the same.
+*More → About* shows the version (also in the Windows title bar, e.g. *UVScan 2.0.0 (build 98)*, and under *About* in the *More* list), who wrote UVScan, the source code on GitHub, and what this copy runs on. **Copy version info** puts that on the clipboard, for a bug report. The first line in *Messages* says the same. Under *Updates*: what the last update check found, **Check now** (or **Install 2.1.0** when there is a newer one) and **Check for updates at start** (see [Installing](#installing)).
 
 ## Messages
 

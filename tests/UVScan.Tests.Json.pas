@@ -4,7 +4,7 @@ interface
 
 uses
   System.SysUtils, System.Classes, System.IOUtils, System.JSON, DUnitX.TestFramework,
-  UVScan.Pids, UVScan.Dtc, UVScan.Settings, UVScan.JsonFile;
+  UVScan.Pids, UVScan.Dtc, UVScan.Settings, UVScan.JsonFile, UVScan.Update;
 
 type
   [TestFixture]
@@ -35,6 +35,14 @@ type
     [Test] procedure MissingFileGivesDefaults;
     [Test] procedure CorruptFileIsSetAside;
     [Test] procedure PartialFileKeepsDefaults;
+  end;
+
+  [TestFixture]
+  TUpdateTests = class
+  public
+    [Test] procedure ComparesVersions;
+    [Test] procedure ParsesGitHubRelease;
+    [Test] procedure SkipsDraftsAndJunk;
   end;
 
 implementation
@@ -230,6 +238,8 @@ begin
     A.Window.Maximized := True;
     A.Window.PidPanelWidth := 380;
     A.Window.Saved := True;
+    A.CheckUpdates := False;
+    A.UpdateChecked := EncodeDate(2026, 10, 12) + EncodeTime(9, 30, 0, 0);
     A.SaveToFile(TempFile('settings.json'));
     Assert.IsFalse(FileExists(TempFile('settings.json.tmp')));
 
@@ -246,6 +256,8 @@ begin
     Assert.AreEqual(1000, B.Window.Width);
     Assert.IsTrue(B.Window.Maximized);
     Assert.AreEqual(380, B.Window.PidPanelWidth);
+    Assert.IsFalse(B.CheckUpdates);
+    Assert.AreEqual(A.UpdateChecked, B.UpdateChecked, 1 / 86400);
   finally
     A.Free;
     B.Free;
@@ -264,6 +276,8 @@ begin
     Assert.AreEqual(115200, S.Baud);
     Assert.AreEqual(Ord(ssFast), Ord(S.StreamSpeed));
     Assert.IsFalse(S.Window.Saved);
+    Assert.IsTrue(S.CheckUpdates);
+    Assert.IsTrue(S.UpdateChecked = 0);
   finally
     S.Free;
   end;
@@ -349,9 +363,53 @@ begin
   end;
 end;
 
+{ TUpdateTests }
+
+procedure TUpdateTests.ComparesVersions;
+begin
+  Assert.AreEqual(0, CompareVersions('2.0.0', '2.0.0'));
+  Assert.AreEqual(0, CompareVersions('v2.1', '2.1.0'));
+  Assert.AreEqual(1, CompareVersions('2.0.1', '2.0.0'));
+  Assert.AreEqual(-1, CompareVersions('2.0.0', '2.1.0'));
+  Assert.AreEqual(1, CompareVersions('2.10.0', '2.9.0'));
+  Assert.AreEqual(1, CompareVersions('V3', '2.99.99'));
+  Assert.AreEqual(-1, CompareVersions('', '0.0.1'));
+end;
+
+procedure TUpdateTests.ParsesGitHubRelease;
+const
+  Json = '{"tag_name":"v2.1.0","html_url":"https://github.com/jdredd87/UVSCAN/releases/tag/v2.1.0",' +
+    '"draft":false,"prerelease":false,"body":"Faster scans.","assets":[' +
+    '{"name":"UVScan-2.1.0-build120-setup.exe","browser_download_url":"https://x/setup.exe","size":6000000},' +
+    '{"name":"UVScan-2.1.0.apk","browser_download_url":"https://x/app.apk"}]}';
+var
+  Info: TUpdateInfo;
+begin
+  Assert.IsTrue(ParseRelease(Json, Info));
+  Assert.AreEqual('2.1.0', Info.Version);
+  Assert.AreEqual('https://github.com/jdredd87/UVSCAN/releases/tag/v2.1.0', Info.PageUrl);
+  Assert.AreEqual('UVScan-2.1.0-build120-setup.exe', Info.SetupName);
+  Assert.AreEqual('https://x/setup.exe', Info.SetupUrl);
+  Assert.AreEqual('https://x/app.apk', Info.ApkUrl);
+  Assert.AreEqual('Faster scans.', Info.Notes);
+end;
+
+procedure TUpdateTests.SkipsDraftsAndJunk;
+var
+  Info: TUpdateInfo;
+begin
+  Assert.IsFalse(ParseRelease('{"tag_name":"v9.0.0","draft":true}', Info));
+  Assert.IsFalse(ParseRelease('{"tag_name":"v9.0.0","prerelease":true}', Info));
+  Assert.IsFalse(ParseRelease('{"message":"Not Found"}', Info));
+  Assert.IsFalse(ParseRelease('<html>', Info));
+  Assert.IsTrue(ParseRelease('{"tag_name":"2.0.1","assets":[]}', Info));
+  Assert.AreEqual('', Info.SetupUrl);
+end;
+
 initialization
   TDUnitX.RegisterTestFixture(TPidJsonTests);
   TDUnitX.RegisterTestFixture(TDtcJsonTests);
   TDUnitX.RegisterTestFixture(TSettingsTests);
+  TDUnitX.RegisterTestFixture(TUpdateTests);
 
 end.

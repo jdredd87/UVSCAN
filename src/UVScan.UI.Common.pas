@@ -178,6 +178,8 @@ procedure HookBackGesture;
 procedure MoveAppToBack;
 { Opens a web address in the browser. }
 procedure OpenUrl(const Url: string);
+{ Windows: starts a program (False if it could not); elsewhere False. }
+function RunProgram(const FileName: string; const Params: string = ''): Boolean;
 
 implementation
 
@@ -316,6 +318,15 @@ end;
 function ShellExecuteW(Wnd: THandle; Operation, FileName, Parameters, Directory: PChar;
   ShowCmd: Integer): THandle; stdcall; external 'shell32.dll';
 {$ENDIF}
+
+function RunProgram(const FileName, Params: string): Boolean;
+begin
+  {$IFDEF MSWINDOWS}
+  Result := ShellExecuteW(0, 'open', PChar(FileName), PChar(Params), nil, 1 {SW_SHOWNORMAL}) > 32;
+  {$ELSE}
+  Result := False;
+  {$ENDIF}
+end;
 
 procedure OpenUrl(const Url: string);
 begin
