@@ -14,7 +14,7 @@
   since the last release. -DryRun stops before the tag.
 #>
 param([string]$Notes = '', [switch]$DryRun)
-$ErrorActionPreference = 'Stop'
+$ErrorActionPreference = 'Continue' # git and gh write to stderr; their exit codes are checked
 $root = Split-Path -Parent $PSScriptRoot
 Set-Location $root
 function Fail($msg) { Write-Host "release: $msg"; exit 1 }
@@ -30,7 +30,8 @@ if (git status --porcelain --untracked-files=no) { Fail 'commit (or undo) the ch
 git fetch -q origin
 if ((git rev-parse HEAD) -ne (git rev-parse '@{u}')) { Fail 'push first (or pull): this is not what GitHub has' }
 if (git tag -l $tag) { Fail "$tag exists already: change AppVersion" }
-if (gh release view $tag 2>$null) { Fail "the release $tag exists already" }
+gh release view $tag *> $null
+if ($LASTEXITCODE -eq 0) { Fail "the release $tag exists already" }
 
 cmd /c build.cmd
 if ($LASTEXITCODE -ne 0) { Fail 'build or tests failed' }
@@ -48,7 +49,7 @@ if ($Notes) {
   $text = "UVScan $ver (build $build).`n`n" +
     "**Windows:** download ``UVScan-$ver-build$build-setup.exe`` below and run it. " +
     "Already have UVScan? It offers the update itself (*More > About*), and your PIDs, lists, settings and logs stay.`n"
-  $prev = git describe --tags --abbrev=0 2>$null
+  $prev = git describe --tags --abbrev=0 --match 'v*' 2>$null
   if ($LASTEXITCODE -eq 0 -and $prev) {
     $log = git log --pretty='- %s' "$prev..HEAD"
     $text += "`n### Changes since $prev`n`n" + ($log -join "`n") + "`n"
