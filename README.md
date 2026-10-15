@@ -15,13 +15,14 @@ It is a rewrite of the 2008 UVSCAN (Delphi 2007, kept in [`legacy/`](legacy) for
 - **Dashboard** — dial, bar and big‑number gauges using the same alert levels; several dashboards (one for each built‑in scan list), **full screen** as a virtual dash, one gauge filling the screen, and quick buttons on a tapped gauge to move or edit it.
 - **Quick start** — one tap (or a desktop shortcut) to pick a scan list and dashboard, connect, scan, log and go full screen, retrying until the car answers.
 - **Test display** — made‑up values sweep every PID through its range so colours, alerts and gauges can be tried without a car.
-- **CSV logging** — F8 start / stop, F9 pause.
+- **CSV logging** — F8 start / stop (also on the *Live* and *Gauges* bars), F9 pause, the rows written counted in the status strip.
 - **Log viewer** — logs as a chart (lanes, or overlaid with each channel on its own scale) and a grid on one cursor, with real‑time playback at 0.25×‑20×, zoom and pan, alert colours on the line and in the grid, and saved views (e.g. *MPH vs RPM vs IAT*).
 - **Vehicle & codes** — VIN, PCM OS ID, AVT firmware; trouble codes from every module, clear codes.
 - **Real‑time controls** — GM device control (mode $AE): lamps, cooling fan, EVAP vent and fuel trim reset found and checked on a bench PCM, plus your own commands (on / off, hold to run, value, one‑shot).
 - **PID tools** — PID editor with live formula check, import of old `PIDS.csv`, named scan lists, PID support test, and a search of the PCM for every PID it answers.
 - **Network AVT** — an AVT with an Ethernet port (or behind a serial‑to‑network adapter) over TCP/IP, from Windows or a phone.
-- **ELM327 adapters** — Bluetooth (a phone or a PC), USB or Wi‑Fi, with the same DPID streaming at about 10 updates a second; only the AVT's analog inputs are missing.
+- **ELM327 adapters** — Bluetooth (a phone or a PC), USB or Wi‑Fi, with the same DPID streaming at about 10 updates a second; only the AVT's analog inputs are missing. Tried with the vLinker FD over Bluetooth and a cheap Wi‑Fi clone, on a PC and on a phone.
+- **Installer and updates** — a Windows setup program on the [releases page](https://github.com/jdredd87/UVSCAN/releases/latest); UVScan checks for a newer release once a day and offers to install it (*More → About*).
 - **Simulator** — choose port *Simulator* to use everything without hardware, as an AVT or as an ELM327.
 
 | | |
@@ -29,6 +30,13 @@ It is a rewrite of the 2008 UVSCAN (Delphi 2007, kept in [`legacy/`](legacy) for
 | ![Dashboard](docs/images/dashboard.png) | ![Display and alerts](docs/images/display-alerts.png) |
 | ![Real-time controls](docs/images/controls.png) | ![PID editor](docs/images/pid-editor.png) |
 | ![Log viewer, overlay](docs/images/log-viewer-overlay.png) | ![Log viewer, lanes](docs/images/log-viewer-lanes.png) |
+
+Over a Wi‑Fi ELM327, on Windows and on a phone (a PCM on the bench, engine off):
+
+<p>
+<img src="docs/images/win-connect-wifi.png" width="560" alt="Connected to a Wi-Fi ELM327">
+<img src="docs/images/phone-live-wifi.png" width="180" alt="Scanning and logging over Wi-Fi on a phone">
+</p>
 
 On a phone, upright and sideways, and on a tablet:
 

@@ -26,7 +26,7 @@ UVScan reads live data, trouble codes and vehicle information from GM vehicles o
 - [Where things are stored](#where-things-are-stored)
 - [Troubleshooting](#troubleshooting)
 
-All screenshots and clips were taken with the built‑in **Simulator**, so the values are made up (it drives a pretend car, so they behave like real ones). The clips are short animations; click one to open it as a video you can pause and scrub. More of them, for both platforms, are on the [wiki](https://github.com/jdredd87/UVSCAN/wiki/Demos).
+Nearly all screenshots and clips were taken with the built‑in **Simulator**, so the values are made up (it drives a pretend car, so they behave like real ones); the Wi‑Fi adapter ones are from a real adapter and a PCM on the bench, engine off. The clips are short animations; click one to open it as a video you can pause and scrub. More of them, for both platforms, are on the [wiki](https://github.com/jdredd87/UVSCAN/wiki/Demos).
 
 ---
 
@@ -36,7 +36,9 @@ All screenshots and clips were taken with the built‑in **Simulator**, so the v
 
 **Android:** install `UVScan.apk` (allow installs from the app that opens it, a file manager say).
 
-**Updates:** once a day, a few seconds after it starts, UVScan asks GitHub whether there is a newer release. If there is, it says what is new and offers to install it: on Windows it downloads the setup program, runs it and closes so it can be replaced (your data and logs stay); on a phone it opens the release page. While a scan or a log is running it only shows a notice, so a drive is never interrupted. *More → About* shows what the last check found, has **Check now**, and **Check for updates at start** turns the daily check off (nothing is sent but the request for the latest release).
+**Updates:** once a day, a few seconds after it starts, UVScan asks GitHub whether there is a newer release. If there is, it says what is new and offers to install it: on Windows it downloads the setup program, runs it and closes so it can be replaced (your data and logs stay); on a phone it opens the release page. While a scan or a log is running it only shows a notice, so a drive is never interrupted. *More → About* shows what the last check found, has **Check now**, and **Check for updates at start** turns the daily check off (nothing is sent but the request for the latest release). On an adapter's own Wi‑Fi there is no internet, so the check says *no internet connection* and tries again the next time UVScan starts.
+
+![Asking to install a newer UVScan](images/win-update.png)
 
 ## The main window
 
@@ -54,6 +56,8 @@ Windows and Android share one layout:
 On a wide window (about 1000 pixels and up — a big Windows window, or a tablet held sideways) the PID list stays docked on the left beside the pages (drag the splitter to size it) and the *Live* and *Gauges* pages show their buttons in a bar; on a phone or a narrow window those buttons are in the **⋮** menu.
 
 **More room for the pages:** the **‹** button at the end of the *Scan list* row (or the button at the left of the top bar, **Ctrl + L**, or **⋮ → PID list beside the pages**) puts the PID list away, also while scanning, and gives it a page of its own, **PIDs** in the tab bar, as on a phone. The **›** strip down the left edge (or the same top bar button, or Ctrl + L) brings it back. UVScan remembers which you chose.
+
+![The PID list put away while scanning and logging](images/win-pids-hidden.png)
 
 A phone works upright or sideways. Held sideways (a short, wide screen) the tab bar moves down the left side so the pages keep their height, the PID search sits beside the scan list, *Real‑time controls* shows the selected control beside the list, the gauge editor keeps its preview beside the fields, and the log viewer puts its log box in the top bar, playback on one row and the chart beside *Channels | Data*.
 
@@ -113,6 +117,20 @@ Any ELM327 type adapter that supports **J1850 VPW** works: clones, OBDLink / STN
 
 Everything works as with the AVT (live data at about 10 updates a second, logging, dashboard, trouble codes, PID test and search, real‑time controls, VIN write) except the **analog inputs**, which are the AVT's own: an ELM327 scan leaves them empty. A Bluetooth or Wi‑Fi link can delay data a little now and then (a phone's Bluetooth more than a PC's); none of it is lost. The ELM327 has to stop listening for a moment every 2 seconds to send the "tester present" message that keeps the PCM streaming.
 
+#### A Wi‑Fi adapter
+
+Tried with a common clone (its network is *WIFI_OBDII*, open, and it says *ELM327 v1.5*): about 10 updates a second on a PC and on a phone, the same as Bluetooth. The adapter takes one connection at a time, so close UVScan on one device before connecting from another.
+
+- **Windows:** join *WIFI_OBDII* (Windows says *No internet*; that is right), then *ELM327*, *Network (TCP/IP)*, `192.168.0.10:35000`, **Connect**. A PC with a network cable keeps its internet through that; one with only Wi‑Fi has none while it is on the adapter.
+- **Android:** join *WIFI_OBDII* in the Wi‑Fi settings. The phone says *Internet may not be available*: choose **Keep Wi‑Fi connection** (it then stays on this network whenever it is in range; forget the network to undo that). Then the same as on Windows.
+
+![Connected to a Wi-Fi ELM327](images/win-connect-wifi.png)
+
+<p>
+<img src="images/phone-connect-wifi.png" width="240" alt="Connected to a Wi-Fi ELM327 on a phone">
+<img src="images/phone-live-wifi.png" width="240" alt="Scanning and logging over Wi-Fi on a phone">
+</p>
+
 ## Quick start
 
 When there is no time to set things up — at the drag strip, say — a **quick start** does it all in one go: picks a scan list and a dashboard, connects, starts scanning and a log, opens the dashboard full screen or the live chart, and can keep trying to connect until the adapter and car answer.
@@ -133,6 +151,8 @@ Quick starts are kept in `settings.json`. On a phone they are on the same menu (
 Tick PIDs on the *PIDs* page, or in the list on the left of a wide window (type in **Search PIDs…** to filter). The footer shows how many are ticked and how many of the PCM's 48 streaming bytes they use; it turns red when there are too many.
 
 The ticks are what the scan asks the PCM for, so they are locked while scanning (the check boxes fade, the footer says *locked*): **Stop scan**, change them, **Start scan**. Everything else stays usable while scanning: the search, *Display & alerts*, *Add to dashboard*, the rows' order and the PID list put away.
+
+<img src="images/phone-pids-locked.png" width="240" alt="The PID ticks locked while scanning">
 
 - **Test PIDs** asks the PCM about each ticked PID (or all of them) and shows *yes / no* in the *Test* column.
 - **Scan list** holds named selections such as *Misfires* or *Transmission*. Pick one to tick its PIDs, **Save as…** to store the current ticks under a name, **Delete** to remove a list. Lists only remember which PIDs, so fixing a PID's formula fixes it in every list.
@@ -270,6 +290,8 @@ The gauge editor shows the gauge at the top; drag **Try a value** to see it at a
 ## Logging
 
 While scanning, **Start log (F8)** (on the *Connect* page, the *Live* and *Gauges* bars, and their **⋮** menus) writes every update to a CSV file named `UVScan_<date>_<time>.csv` in the log folder (default *Documents\UVScan Logs*, change it in *More → Settings*). **Pause (F9)** stops writing rows without closing the file. While it logs, the status dot is red and the strip counts the rows written (*Logging: 1234 rows*). The first column is the time since the log started, then one column per PID with its units in the header.
+
+![Logging: Stop log on the Live bar, the row count in the status strip](images/win-live-logging.png)
 
 **On a phone, stay in UVScan while logging.** Android lets an app it is not showing run for only a short while before pausing it, which would cut the stream off part‑way. So when you switch to another app (or the screen turns off) UVScan waits; if you are not back within the time set in *Settings → Logging* (**Stop and disconnect when away for**, 15 seconds unless you change it), it closes the log, stops the scan, releases any held controls and disconnects. The rows recorded until then stay in the log. While you are away a notification says UVScan is still connected, scanning or logging and how long it will wait (tap it to go back); if the time runs out it changes to say what was stopped. When you come back the notification goes and a notice in UVScan says what was stopped (even if Android has closed UVScan meanwhile); connect and start again. Back sooner, and everything just carries on. Android 13 and later ask once, the first time you connect, whether UVScan may show notifications. Keep the screen on (*Settings → Appearance*) so it does not turn off by itself mid‑drive.
 
@@ -422,6 +444,10 @@ Each PID that answers is listed with its size, raw value and what it is already 
 ## About
 
 *More → About* shows the version (also in the Windows title bar, e.g. *UVScan 2.0.0 (build 98)*, and under *About* in the *More* list), who wrote UVScan, the source code on GitHub, and what this copy runs on. **Copy version info** puts that on the clipboard, for a bug report. The first line in *Messages* says the same. Under *Updates*: what the last update check found, **Check now** (or **Install 2.1.0** when there is a newer one) and **Check for updates at start** (see [Installing](#installing)).
+
+![About](images/win-about.png)
+
+<img src="images/phone-about.png" width="240" alt="About on a phone">
 
 ## Messages
 
