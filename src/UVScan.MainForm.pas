@@ -2012,8 +2012,10 @@ begin
   SaveSettings;
   FUpdateFound := CompareVersions(Info.Version, AppVersion) > 0;
   if FUpdateFound then
-  begin
     FUpdate := Info;
+  ShowUpdateStatus; // before the question: on Windows it waits for the answer
+  if FUpdateFound then
+  begin
     AddMessage(Format('Update check: UVScan %s is out (this is %s), %s', [Info.Version, AppVersion, Info.PageUrl]));
     if (FState in [esScanning, esBusy]) or FLogging then
       ShowNotice(Format('UVScan %s is out: More > About to install it', [Info.Version]), False)
@@ -2026,7 +2028,6 @@ begin
     if Manual then
       ShowNotice('This is the latest version', False);
   end;
-  ShowUpdateStatus;
 end;
 
 function TMainForm.CanInstallUpdate: Boolean;

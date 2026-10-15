@@ -44,6 +44,7 @@ type
     [Test] procedure ParsesGitHubRelease;
     [Test] procedure SkipsDraftsAndJunk;
     [Test] procedure PicksTheHighlights;
+    [Test] procedure SaysNoInternet;
   end;
 
 implementation
@@ -416,6 +417,17 @@ begin
   Assert.AreEqual('- Faster DPID scans'#13#10'- Log viewer: zoom', ReleaseHighlights(Notes));
   Assert.AreEqual('', ReleaseHighlights('Just text, no headings.'));
   Assert.AreEqual('- a'#13#10'...', ReleaseHighlights('# What''s new'#10'- a'#10'- b'#10'- c', 1));
+end;
+
+procedure TUpdateTests.SaysNoInternet;
+begin
+  Assert.AreEqual('no internet connection', FriendlyNetError('java.net.UnknownHostException: Unable to resolve ' +
+    'host "api.github.com": No address associated with hostname'));
+  Assert.AreEqual('no internet connection', FriendlyNetError('Error sending data: (12007) The server name or ' +
+    'address could not be resolved'));
+  Assert.AreEqual('GitHub did not answer in time', FriendlyNetError('Error receiving data: (12002) The operation ' +
+    'timed out'));
+  Assert.AreEqual('GitHub answered 500 Server Error', FriendlyNetError('GitHub answered 500 Server Error'));
 end;
 
 initialization

@@ -30,6 +30,9 @@ function CompareVersions(const A, B: string): Integer;
   the first heading that says "new" or "change" (### What's new, ### Changes
   since v2.0.0), as plain text, at most MaxLines lines; '' if there is none. }
 function ReleaseHighlights(const Notes: string; MaxLines: Integer = 12): string;
+{ An HTTP error in words a user follows: no internet (a phone on an ELM327's
+  own Wi-Fi, say) or no answer in time; anything else as it is. }
+function FriendlyNetError(const Msg: string): string;
 { The GitHub API's answer for one release. False if it is not one. }
 function ParseRelease(const Json: string; out Info: TUpdateInfo): Boolean;
 { Asks GitHub (waits; not in the main thread). False with Error when it
@@ -154,6 +157,24 @@ begin
   end;
 end;
 
+function FriendlyNetError(const Msg: string): string;
+const
+  // Android (Java) and Windows (WinHTTP 12007 name not resolved, 12029 cannot connect)
+  NoNet: array[0..6] of string = ('UnknownHost', 'resolve', 'No address associated', 'unreachable',
+    'ConnectException', '12007', '12029');
+  Slow: array[0..2] of string = ('timed out', 'timeout', '12002');
+var
+  S: string;
+begin
+  for S in NoNet do
+    if Msg.Contains(S) or LowerCase(Msg).Contains(LowerCase(S)) then
+      Exit('no internet connection');
+  for S in Slow do
+    if LowerCase(Msg).Contains(LowerCase(S)) then
+      Exit('GitHub did not answer in time');
+  Result := Msg;
+end;
+
 function NewClient(const UserAgent: string): THTTPClient;
 begin
   Result := THTTPClient.Create;
@@ -187,7 +208,7 @@ begin
     end;
   except
     on E: Exception do
-      Error := E.Message;
+      Error := FriendlyNetError(E.Message);
   end;
 end;
 
@@ -246,7 +267,7 @@ begin
         end;
       except
         on E: Exception do
-          Error := E.Message;
+          Error := FriendlyNetError(E.Message);
       end;
       if (Error <> '') and FileExists(Part) then
         DeleteFile(Part);
