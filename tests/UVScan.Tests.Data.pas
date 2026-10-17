@@ -5,7 +5,7 @@ unit UVScan.Tests.Data;
 interface
 
 uses
-  System.SysUtils, System.Classes, System.JSON, DUnitX.TestFramework,
+  System.SysUtils, System.Classes, System.JSON, System.IOUtils, DUnitX.TestFramework,
   UVScan.Pids, UVScan.LegacyImport, UVScan.PidLists, UVScan.Defaults, UVScan.Dtc, UVScan.JsonFile;
 
 type
@@ -33,8 +33,17 @@ type
 
   [TestFixture]
   TDefaultsTests = class
+  private
+    FDir: string;
+    function CatalogJson(C: TPidCatalog): string;
   public
+    [Setup] procedure Setup;
+    [TearDown] procedure TearDown;
     [Test] procedure BuiltInDataIsValid;
+    [Test] procedure UpdateAddsNewPidsNotDeletedOnes;
+    [Test] procedure UpdateCorrectsOnlyUntouchedPids;
+    [Test] procedure UpdateLeavesUnreadablePidsFileAlone;
+    [Test] procedure UpdateBringsNewAndCorrectedDtcs;
   end;
 
 implementation
@@ -398,6 +407,167 @@ begin
     Pids.Free;
     Dtcs.Free;
     Lists.Free;
+  end;
+end;
+
+procedure TDefaultsTests.Setup;
+begin
+  FDir := TPath.Combine(TPath.GetTempPath, 'UVScanDefaults' + IntToStr(Random(1000000)));
+  ForceDirectories(FDir);
+end;
+
+procedure TDefaultsTests.TearDown;
+begin
+  TDirectory.Delete(FDir, True);
+end;
+
+function TDefaultsTests.CatalogJson(C: TPidCatalog): string;
+var
+  Root: TJSONObject;
+begin
+  Root := C.ToJson;
+  try
+    Result := Root.ToJSON;
+  finally
+    Root.Free;
+  end;
+end;
+
+procedure TDefaultsTests.UpdateAddsNewPidsNotDeletedOnes;
+var
+  F, Newer: string;
+  C, D: TPidCatalog;
+  P: TPidDef;
+  N: Integer;
+  Changes: TArray<string>;
+begin
+  F := TPath.Combine(FDir, 'pids.json');
+  C := TPidCatalog.Create;
+  D := TPidCatalog.Create;
+  try
+    // A file from before "builtIns", made from the defaults; the user deleted one.
+    C.LoadFromJsonText(DefaultPidsJson);
+    N := C.Count;
+    C.Delete(C.IndexOf(C.FindById(2)));
+    C.SaveToJsonFile(F);
+    Changes := UpdateBuiltInPids(F);
+    Assert.AreEqual(0, Integer(Length(Changes)), string.Join(', ', Changes));
+    C.LoadFromFile(F);
+    Assert.AreEqual(N - 1, C.Count);
+    Assert.AreEqual(N, C.BuiltIns.Count, 'the defaults it was made from are filled in');
+
+    // A newer UVScan ships one more PID.
+    D.LoadFromJsonText(DefaultPidsJson);
+    P := TPidDef.Create;
+    P.Assign(D.FindById(3));
+    P.Id := 9000;
+    P.LongName := 'Brand new PID';
+    P.ShortName := 'NEW';
+    P.PidCode := '1F00';
+    P.PidNumber := $1F00;
+    P.Mci := '';
+    D.Add(P);
+    Newer := CatalogJson(D);
+    Changes := UpdateBuiltInPids(F, Newer);
+    Assert.AreEqual(1, Integer(Length(Changes)), string.Join(', ', Changes));
+    Assert.Contains(Changes[0], 'Brand new PID');
+    C.LoadFromFile(F);
+    Assert.AreEqual(N, C.Count, 'the new one is added, the deleted one does not come back');
+    Assert.IsNull(C.FindById(2));
+    Assert.IsTrue(C.BuiltIns.ContainsKey('9000'));
+    Assert.AreEqual(0, Integer(Length(UpdateBuiltInPids(F, Newer))), 'only once');
+
+    // Deleted after it arrived: stays deleted.
+    C.Delete(C.IndexOf(FindMatchingPid(C, P)));
+    C.SaveToJsonFile(F);
+    Assert.AreEqual(0, Integer(Length(UpdateBuiltInPids(F, Newer))));
+    C.LoadFromFile(F);
+    Assert.AreEqual(N - 1, C.Count);
+  finally
+    D.Free;
+    C.Free;
+  end;
+end;
+
+procedure TDefaultsTests.UpdateCorrectsOnlyUntouchedPids;
+var
+  F, Newer, Rpm, Maf: string;
+  C, D: TPidCatalog;
+  Changes: TArray<string>;
+begin
+  F := TPath.Combine(FDir, 'pids.json');
+  C := TPidCatalog.Create;
+  D := TPidCatalog.Create;
+  try
+    TFile.WriteAllText(F, DefaultPidsJson);
+    UpdateBuiltInPids(F);
+    // The user changes one built-in PID and renumbers another (an import can).
+    C.LoadFromFile(F);
+    C.FindById(3).Units := 'my units';
+    C.FindById(2).Id := 5000;
+    C.SaveToJsonFile(F);
+
+    // A newer UVScan corrects both formulas.
+    D.LoadFromJsonText(DefaultPidsJson);
+    Rpm := '(' + D.FindById(2).FormulaText + ') * 1';
+    Maf := '(' + D.FindById(3).FormulaText + ') * 1';
+    D.FindById(2).FormulaText := Rpm;
+    D.FindById(3).FormulaText := Maf;
+    Newer := CatalogJson(D);
+    Changes := UpdateBuiltInPids(F, Newer);
+    Assert.AreEqual(1, Integer(Length(Changes)), string.Join(', ', Changes));
+    C.LoadFromFile(F);
+    Assert.AreEqual(Rpm, C.FindById(5000).FormulaText, 'untouched copy corrected, its id kept');
+    Assert.AreEqual('my units', C.FindById(3).Units);
+    Assert.AreNotEqual(Maf, C.FindById(3).FormulaText, 'a PID the user changed stays theirs');
+    Assert.AreEqual(0, Integer(Length(UpdateBuiltInPids(F, Newer))), 'only once');
+  finally
+    D.Free;
+    C.Free;
+  end;
+end;
+
+procedure TDefaultsTests.UpdateLeavesUnreadablePidsFileAlone;
+var
+  F, Before: string;
+begin
+  F := TPath.Combine(FDir, 'pids.json');
+  Before := '{"version":1,"pids":[{"id":1,"name":"Ok","kind":"vehicle","pid":"000C","bytes":2},' +
+    '{"id":2,"name":"Bad","kind":"vehicle","pid":"000D","bytes":9}]}';
+  TFile.WriteAllText(F, Before);
+  Assert.AreEqual(0, Integer(Length(UpdateBuiltInPids(F))));
+  Assert.AreEqual(Before, TFile.ReadAllText(F), 'saving would have lost the entry it cannot read');
+end;
+
+procedure TDefaultsTests.UpdateBringsNewAndCorrectedDtcs;
+var
+  F, Newer: string;
+  T: TDtcCatalog;
+  Changes: TArray<string>;
+begin
+  F := TPath.Combine(FDir, 'dtcs.json');
+  T := TDtcCatalog.Create;
+  try
+    // The file as it is today: nothing to do but remember the defaults.
+    TFile.WriteAllText(F, DefaultDtcsJson);
+    Assert.AreEqual(0, Integer(Length(UpdateBuiltInDtcs(F))));
+    T.LoadFromFile(F);
+    Assert.IsTrue(T.DefaultsHash <> '');
+
+    T.AddOrSet('P0300', 'Old text');
+    T.AddOrSet('P9999', 'Added by hand');
+    T.SaveToJsonFile(F);
+    Newer := '{"version":1,"dtcs":[{"code":"P0300","description":"Random Misfire Detected"},' +
+      '{"code":"X0001","description":"A new one"}]}';
+    Changes := UpdateBuiltInDtcs(F, Newer);
+    Assert.AreEqual(2, Integer(Length(Changes)), string.Join(', ', Changes));
+    T.LoadFromFile(F);
+    Assert.AreEqual('Random Misfire Detected', T.Describe('P0300'));
+    Assert.AreEqual('A new one', T.Describe('X0001'));
+    Assert.AreEqual('Added by hand', T.Describe('P9999'));
+    Assert.AreEqual(0, Integer(Length(UpdateBuiltInDtcs(F, Newer))), 'only once');
+  finally
+    T.Free;
   end;
 end;
 

@@ -14,6 +14,8 @@ Everything UVScan reads or writes, apart from CSV logs, lives in **`C:\ProgramDa
 
 The repo's `data\` folder holds the factory defaults for `pids.json`, `dtcs.json`, `lists.json`, `display.json`, `controls.json` and `logviews.json`. They are compiled into `UVScan.exe` (`UVScan.Defaults.rc`), so a missing file is simply recreated at startup and a fresh install needs nothing but the exe.
 
+**After an update** UVScan brings your files up to date with its built-in data at startup, without undoing your own changes: new built-in PIDs, scan lists, chart views, dashboards and real-time controls are added (but never one you deleted), a corrected built-in PID replaces your copy only if you never changed it, and new or corrected trouble code descriptions go into `dtcs.json`. *Messages* lists what changed.
+
 The only CSV files UVScan writes are scan logs; the only CSV it reads is an old UVSCAN `PIDS.csv`, when you import one in the PID editor.
 
 ## pids.json
@@ -42,6 +44,8 @@ The only CSV files UVScan writes are scan logs; the only CSV it reads is an old 
 | `units`, `format` | Units text; `format` is a legacy printf‑style result format (`%f`, `%d`, …). |
 | `mci` | Unique name other formulas use as `%NAME%`. |
 | `enabled` | `false` keeps the entry but hides it from the PID list. |
+
+The file also has `"builtIns": { "1": "<hash>", … }`: the built-in PIDs it has been given (by their id in the factory file) and how each one was then. At startup UVScan adds a built-in PID not named there (unless you have one that matches), and gives a corrected one to your copy only while that copy is still exactly as it was given; a PID you changed or deleted stays as you left it. A file without `builtIns` gets them filled in from the current defaults, and nothing else changes. A `pids.json` with an entry UVScan cannot read is not touched (fix it in the PID editor). *Default PIDs* in the PID editor adds every built-in PID you do not have, deleted ones included.
 
 ## lists.json
 
@@ -136,8 +140,10 @@ The top‑level `"defaults"` number records which set of built‑ins the file ha
 ## dtcs.json
 
 ```json
-{ "version": 1, "dtcs": [ { "code": "P0300", "description": "Random/Multiple Cylinder Misfire Detected" } ] }
+{ "version": 1, "defaults": "<hash>", "dtcs": [ { "code": "P0300", "description": "Random/Multiple Cylinder Misfire Detected" } ] }
 ```
+
+`defaults` identifies the built-in list the file was last brought up to date with. When a newer UVScan has a different one, its codes are added or their descriptions corrected; codes only your file has stay.
 
 ## settings.json
 

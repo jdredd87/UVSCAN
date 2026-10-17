@@ -23,14 +23,33 @@ function DefaultLogViewsJson: string;
   files that were created. }
 function CreateMissingDataFiles: TArray<string>;
 
-{ Adds the built-in scan lists, log views and dashboards that lists.json,
-  logviews.json and display.json have not been given yet (each file names
-  those it has in "builtIns"), so an update brings the new ones and never
-  brings back one the user deleted. PIDs are matched to this install's
-  pids.json by kind, PID code and name. Returns what was added, for Messages. }
+{ Brings the data files up to date with this UVScan's built-in data, so an
+  update brings what is new and never brings back what the user deleted:
+  the PIDs (UpdateBuiltInPids, first, so the rest can use new ones), then the
+  scan lists, log views and dashboards that lists.json, logviews.json and
+  display.json have not been given yet (each file names those it has in
+  "builtIns"; their PIDs are matched to this install's pids.json by kind, PID
+  code and name), and the trouble code descriptions (UpdateBuiltInDtcs).
+  Returns what changed, as sentences for Messages. }
 function AddNewBuiltIns: TArray<string>;
-{ The same for these files (tests). }
+{ The same for these files (tests), without the trouble codes. }
 function AddNewBuiltInsTo(const PidsName, ListsName, ViewsName, DisplayName: string): TArray<string>;
+
+{ pids.json remembers the built-in PIDs it has been given and how each was
+  then (TPidCatalog.BuiltIns). A built-in PID it has not been given is added
+  (unless it has one that matches); one that has been corrected since is
+  given the correction only where the file's copy is still exactly as it was
+  given, so a PID the user changed or deleted stays as they left it. A file
+  from before has its "builtIns" filled in with these defaults and nothing
+  else changes. A file with entries UVScan cannot read is left alone (saving
+  it would lose them). DefaultsJson: the built-in pids.json ('' = this
+  UVScan's). }
+function UpdateBuiltInPids(const PidsName: string; const DefaultsJson: string = ''): TArray<string>;
+
+{ dtcs.json has no editor in UVScan: when the built-in descriptions are not
+  the ones it was last updated from (its "defaults" hash), new and corrected
+  codes go in and codes only the file has stay. }
+function UpdateBuiltInDtcs(const DtcsName: string; const DefaultsJson: string = ''): TArray<string>;
 
 { The catalog's PID for a built-in example: an enabled vehicle PID with this
   code (and this short name, if given), preferring these units; -1 if none. }
@@ -39,8 +58,8 @@ function ResolvePid(Catalog: TPidCatalog; const PidCode, Units, Name: string): I
 implementation
 
 uses
-  System.Types, System.Classes, System.JSON, UVScan.Paths, UVScan.JsonFile, UVScan.PidLists,
-  UVScan.LogViews, UVScan.Display;
+  System.Types, System.Classes, System.JSON, System.Hash, UVScan.Paths, UVScan.JsonFile,
+  UVScan.PidLists, UVScan.LogViews, UVScan.Display, UVScan.Dtc, UVScan.LegacyImport;
 
 const
   // What the first releases had, whose files don't say.
@@ -184,7 +203,7 @@ begin
       if Ids <> nil then
       begin
         Lists.Put(Name, Ids);
-        Result := Result + [Format('scan list "%s"', [Name])];
+        Result := Result + [Format('Added the built-in scan list "%s"', [Name])];
       end;
     end;
     if Changed then
@@ -235,7 +254,7 @@ begin
       if (Mine >= 0) and IsFirstKnockCheck(Views[Mine]) then
       begin
         Views.Put(Defaults[I]);
-        Result := Result + [Format('chart view "%s" (fixed for live scans)', [Name])];
+        Result := Result + [Format('Fixed the built-in chart view "%s" for live scans', [Name])];
         Changed := True;
         Continue;
       end;
@@ -246,7 +265,7 @@ begin
       if Mine < 0 then
       begin
         Views.Put(Defaults[I]);
-        Result := Result + [Format('chart view "%s"', [Name])];
+        Result := Result + [Format('Added the built-in chart view "%s"', [Name])];
       end;
     end;
     if Changed then
@@ -319,7 +338,7 @@ begin
       K := Mine.AddDashboard(Name);
       for J := 0 to Builtin.Dashboards[I].Gauges.Count - 1 do
         Mine.Dashboards[K].Gauges.Add(Builtin.Dashboards[I].Gauges[J]);
-      Result := Result + [Format('dashboard "%s"', [Name])];
+      Result := Result + [Format('Added the built-in dashboard "%s"', [Name])];
     end;
     if Changed then
       Mine.SaveToFile(DisplayName);
@@ -330,9 +349,143 @@ begin
   end;
 end;
 
-function AddNewBuiltInsTo(const PidsName, ListsName, ViewsName, DisplayName: string): TArray<string>;
+function UpdateBuiltInPids(const PidsName, DefaultsJson: string): TArray<string>;
+var
+  Root: TJSONObject;
+  Arr: TJSONArray;
+  Mine, Builtin, Added: TPidCatalog;
+  D, P: TPidDef;
+  I, J, KeepId: Integer;
+  Key, Given, Current: string;
+  Changed: Boolean;
 begin
   Result := nil;
+  if not FileExists(PidsName) then
+    Exit;
+  Mine := TPidCatalog.Create;
+  Builtin := TPidCatalog.Create;
+  Added := TPidCatalog.Create;
+  try
+    Root := ReadJsonObject(PidsName);
+    try
+      Mine.LoadFromJson(Root);
+      Arr := JArr(Root, 'pids');
+      if (Arr = nil) or (Arr.Count <> Mine.Count) then
+        Exit;
+    finally
+      Root.Free;
+    end;
+    if DefaultsJson = '' then
+      Builtin.LoadFromJsonText(DefaultPidsJson)
+    else
+      Builtin.LoadFromJsonText(DefaultsJson);
+
+    if Mine.BuiltIns.Count = 0 then
+    begin
+      // Made from these defaults (they did not change while files had no
+      // "builtIns"); any it lacks were deleted.
+      for I := 0 to Builtin.Count - 1 do
+        Mine.BuiltIns.AddOrSetValue(IntToStr(Builtin[I].Id), Builtin[I].Fingerprint);
+      Mine.SaveToJsonFile(PidsName);
+      Exit;
+    end;
+
+    Changed := False;
+    for I := 0 to Builtin.Count - 1 do
+    begin
+      D := Builtin[I];
+      Key := IntToStr(D.Id);
+      Current := D.Fingerprint;
+      if not Mine.BuiltIns.TryGetValue(Key, Given) then
+      begin
+        if FindMatchingPid(Mine, D) = nil then
+        begin
+          P := TPidDef.Create;
+          P.Assign(D);
+          Added.Add(P);
+        end;
+      end
+      else if Given <> Current then
+      begin
+        for J := 0 to Mine.Count - 1 do
+          if Mine[J].Fingerprint = Given then
+          begin
+            KeepId := Mine[J].Id;
+            Mine[J].Assign(D);
+            Mine[J].Id := KeepId;
+            Result := Result + [Format('Corrected the built-in PID "%s"', [D.LongName])];
+            Break;
+          end;
+      end
+      else
+        Continue;
+      Mine.BuiltIns.AddOrSetValue(Key, Current);
+      Changed := True;
+    end;
+    if Added.Count > 0 then
+    begin
+      MergeCatalog(Mine, Added, mmAddNew);
+      for I := 0 to Added.Count - 1 do
+        Result := Result + [Format('Added the built-in PID "%s"', [Added[I].LongName])];
+    end;
+    if Changed then
+      Mine.SaveToJsonFile(PidsName);
+  finally
+    Added.Free;
+    Builtin.Free;
+    Mine.Free;
+  end;
+end;
+
+function UpdateBuiltInDtcs(const DtcsName, DefaultsJson: string): TArray<string>;
+var
+  Mine, Builtin: TDtcCatalog;
+  Json, Hash, Code, Text: string;
+  Added, Fixed: Integer;
+begin
+  Result := nil;
+  if not FileExists(DtcsName) then
+    Exit;
+  Json := DefaultsJson;
+  if Json = '' then
+    Json := DefaultDtcsJson;
+  Hash := THashMD5.GetHashString(Json);
+  Mine := TDtcCatalog.Create;
+  Builtin := TDtcCatalog.Create;
+  try
+    Mine.LoadFromFile(DtcsName);
+    // Warnings: entries it could not read, which saving would lose.
+    if (Mine.DefaultsHash = Hash) or (Mine.Warnings.Count > 0) then
+      Exit;
+    Builtin.LoadFromJsonText(Json);
+    Added := 0;
+    Fixed := 0;
+    for Code in Builtin.Codes do
+    begin
+      Text := Mine.Describe(Code);
+      if Text = Builtin.Describe(Code) then
+        Continue;
+      if Text = '' then
+        Inc(Added)
+      else
+        Inc(Fixed);
+      Mine.AddOrSet(Code, Builtin.Describe(Code));
+    end;
+    Mine.DefaultsHash := Hash;
+    Mine.SaveToJsonFile(DtcsName);
+    if Added > 0 then
+      Result := Result + [Format('Added %d built-in trouble code description(s)', [Added])];
+    if Fixed > 0 then
+      Result := Result + [Format('Corrected %d built-in trouble code description(s)', [Fixed])];
+  finally
+    Builtin.Free;
+    Mine.Free;
+  end;
+end;
+
+function AddNewBuiltInsTo(const PidsName, ListsName, ViewsName, DisplayName: string): TArray<string>;
+begin
+  Result := UpdateBuiltInPids(PidsName);
   if FileExists(ListsName) and FileExists(PidsName) then
     Result := Result + AddNewLists(PidsName, ListsName);
   if FileExists(ViewsName) then
@@ -343,7 +496,8 @@ end;
 
 function AddNewBuiltIns: TArray<string>;
 begin
-  Result := AddNewBuiltInsTo(PidsFile, ListsFile, LogViewsFile, DisplayFile);
+  Result := AddNewBuiltInsTo(PidsFile, ListsFile, LogViewsFile, DisplayFile) +
+    UpdateBuiltInDtcs(DtcsFile);
 end;
 
 end.

@@ -66,6 +66,9 @@ type
     function TidyDecimals: Integer;
     function DisplayName: string;
     function ToJson: TJSONObject;
+    { The definition without its id, hashed: equal for two PIDs that read and
+      show the same thing the same way (see TPidCatalog.BuiltIns). }
+    function Fingerprint: string;
   end;
 
   TPidProblem = record
@@ -79,6 +82,7 @@ type
     FWarnings: TStringList;
     FProblems: TList<TPidProblem>;
     FEntry: Integer;
+    FBuiltIns: TDictionary<string, string>;
     procedure Problem(P: TPidDef; const Where, Text: string);
     function GetProblems: TArray<TPidProblem>;
     function GetCount: Integer;
@@ -109,6 +113,10 @@ type
     { Problem texts from the last load (same as Problems[].Text). }
     property Warnings: TStringList read FWarnings;
     property Problems: TArray<TPidProblem> read GetProblems;
+    { The built-in PIDs this file has been given: default PID id -> the
+      Fingerprint it had then. Empty for a file from before (see
+      UVScan.Defaults.UpdateBuiltInPids). }
+    property BuiltIns: TDictionary<string, string> read FBuiltIns;
   end;
 
 const
@@ -126,7 +134,7 @@ const
 implementation
 
 uses
-  System.Math, System.StrUtils, UVScan.JsonFile;
+  System.Math, System.StrUtils, System.Hash, System.Generics.Defaults, UVScan.JsonFile;
 
 { TPidDef }
 
@@ -229,6 +237,19 @@ begin
   Opt('units', Units);
   Opt('format', ResultFormat);
   Opt('mci', Mci);
+end;
+
+function TPidDef.Fingerprint: string;
+var
+  J: TJSONObject;
+begin
+  J := ToJson;
+  try
+    J.RemovePair('id').Free;
+    Result := THashMD5.GetHashString(J.ToJSON);
+  finally
+    J.Free;
+  end;
 end;
 
 function TPidDef.DisplayName: string;
@@ -373,6 +394,7 @@ begin
   FItems := TObjectList<TPidDef>.Create(True);
   FWarnings := TStringList.Create;
   FProblems := TList<TPidProblem>.Create;
+  FBuiltIns := TDictionary<string, string>.Create;
   FEntry := -1;
 end;
 
@@ -381,6 +403,7 @@ begin
   FItems.Free;
   FWarnings.Free;
   FProblems.Free;
+  FBuiltIns.Free;
   inherited;
 end;
 
@@ -522,13 +545,21 @@ var
   I: Integer;
   P: TPidDef;
   Where: string;
+  Given: TJSONValue;
+  Pair: TJSONPair;
 begin
   FItems.Clear;
   FWarnings.Clear;
   FProblems.Clear;
+  FBuiltIns.Clear;
   FEntry := -1;
   if JInt(Root, 'version', PidFileVersion) > PidFileVersion then
     Problem(nil, '', 'pids.json was written by a newer UVScan; unknown fields are ignored');
+  Given := Root.GetValue('builtIns');
+  if Given is TJSONObject then
+    for Pair in TJSONObject(Given) do
+      if Pair.JsonValue is TJSONString then
+        FBuiltIns.AddOrSetValue(Pair.JsonString.Value, Pair.JsonValue.Value);
   Arr := JArr(Root, 'pids');
   if Arr = nil then
   begin
@@ -594,6 +625,9 @@ function TPidCatalog.ToJson: TJSONObject;
 var
   Arr: TJSONArray;
   P: TPidDef;
+  Given: TJSONObject;
+  Keys: TArray<string>;
+  Key: string;
 begin
   Result := TJSONObject.Create;
   Result.AddPair('version', TJSONNumber.Create(PidFileVersion));
@@ -601,6 +635,21 @@ begin
   Result.AddPair('pids', Arr);
   for P in FItems do
     Arr.AddElement(P.ToJson);
+  if FBuiltIns.Count > 0 then
+  begin
+    Keys := FBuiltIns.Keys.ToArray;
+    TArray.Sort<string>(Keys, TComparer<string>.Construct(
+      function(const A, B: string): Integer
+      begin
+        Result := StrToIntDef(A, MaxInt) - StrToIntDef(B, MaxInt);
+        if Result = 0 then
+          Result := CompareStr(A, B);
+      end));
+    Given := TJSONObject.Create;
+    for Key in Keys do
+      Given.AddPair(Key, FBuiltIns[Key]);
+    Result.AddPair('builtIns', Given);
+  end;
 end;
 
 procedure TPidCatalog.SaveToJsonFile(const FileName: string);
@@ -619,6 +668,7 @@ procedure TPidCatalog.Assign(Source: TPidCatalog);
 var
   P: TPidDef;
   Copy_: TPidDef;
+  Key: string;
 begin
   FItems.Clear;
   FWarnings.Clear;
@@ -629,6 +679,9 @@ begin
     Copy_.Assign(P);
     FItems.Add(Copy_);
   end;
+  FBuiltIns.Clear;
+  for Key in Source.FBuiltIns.Keys do
+    FBuiltIns.Add(Key, Source.FBuiltIns[Key]);
 end;
 
 procedure TPidCatalog.Add(P: TPidDef);

@@ -3379,10 +3379,10 @@ begin
   end;
   try
     for F in AddNewBuiltIns do
-      AddMessage('Added the built-in ' + F);
+      AddMessage(F);
   except
     on E: Exception do
-      AddMessage('Could not add the new built-in scan lists and chart views: ' + E.Message);
+      AddMessage('Could not bring the data files up to date with the built-in data: ' + E.Message);
   end;
 
   try

@@ -43,7 +43,12 @@ For development, connect the IDE to the phone over Wi‑Fi (Developer options > 
 - Menus: FMX `TPopupMenu` does not show on Android; use `ShowActionMenu` / `ShowMenuAsActions` from `UVScan.UI.Common` (the page **⋮** menu uses them on both platforms).
 - `IsMobile` switches the few things that really differ on a phone or tablet: full-screen dialogs, no file dialogs, padding for the status and navigation bars, touch wording ("tap"), taller rows.
 
-The factory data in `data\` is compiled into the exe through `UVScan.Defaults.rc` (`UVScan.Defaults.res` is generated and not in git).
+The factory data in `data\` is compiled into the exe through `UVScan.Defaults.rc` (`UVScan.Defaults.res` is generated and not in git). At startup `AddNewBuiltIns` (`UVScan.Defaults`) brings an existing install's files up to date with it (see [data files](data-files.md#data-files)), so when changing `data\`:
+
+- `pids.json`: give a new PID a new `id` and never reuse the id of one taken out; installs know the built-ins by id. Fixing a built-in PID in place is fine: installs whose copy is unchanged get the fix.
+- `controls.json`: raise `"defaults"` when adding built-in controls, or installs will not get them.
+- `lists.json`, `logviews.json`, `display.json`: a new built-in needs a new name; changing an existing one does not reach installs that have it.
+- `dtcs.json`: any change reaches every install.
 
 ### Version
 
@@ -105,8 +110,8 @@ From an Android emulator the PC is `10.0.2.2`; a phone on USB can use `adb rever
 
 ```
 UVScanProbe COM9 raw [baud] [rtscts|none]   AVT init frames, raw bytes
-UVScanProbe COM9 run 5 1,3,12 [-notest] [-nodtc] [-speed 4]
-                                            connect, PID test, 5 s scan, DTC read (read-only)
+UVScanProbe COM9 run 5 1,3,12 [-notest] [-nodtc] [-speed 4] [-log f.csv] [-search 0000-00FF,1000-1FFF]
+                                            connect, PID test, (PID search,) 5 s scan (logged), DTC read (read-only)
 UVScanProbe COM9 rawscan | rates | multi    stream experiments (DPID slots and rates)
 UVScanProbe COM9 sweep 0000-00FF,1000-1FFF  list every PID the PCM answers (mode $22, read-only)
 UVScanProbe COM9 cpids 00 FF                device control survey: each CPID with all-zero data

@@ -3,6 +3,7 @@ unit UVScan.Dtc;
 (* Trouble code descriptions, stored as dtcs.json:
 
   { "version": 1,
+    "defaults": "<hash of the built-in list it was last updated from>",
     "dtcs": [
       { "code": "P0300", "description": "Random Misfire Detected" },
       ... ] } *)
@@ -18,6 +19,9 @@ type
     FItems: TDictionary<string, string>;
     FWarnings: TStringList;
   public
+    { "defaults": a hash of the built-in list this file was last brought up to
+      date with ('' = never; see UVScan.Defaults.UpdateBuiltInDtcs). }
+    DefaultsHash: string;
     constructor Create;
     destructor Destroy; override;
     procedure LoadFromFile(const FileName: string);
@@ -28,6 +32,7 @@ type
     procedure AddOrSet(const Code, Description: string);
     function Describe(const Code: string): string;
     function Count: Integer;
+    function Codes: TArray<string>;
     property Warnings: TStringList read FWarnings;
   end;
 
@@ -86,6 +91,7 @@ var
 begin
   FItems.Clear;
   FWarnings.Clear;
+  DefaultsHash := JStr(Root, 'defaults');
   if JInt(Root, 'version', DtcFileVersion) > DtcFileVersion then
     FWarnings.Add('dtcs.json was written by a newer UVScan; unknown fields are ignored');
   Arr := JArr(Root, 'dtcs');
@@ -115,16 +121,15 @@ end;
 function TDtcCatalog.ToJson: TJSONObject;
 var
   Arr: TJSONArray;
-  Codes: TArray<string>;
   Code: string;
   E: TJSONObject;
 begin
   Result := TJSONObject.Create;
   Result.AddPair('version', TJSONNumber.Create(DtcFileVersion));
+  if DefaultsHash <> '' then
+    Result.AddPair('defaults', DefaultsHash);
   Arr := TJSONArray.Create;
   Result.AddPair('dtcs', Arr);
-  Codes := FItems.Keys.ToArray;
-  TArray.Sort<string>(Codes);
   for Code in Codes do
   begin
     E := TJSONObject.Create;
@@ -160,6 +165,12 @@ end;
 function TDtcCatalog.Count: Integer;
 begin
   Result := FItems.Count;
+end;
+
+function TDtcCatalog.Codes: TArray<string>;
+begin
+  Result := FItems.Keys.ToArray;
+  TArray.Sort<string>(Result);
 end;
 
 end.
