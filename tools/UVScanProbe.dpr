@@ -695,7 +695,7 @@ var
   W: TStopwatch;
   S: TLiveSnapshot;
   I: Integer;
-  Line, RateText: string;
+  Line, RateText, LogFile, Ranges: string;
   P: TPidDef;
 begin
   Catalog := TPidCatalog.Create;
@@ -727,6 +727,10 @@ begin
                 Say(Format('  %s module=$%.2x status=$%.2x', [D.Code, D.Module, D.Status]));
             end;
           eeScanStarted: Say('SCAN STARTED');
+          eeLogStarted: Say('LOG STARTED ' + Ev.Text);
+          eeLogStopped: Say('LOG STOPPED ' + Ev.Text);
+          eePidFound: Say(Format('FOUND $%.4x %d byte(s) %s', [Ev.PidId, Ev.DataBytes, Ev.Raw]));
+          eePidSearchDone: Say(Format('SEARCH DONE %d/%d %s', [Ev.Progress, Ev.Total, Ev.Text]));
         end;
       end);
     try
@@ -768,12 +772,29 @@ begin
         WaitState(esConnected, 60000);
       end;
 
+      // -search 0000-00FF,1000-10FF: the PCM search for PIDs (Tools page).
+      if FindCmdLineSwitch('search', Ranges, True, [clstValueNextParam]) then
+      begin
+        Cmd := Command(ecDiscoverPids);
+        Cmd.Text := Ranges;
+        Engine.Post(Cmd);
+        Pump(300);
+        WaitState(esConnected, 600000);
+      end;
+
       if Seconds > 0 then
       begin
         Cmd := Command(ecStartScan);
         Cmd.PidIds := Ids;
         Engine.Post(Cmd);
         WaitState(esScanning, 20000);
+        // -log file.csv: log the scan, as F8 does.
+        if FindCmdLineSwitch('log', LogFile, True, [clstValueNextParam]) then
+        begin
+          Cmd := Command(ecStartLog);
+          Cmd.Text := LogFile;
+          Engine.Post(Cmd);
+        end;
         // Don't flood the console with stream frames (-trace: do).
         Engine.SetTrace(FindCmdLineSwitch('trace'));
         W := TStopwatch.StartNew;
@@ -781,7 +802,10 @@ begin
         begin
           Pump(1000);
           S := Engine.GetSnapshot;
-          Line := Format('cycles=%d rate=%.1f/s stray=%d |', [S.Cycles, S.CyclesPerSecond, S.StrayFrames]);
+          Line := Format('cycles=%d rate=%.1f/s stray=%d', [S.Cycles, S.CyclesPerSecond, S.StrayFrames]);
+          if S.Logging then
+            Line := Line + Format(' rows=%d', [S.LogRows]);
+          Line := Line + ' |';
           for I := 0 to High(S.PidIds) do
           begin
             P := Catalog.FindById(S.PidIds[I]);
@@ -790,6 +814,8 @@ begin
           Say(Line);
         end;
         Engine.SetTrace(True);
+        if LogFile <> '' then
+          Engine.Post(Command(ecStopLog));
         Engine.Post(Command(ecStopScan));
         Pump(300);
         WaitState(esConnected, 5000);
@@ -827,6 +853,7 @@ begin
       Writeln('<port>: COM9, or host:port for an AVT on the network');
       Writeln('UVScanProbe <port> raw [baud] [rtscts|none]');
       Writeln('UVScanProbe <port> run <seconds> <pidIds,...> [-notest] [-nodtc] [-speed 4|3|2]');
+      Writeln('       [-log file.csv] [-search 0000-00FF,1000-10FF] [-elm] [-trace]');
       Writeln('UVScanProbe <port> rawscan | rates | multi');
       Halt(1);
     end;
