@@ -49,3 +49,6 @@ UVScan.StylesAndroid.res
 # Android build output
 /Android/
 Android64/
+
+# The original 2008 source: kept locally only
+/legacy/

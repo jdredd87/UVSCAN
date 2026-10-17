@@ -207,7 +207,6 @@ Every request but `/ping` needs the token from the kit (kept in `%LOCALAPPDATA%\
 | `tools/ElmProbe/`, `tools/btpair.ps1` | ELM327 probe, Bluetooth pairing on Windows (see above) |
 | `tools/make_sample_log.py` | Writes the sample log (see above) |
 | `docs/` | This documentation and its screenshots |
-| `legacy/` | The original 2008 source, for reference only; not used by the new app |
 
 ## Threading
 
