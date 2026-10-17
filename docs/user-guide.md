@@ -192,17 +192,15 @@ Press **Start scan**. Each ticked PID gets a row with its current value, units a
 
 ## Live chart
 
-The chart button in the top bar of *Live* and *Gauges* (or **⋮ → Live chart**) shows the running scan as a line chart — the [log viewer](#log-viewer)'s chart, fed by the scan instead of a file. It also charts the [test display](#test-display), so you can try it without a car. On Windows it is a window of its own, so you can keep it beside the live grid; on a phone it is a page (back returns to *Live*).
+**Grid | Chart** at the top of the *Live* page switches between the grid and the live chart: the running scan as a line chart — the [log viewer](#log-viewer)'s chart, fed by the scan instead of a file. The chart button in the top bar (on *Live* and *Gauges*, or **⋮ → Live chart**) goes to it too, and on the chart back to the grid. It also charts the [test display](#test-display), so you can try it without a car. On a narrow window or a phone, **⋮ → Chart view, colours and scales…** has what does not fit in its bars.
 
 ![Live chart](images/live-chart.png)
-
-[![The live chart scrolling](media/win-live-chart.webp)](media/win-live-chart.mp4)
 
 - The newest values are on the right and the chart scrolls as they come in. The box after the buttons sets how much it shows: 15 s, 30 s, 1, 2, 5 or 10 minutes (remembered).
 - Every update of the scan is charted (about 10 a second with up to 4 DPIDs), and the last 15 minutes are kept while you scan, so you can open the chart after something happened and still see it.
 - **Pause:** click, drag or touch the chart (or press **Pause** / Space) to stop it scrolling and put the cursor there. The values on the left are then the ones at the cursor; the slider, **|<**, the mouse wheel, panning and selecting a stretch (for min / avg / max) all work as on a log. **Live** (or **>|**) goes back to now.
 - Channels, colours, widths, scales, alert colours, level bands, chart modes and saved **views** are the same as in the log viewer. The channels are named like the columns of a log, so a view saved for logs works on the live chart and the other way round.
-- **Image…** saves the chart as it is. **Demo**, **Open log…** or a recent log switch the window back to logs; **Live scan** (on a phone **Live**) returns to the scan.
+- **Image…** saves the chart as it is. Saved logs open in the [log viewer](#log-viewer) (**F7**, *Logs*), a window of its own on Windows.
 - A new scan starts the chart again with its PIDs. Started from a scan list that has a view of the same name (all the built-in ones do), the chart switches to that view.
 - In **Lanes** the strips are in the order the view lists its channels.
 

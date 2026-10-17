@@ -203,7 +203,7 @@ Every request but `/ping` needs the token from the kit (kept in `%LOCALAPPDATA%\
 | `src/UVScan.DisplayEditor.*` | Display & alerts dialog |
 | `src/UVScan.GaugeEditor.*` | Gauge dialog |
 | `src/UVScan.ControlEditor.*` | Real‑time control dialog |
-| `src/UVScan.LogViewer.*` | Log viewer window, also the live chart (`ShowLive`; the main form owns the live `TLogData` and calls `LiveChanged`) |
+| `src/UVScan.LogViewer.*` | Log viewer window; also the live chart, a second viewer whose contents (`FRoot`) sit in the Live page (`EmbedLive`; the main form owns the live `TLogData` and calls `LiveChanged`) |
 | `data/` | Factory defaults, compiled into the exe |
 | `tests/` | DUnitX tests |
 | `tools/UVScanProbe.dpr` | Console bench tool |

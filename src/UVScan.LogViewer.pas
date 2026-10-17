@@ -7,7 +7,9 @@ unit UVScan.LogViewer;
   Live: the same chart fed by the running scan (the main form keeps the last
   minutes in a TLogData and says when it changes). It shows the last few
   seconds or minutes as they come in; touching the chart pauses it there,
-  Live (or the end button) goes back to now. }
+  Live (or the end button) goes back to now. The live chart is a view of the
+  Live page (EmbedLive): a viewer of its own whose contents (FRoot) sit in
+  the main window, without the log row; logs open in the viewer's window. }
 
 interface
 
@@ -15,7 +17,7 @@ uses
   System.SysUtils, System.Classes, System.UITypes, System.Math, System.Diagnostics, System.IOUtils,
   System.Types, System.Generics.Collections, System.Generics.Defaults,
   FMX.Types, FMX.Controls, FMX.Forms, FMX.Graphics, FMX.StdCtrls, FMX.Edit, FMX.ListBox, FMX.Layouts,
-  FMX.Controls.Presentation, FMX.Objects,
+  FMX.Controls.Presentation, FMX.Objects, UVScan.UI.Common,
   UVScan.Pids, UVScan.Display, UVScan.LogData, UVScan.LogViews, UVScan.LogChart, UVScan.UI.DataGrid;
 
 type
@@ -139,6 +141,14 @@ type
     FChannelTitle: TLabel;
     FChannelBox: TVertScrollBox;
     FOrig: TArray<TViewerBounds>;
+    // Everything the viewer shows: in its own window, or (FEmbedded) in the
+    // main window's Live page, which has the top bar, back and the page menu.
+    FRoot: TLayout;
+    FEmbedded: Boolean;
+    function AreaWidth: Single;
+    function AreaHeight: Single;
+    procedure ShowMenu(const Items: TArray<TActionItem>);
+    procedure RootResized(Sender: TObject);
     procedure BuildPhoneParts;
     function AddBar(Parent: TFmxObject; const Title: string; OnBack: TNotifyEvent): TLabel;
     procedure SaveBounds(const Ctls: array of TControl);
@@ -235,6 +245,19 @@ type
     { The chart view to show for the next scan, e.g. the one named like its
       scan list ('' or no such view: keep the current one). }
     class procedure SuggestLiveView(const Name: string);
+    { The live chart inside Host (the Live page's chart view), made the first
+      time. Showing and hiding it is up to Host. }
+    class procedure EmbedLive(Host: TControl; Catalog: TPidCatalog; Display: TDisplaySettings;
+      const LogFolder, ViewsFile: string);
+    { Frees the embedded live chart (before its host goes). }
+    class procedure ReleaseLive;
+    { For the main window while it shows the live chart: its menu (the narrow
+      layout's), keys (Space, arrows; True when used), back (True when it
+      closed something of the chart's own) and the theme. }
+    class procedure LiveMenu;
+    class function LiveKey(var Key: Word; var KeyChar: WideChar; Shift: TShiftState): Boolean;
+    class function LiveBack: Boolean;
+    class procedure LiveThemeChanged;
   end;
 
 implementation
@@ -242,10 +265,11 @@ implementation
 {$R *.fmx}
 
 uses
-  System.StrUtils, FMX.Dialogs, UVScan.UI.Common, UVScan.UI.Theme, UVScan.DisplayEditor;
+  System.StrUtils, FMX.Dialogs, UVScan.UI.Theme, UVScan.DisplayEditor;
 
 var
-  Viewer: TLogViewerForm;
+  Viewer: TLogViewerForm;      // the window (logs, the demo)
+  LiveViewer: TLogViewerForm;  // the live chart in the Live page
   LiveSource: TLogData;
   LiveViewHint: string;
 
@@ -344,12 +368,13 @@ end;
 class procedure TLogViewerForm.SetLiveSource(Data: TLogData);
 begin
   LiveSource := Data;
-  if Viewer <> nil then
-  begin
-    if Viewer.FLive and (Data = nil) then
-      Viewer.SetLive(False);
-    Viewer.btnLive.Enabled := Data <> nil;
-  end;
+  for var V in TArray<TLogViewerForm>.Create(Viewer, LiveViewer) do
+    if V <> nil then
+    begin
+      if V.FLive and (Data = nil) then
+        V.SetLive(False);
+      V.btnLive.Enabled := Data <> nil;
+    end;
 end;
 
 class procedure TLogViewerForm.SuggestLiveView(const Name: string);
@@ -359,9 +384,131 @@ end;
 
 class procedure TLogViewerForm.LiveChanged(NewChannels: Boolean);
 begin
-  // Closed: only a new set of channels matters now; Present catches up.
+  // Not on screen: only a new set of channels matters now; Present (or the
+  // chart view being shown, EmbedLive) catches up.
   if (Viewer <> nil) and Viewer.FLive and (Viewer.Visible or NewChannels) then
     Viewer.LiveUpdated(NewChannels);
+  if (LiveViewer <> nil) and LiveViewer.FLive and (LiveViewer.FRoot.ParentedVisible or NewChannels) then
+    LiveViewer.LiveUpdated(NewChannels);
+end;
+
+class procedure TLogViewerForm.EmbedLive(Host: TControl; Catalog: TPidCatalog; Display: TDisplaySettings;
+  const LogFolder, ViewsFile: string);
+var
+  V: TLogViewerForm;
+begin
+  if LiveViewer = nil then
+  begin
+    V := TLogViewerForm.Create(Application);
+    V.FEmbedded := True;
+    V.FRoot.Parent := Host;
+    V.FRoot.OnResized := V.RootResized;
+    // The log row (open, recent logs, demo, live) is the window's.
+    for var C in TArray<TControl>.Create(V.btnOpen, V.cbRecent, V.btnDemo, V.btnLive) do
+      C.Visible := False;
+    LiveViewer := V;
+  end;
+  V := LiveViewer;
+  V.FCatalog := Catalog;
+  V.FDisplay := Display;
+  V.FLogFolder := LogFolder;
+  if V.FViewsFile <> ViewsFile then
+  begin
+    V.FViewsFile := ViewsFile;
+    if FileExists(ViewsFile) then
+      try
+        V.FViews.LoadFromFile(ViewsFile);
+      except
+        // a broken file just means no saved views
+      end;
+    V.FillViews(V.FViews.LastView);
+  end;
+  V.ApplyPalette;
+  if V.FLive then
+    V.LiveUpdated(False)
+  else
+    V.SetLive(True);
+  V.FormResize(nil);
+end;
+
+class procedure TLogViewerForm.ReleaseLive;
+begin
+  FreeAndNil(LiveViewer);
+end;
+
+class procedure TLogViewerForm.LiveMenu;
+begin
+  if LiveViewer <> nil then
+    LiveViewer.MenuClick(nil);
+end;
+
+class function TLogViewerForm.LiveKey(var Key: Word; var KeyChar: WideChar; Shift: TShiftState): Boolean;
+var
+  K: Word;
+  C: WideChar;
+begin
+  Result := False;
+  if (LiveViewer = nil) or not LiveViewer.FRoot.ParentedVisible then
+    Exit;
+  K := Key;
+  C := KeyChar;
+  LiveViewer.FormKeyDown(nil, K, C, Shift);
+  Result := (K <> Key) or (C <> KeyChar); // it took the key
+  if Result then
+  begin
+    Key := 0;
+    KeyChar := #0;
+  end;
+end;
+
+class function TLogViewerForm.LiveBack: Boolean;
+begin
+  Result := (LiveViewer <> nil) and LiveViewer.FRoot.ParentedVisible and
+    (CloseActionMenu or LiveViewer.FChannelPage.Visible);
+  if Result and LiveViewer.FChannelPage.Visible then
+    LiveViewer.ChannelPageClose(nil);
+end;
+
+class procedure TLogViewerForm.LiveThemeChanged;
+begin
+  if LiveViewer <> nil then
+    LiveViewer.ApplyPalette;
+end;
+
+function TLogViewerForm.AreaWidth: Single;
+begin
+  if FEmbedded then
+    Result := FRoot.Width
+  else
+    Result := InnerWidth(Self);
+end;
+
+function TLogViewerForm.AreaHeight: Single;
+begin
+  if FEmbedded then
+    Result := FRoot.Height
+  else
+    Result := InnerHeight(Self);
+end;
+
+{ A menu from the top right of the viewer: its window's, or the Live page's. }
+procedure TLogViewerForm.ShowMenu(const Items: TArray<TActionItem>);
+var
+  Form: TCommonCustomForm;
+begin
+  if FEmbedded and (FRoot.Root <> nil) and (FRoot.Root.GetObject is TCustomForm) then
+  begin
+    Form := TCustomForm(FRoot.Root.GetObject);
+    ShowActionMenu(TCustomForm(Form), Items, FRoot.LocalToAbsolute(PointF(FRoot.Width, 0)));
+  end
+  else
+    ShowActionMenu(Self, Items, PointF(ClientWidth, FTopBar.Height));
+end;
+
+procedure TLogViewerForm.RootResized(Sender: TObject);
+begin
+  if FEmbedded then
+    FormResize(nil);
 end;
 
 procedure TLogViewerForm.FormCreate(Sender: TObject);
@@ -372,6 +519,18 @@ begin
   FData := FOwnData;
   FViews := TLogViewList.Create;
   FSpeedIndex := 2;
+
+  // All of it in one layout, which EmbedLive can move to the main window.
+  FRoot := TLayout.Create(Self);
+  FRoot.Stored := False;
+  FRoot.Align := TAlignLayout.Client;
+  var Moving: TArray<TControl> := nil;
+  for var I := 0 to ChildrenCount - 1 do
+    if Children[I] is TControl then
+      Moving := Moving + [TControl(Children[I])];
+  for var C in Moving do
+    C.Parent := FRoot; // in their order, so the aligned ones line up as before
+  FRoot.Parent := Self;
 
   pnlMain.OnResized := MainResized;
   FChart := TLogChart.Create(Self);
@@ -496,7 +655,7 @@ var
   R: TRectangle;
   L: TLabel;
 begin
-  FTitle := AddBar(Self, 'Log viewer', BackClick);
+  FTitle := AddBar(FRoot, 'Log viewer', BackClick);
   FTopBar := TRectangle(FTitle.Parent);
   FMenuButton := TSpeedButton.Create(Self);
   FMenuButton.Parent := FTopBar;
@@ -554,7 +713,7 @@ begin
   FChannelButton.Visible := False;
 
   FChannelPage := TRectangle.Create(Self);
-  FChannelPage.Parent := Self;
+  FChannelPage.Parent := FRoot;
   FChannelPage.Stored := False;
   FChannelPage.Align := TAlignLayout.Contents;
   FChannelPage.HitTest := True;
@@ -737,7 +896,7 @@ var
   Items: TArray<TActionItem>;
 begin
   Items := nil;
-  if not IsMobile then
+  if not IsMobile and not FEmbedded then
     Items := Items + [Item('Open log...', btnOpenClick, btnOpen)];
   Items := Items + [
     Item('View: ' + ComboText(cbView), MenuViews, nil),
@@ -753,7 +912,7 @@ begin
     Items := Items + [Item('Channel colour, scale, alerts...', ChannelPageOpen, nil, SelectedChannel >= 0)];
   if IsMobile and not btnSelect.Visible then // no room for it in the bar
     Items := Items + [Item('Select range', MenuSelectRange, nil, FData.Count > 0, btnSelect.IsPressed)];
-  ShowActionMenu(Self, Items, PointF(ClientWidth, FTopBar.Height));
+  ShowMenu(Items);
 end;
 
 procedure TLogViewerForm.MenuSelectRange(Sender: TObject);
@@ -783,7 +942,7 @@ begin
     It.Sender := cbView.ListItems[I];
     Items := Items + [It];
   end;
-  ShowActionMenu(Self, Items, PointF(ClientWidth, FTopBar.Height));
+  ShowMenu(Items);
 end;
 
 procedure TLogViewerForm.MenuModes(Sender: TObject);
@@ -802,7 +961,7 @@ begin
     It.Sender := cbMode.ListItems[I];
     Items := Items + [It];
   end;
-  ShowActionMenu(Self, Items, PointF(ClientWidth, FTopBar.Height));
+  ShowMenu(Items);
 end;
 
 { A view or chart mode picked in a menu: Sender is the combo box item. }
@@ -833,7 +992,7 @@ var
 begin
   W := FChannelBox.Width - 2 * 12 - 2 * 12;
   if W < 100 then
-    W := InnerWidth(Self) - 48;
+    W := AreaWidth - 48;
   gbChannel.Width := W + 24;
   gbChannel.Text := '';
   Half := (W - 12) / 2;
@@ -880,7 +1039,7 @@ var
 begin
   if not FNarrow then
   begin
-    W := InnerWidth(Self) - 16;
+    W := AreaWidth - 16;
     for L in [lblStatus0, lblStatus1] do
     begin
       L.TextSettings.Trimming := TTextTrimming.Character;
@@ -891,9 +1050,9 @@ begin
     lblStatus1.Position.X := lblStatus0.Width + 1;
     Exit;
   end;
-  W := InnerWidth(Self) - 16;
+  W := AreaWidth - 16;
   H := 0;
-  if FShort or (InnerHeight(Self) < 700) then // a small phone: the lists need the room
+  if FShort or (AreaHeight < 700) then // a small phone: the lists need the room
   begin
     // One line: what the log is, then the hint, cut short.
     for L in [lblStatus0, lblStatus1, lblStatus2] do
@@ -948,14 +1107,16 @@ var
   W, X, L: Single;
   S: string;
 begin
-  W := InnerWidth(Self);
-  FTopBar.Visible := True;
+  W := AreaWidth;
+  // The Live page has a top bar of its own, and the menu (LiveMenu).
+  FTopBar.Visible := not FEmbedded;
   FTopBar.Position.Y := -100; // above the log row
   FMenuButton.Visible := True;
   // The log row: the recent logs and the demo. A short window has them in the
   // top bar, between back and the menu.
   ShowControls([btnOpen, lblView, cbView, btnSaveView, btnDeleteView, lblMode, cbMode, btnImage], False);
-  PutLogRow(FShort);
+  PutLogRow(FShort and not FEmbedded);
+  pnlBar.Visible := not FEmbedded; // only the log row is left in it
   btnDemo.Text := 'Demo';
   btnLive.Text := 'Live';
   FitTextWidth(btnDemo, 72);
@@ -1099,7 +1260,7 @@ begin
     cbRecent.Width := Min(140, Max(80, btnDemo.Position.X - 8 - L));
     FTitle.Margins.Left := cbRecent.Position.X + cbRecent.Width + 10 - 48;
     // (the bar's own width may still be the old one after a turn)
-    FTitle.Margins.Right := Max(0, InnerWidth(Self) - btnDemo.Position.X + 8 - FMenuButton.Width);
+    FTitle.Margins.Right := Max(0, AreaWidth - btnDemo.Position.X + 8 - FMenuButton.Width);
   end
   else
     cbRecent.Width := Max(80, btnDemo.Position.X - 8 - L);
@@ -1107,14 +1268,15 @@ end;
 
 procedure TLogViewerForm.LayoutWide;
 begin
-  FTopBar.Visible := IsMobile; // a phone or tablet window has no caption to close it by
+  FTopBar.Visible := IsMobile and not FEmbedded; // a phone or tablet window has no caption to close it by
   FMenuButton.Visible := False;
   FChannelPage.Visible := False;
   FTabs.Visible := False;
   FChannelButton.Visible := False;
   PutLogRow(False);
+  pnlBar.Visible := True;
   RestoreBounds;
-  btnOpen.Visible := not IsMobile;
+  btnOpen.Visible := not IsMobile and not FEmbedded;
   ShowControls([lblView, cbView, btnSaveView, btnDeleteView, lblMode, cbMode, btnImage, chkFollow, chkBands,
     chkUseDisplay], True);
   btnSelect.Visible := IsMobile;
@@ -1129,7 +1291,7 @@ begin
   gbChannel.Margins.Rect := TRectF.Create(0, 6, 0, 0);
   ShowChannel;
   pnlLeft.Visible := True;
-  pnlLeft.Parent := Self;
+  pnlLeft.Parent := FRoot;
   pnlLeft.Align := TAlignLayout.Left;
   pnlLeft.Padding.Rect := TRectF.Create(6, 0, 0, 4);
   if IsMobile then
@@ -1241,9 +1403,9 @@ begin
   cbMode.Width := 210;
   cbSpeed.Width := 84; // "10 min" too
   pnlBar.Height := Flow([Ctls([btnOpen, cbRecent, btnDemo, btnLive]), Ctls([lblView, cbView, btnSaveView, btnDeleteView]),
-    Ctls([lblMode, cbMode, btnImage])], InnerWidth(Self));
+    Ctls([lblMode, cbMode, btnImage])], AreaWidth);
   pnlPlay.Height := Flow([Ctls([btnStart, btnPlay, btnEnd, cbSpeed]), Ctls([tbPos, lblTime]), Ctls([chkFollow, chkBands]),
-    Ctls([chkUseDisplay]), Ctls([btnSelect])], InnerWidth(Self));
+    Ctls([chkUseDisplay]), Ctls([btnSelect])], AreaWidth);
 end;
 
 { Wide: the channel box under the list, captions as wide as their text. }
@@ -1297,6 +1459,8 @@ begin
   FViews.Free;
   if Viewer = Self then
     Viewer := nil;
+  if LiveViewer = Self then
+    LiveViewer := nil;
 end;
 
 { Wide: the chart keeps its share of the height when the window changes
@@ -1323,8 +1487,8 @@ var
 begin
   if FTopBar = nil then
     Exit;
-  W := InnerWidth(Self);
-  H := InnerHeight(Self);
+  W := AreaWidth;
+  H := AreaHeight;
   FShort := (H < ShortHeight) and (W > H);
   Narrow := FShort or (W < NarrowWidth);
   if Narrow then
@@ -1484,7 +1648,7 @@ end;
 procedure TLogViewerForm.FileDragOver(Sender: TObject; const Data: TDragObject; const Point: TPointF;
   var Operation: TDragOperation);
 begin
-  if Length(Data.Files) > 0 then
+  if (Length(Data.Files) > 0) and not FEmbedded then // the live chart opens no logs
     Operation := TDragOperation.Copy;
 end;
 
@@ -1932,7 +2096,7 @@ var
   I: Integer;
 begin
   SetPlaying(False);
-  if FLive and (LiveViewHint <> '') then
+  if FLive and FEmbedded and (LiveViewHint <> '') then
   begin
     // Once per scan: a view picked while it runs stays.
     if FViews.IndexOf(LiveViewHint) >= 0 then
@@ -2720,10 +2884,15 @@ procedure TLogViewerForm.FormKeyDown(Sender: TObject; var Key: Word; var KeyChar
 var
   Row: Integer;
   OnChart: Boolean;
+  Focus: IControl;
 begin
-  if (Focused <> nil) and ((Focused.GetObject is TCustomEdit) or (Focused.GetObject is TCustomComboBox)) then
+  if FEmbedded and (FRoot.Root <> nil) then
+    Focus := TCommonCustomForm(FRoot.Root.GetObject).Focused
+  else
+    Focus := Focused;
+  if (Focus <> nil) and ((Focus.GetObject is TCustomEdit) or (Focus.GetObject is TCustomComboBox)) then
     Exit;
-  OnChart := (Focused <> nil) and (Focused.GetObject = FChart);
+  OnChart := (Focus <> nil) and (Focus.GetObject = FChart);
   if KeyChar = ' ' then
   begin
     TogglePlay;

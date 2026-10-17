@@ -299,6 +299,11 @@ type
     FFlowQueued: Boolean;
     FPageGridsSet, FPageGridsCompact: Boolean;
     FShownCycles: Int64;
+    // The Live page shows the grid or the live chart (Grid | Chart at its top).
+    FLiveSwitch: TLayout;
+    FLiveChips: array[0..1] of TRectangle;
+    FLiveChartHost: TLayout;    // the live chart's place (TLogViewerForm.EmbedLive)
+    FLiveChart: Boolean;        // the chart is shown rather than the grid
     FScanWatch: TStopwatch;     // since the scan started, for the status strip
     FLogWatch: TStopwatch;      // since the log started
     FDisplay: TDisplaySettings;      // display.json: PID looks, alert levels, gauges
@@ -409,6 +414,12 @@ type
     procedure FitFormRows;
     procedure FitWrappedText;
     // navigation
+    procedure BuildLiveSwitch;
+    procedure PaintLiveSwitch;
+    procedure LiveSwitchClick(Sender: TObject);
+    procedure LiveSwitchResized(Sender: TObject);
+    procedure SetLiveChart(Value: Boolean);
+    procedure LiveChartMenuClick(Sender: TObject);
     procedure ShowPage(Page: TTabItem);
     function CurrentPage: TTabItem;
     procedure UpdateAppBar;
@@ -576,6 +587,8 @@ type
     function PidName(Id: Integer): string;
     procedure SetStatus(Part: TStatusPart; const Text: string);
     procedure OpenPidEditor(const Filter: string);
+  public
+    procedure KeyDown(var Key: Word; var KeyChar: System.WideChar; Shift: TShiftState); override;
   end;
 
 var
@@ -802,6 +815,7 @@ begin
   grdPids.OnGesture := GridGesture;
 
   grdLive := NewGrid(lyLive);
+  BuildLiveSwitch;
   grdLive.AddColumn('PID', 160, gaLeft, True);
   grdLive.AddColumn('Value', 140, gaRight);
   grdLive.AddColumn('Units', 80);
@@ -1028,7 +1042,7 @@ begin
   btnChart.Position.X := btnAction.Position.X - 1; // left of the main action
   btnChart.Width := 44;
   btnChart.Text := '';
-  btnChart.Hint := 'Live chart';
+  btnChart.Hint := 'Live chart (or back to the grid)';
   btnChart.ShowHint := True;
   btnChart.OnClick := LiveChartClick;
   // OrderAppBar places the right side of the bar
@@ -1395,7 +1409,7 @@ begin
   if Docked and (tcMain.ActiveTab = tiPids) then
     ShowPage(tiLive);
   // Wide windows show the page tool bars; otherwise their buttons are in the menu.
-  pnlLiveFooter.Visible := Wide;
+  pnlLiveFooter.Visible := Wide and not FLiveChart; // the chart has bars of its own
   pnlDashBar.Visible := Wide and not FFullScreen;
   if btnPidPanel <> nil then
     btnPidPanel.Visible := Wide;
@@ -2363,6 +2377,12 @@ begin
     Key := 0;
     Exit;
   end;
+  // the live chart's own page (a channel's colour and scale on a phone)
+  if ((Key = vkEscape) or (Key = vkHardwareBack)) and FLiveChart and TLogViewerForm.LiveBack then
+  begin
+    Key := 0;
+    Exit;
+  end;
   if ((Key = vkEscape) or (Key = vkHardwareBack)) and FFullScreen then
   begin
     SetFullScreen(False);
@@ -2450,7 +2470,17 @@ begin
   while FPageMenu.ItemsCount > 0 do
     FPageMenu.Items[0].Free;
   P := CurrentPage;
-  if P = tiLive then
+  if (P = tiLive) and FLiveChart then
+  begin
+    AddPageMenuItem(IfThen(FLogging, 'Stop log', 'Start log'), btnLogClick, btnLog.Enabled);
+    AddPageMenuItem('Grid', LiveSwitchClick);
+    AddPageMenuItem('Chart view, colours and scales...', LiveChartMenuClick);
+    if IsMobile then
+      AddPageMenuItem('Lock screen rotation', ToggleLockRotateClick, True, chkLockRotate.IsChecked);
+    if FWide then
+      AddPageMenuItem('PID list beside the pages', TogglePidPanelClick, True, not FSettings.Window.PidsHidden);
+  end
+  else if P = tiLive then
   begin
     AddPageMenuItem(IfThen(FLogging, 'Stop log', 'Start log'), btnLogClick, btnLog.Enabled);
     AddPageMenuItem('Live chart', LiveChartClick);
@@ -2629,6 +2659,8 @@ begin
   Bar(pnlAppBar);
   Bar(pnlNav);
   Bar(pnlStatus);
+  PaintLiveSwitch;
+  TLogViewerForm.LiveThemeChanged;
   Icon(btnBack);
   Icon(btnMenu);
   Icon(btnChart);
@@ -3302,6 +3334,7 @@ begin
   FConfirmed.Free;
   FAlerts.Free;
   FGaugeViews.Free; // the views themselves are owned by the form
+  TLogViewerForm.ReleaseLive; // its contents are in the Live page
   TLogViewerForm.SetLiveSource(nil);
   FLiveLog.Free;
   ClearAwayNote;
@@ -3326,6 +3359,16 @@ begin
   end;
   FClosing := True;
   SaveSettings;
+end;
+
+{ The live chart's keys (Space: pause / back to now, arrows on the chart)
+  before the focused control, which would take Space if it is a button
+  (Stop, say). }
+procedure TMainForm.KeyDown(var Key: Word; var KeyChar: System.WideChar; Shift: TShiftState);
+begin
+  if FLiveChart and (tcMain.ActiveTab = tiLive) and TLogViewerForm.LiveKey(Key, KeyChar, Shift) then
+    Exit;
+  inherited;
 end;
 
 procedure TMainForm.FormKeyDown(Sender: TObject; var Key: Word; var KeyChar: WideChar; Shift: TShiftState);
@@ -4739,9 +4782,127 @@ begin
     FNotes.CancelNotification(AwayNote);
 end;
 
+{ The chart button and the menus' Live chart: the Live page's chart view.
+  The button on the Live page with the chart showing goes back to the grid. }
 procedure TMainForm.LiveChartClick(Sender: TObject);
 begin
-  TLogViewerForm.ShowLive(FCatalog, FDisplay, LogFolder, LogViewsFile);
+  if (Sender = btnChart) and FLiveChart and (CurrentPage = tiLive) then
+  begin
+    SetLiveChart(False);
+    Exit;
+  end;
+  ShowPage(tiLive);
+  SetLiveChart(True);
+end;
+
+{ Grid | Chart, at the top of the Live page }
+procedure TMainForm.BuildLiveSwitch;
+const
+  Captions: array[0..1] of string = ('Grid', 'Chart');
+var
+  I: Integer;
+  L: TLabel;
+begin
+  FLiveSwitch := TLayout.Create(Self);
+  FLiveSwitch.Parent := tiLive;
+  FLiveSwitch.Stored := False;
+  FLiveSwitch.Align := TAlignLayout.Top;
+  FLiveSwitch.Height := 34;
+  FLiveSwitch.Margins.Rect := TRectF.Create(8, 6, 8, 4);
+  FLiveSwitch.OnResized := LiveSwitchResized;
+  for I := 0 to High(FLiveChips) do
+  begin
+    FLiveChips[I] := TRectangle.Create(Self);
+    FLiveChips[I].Parent := FLiveSwitch;
+    FLiveChips[I].Stored := False;
+    FLiveChips[I].XRadius := 8;
+    FLiveChips[I].YRadius := 8;
+    FLiveChips[I].HitTest := True;
+    FLiveChips[I].Cursor := crHandPoint;
+    FLiveChips[I].Tag := I;
+    FLiveChips[I].OnClick := LiveSwitchClick;
+    L := TLabel.Create(Self);
+    L.Parent := FLiveChips[I];
+    L.Stored := False;
+    L.Align := TAlignLayout.Client;
+    L.HitTest := False;
+    L.StyledSettings := L.StyledSettings - [TStyledSetting.FontColor, TStyledSetting.Style];
+    L.TextSettings.HorzAlign := TTextAlign.Center;
+    L.TextSettings.WordWrap := False;
+    L.Text := Captions[I];
+  end;
+  FLiveChartHost := TLayout.Create(Self);
+  FLiveChartHost.Parent := tiLive;
+  FLiveChartHost.Stored := False;
+  FLiveChartHost.Align := TAlignLayout.Client;
+  FLiveChartHost.Visible := False;
+end;
+
+procedure TMainForm.PaintLiveSwitch;
+const
+  ChipWidth = 96;
+var
+  I: Integer;
+  P: TPalette;
+  L: TLabel;
+  Active: Boolean;
+begin
+  if FLiveSwitch = nil then
+    Exit;
+  P := Palette;
+  for I := 0 to High(FLiveChips) do
+  begin
+    FLiveChips[I].SetBounds(I * (ChipWidth + 6), 0, ChipWidth, FLiveSwitch.Height);
+    L := TLabel(FLiveChips[I].Controls[0]);
+    Active := (I = 1) = FLiveChart;
+    if Active then
+    begin
+      FLiveChips[I].Fill.Color := P.Accent;
+      FLiveChips[I].Stroke.Color := P.Accent;
+      L.TextSettings.FontColor := ContrastColor(P.Accent);
+    end
+    else
+    begin
+      FLiveChips[I].Fill.Color := P.Bar;
+      FLiveChips[I].Stroke.Color := P.BarLine;
+      L.TextSettings.FontColor := P.Text;
+    end;
+    if Active then
+      L.TextSettings.Font.Style := [TFontStyle.fsBold]
+    else
+      L.TextSettings.Font.Style := [];
+  end;
+end;
+
+procedure TMainForm.LiveSwitchResized(Sender: TObject);
+begin
+  PaintLiveSwitch;
+end;
+
+{ A chip, or the menu's Grid (Sender not a chip: the grid). }
+procedure TMainForm.LiveSwitchClick(Sender: TObject);
+begin
+  SetLiveChart((Sender is TRectangle) and (TRectangle(Sender).Tag = 1));
+end;
+
+procedure TMainForm.SetLiveChart(Value: Boolean);
+begin
+  if Value then
+    TLogViewerForm.EmbedLive(FLiveChartHost, FCatalog, FDisplay, LogFolder, LogViewsFile);
+  FLiveChart := Value;
+  lyLive.Visible := not Value;
+  FLiveChartHost.Visible := Value;
+  pnlLiveFooter.Visible := FWide and not Value;
+  PaintLiveSwitch;
+  if Value then
+    TLogViewerForm.LiveChanged(False) // up to date now that it shows
+  else
+    grdLive.Refresh;
+end;
+
+procedure TMainForm.LiveChartMenuClick(Sender: TObject);
+begin
+  TLogViewerForm.LiveMenu;
 end;
 
 function TMainForm.LiveActive: Boolean;
