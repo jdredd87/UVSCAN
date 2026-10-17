@@ -65,6 +65,8 @@ type
     chkKeepAwake: TCheckBox;
     chkRound: TCheckBox;
     chkLockRotate: TCheckBox;
+    chkAlwaysLog: TCheckBox;
+    chkOneLog: TCheckBox;
     gbAlerts: TGroupBox;
     chkSound: TCheckBox;
     gbStream: TGroupBox;
@@ -192,6 +194,8 @@ type
     procedure chkKeepAwakeChange(Sender: TObject);
     procedure chkRoundChange(Sender: TObject);
     procedure chkLockRotateChange(Sender: TObject);
+    procedure chkAlwaysLogChange(Sender: TObject);
+    procedure chkOneLogChange(Sender: TObject);
     procedure ToggleLockRotateClick(Sender: TObject);
     procedure btnRefreshPortsClick(Sender: TObject);
     procedure btnConnectClick(Sender: TObject);
@@ -328,6 +332,7 @@ type
     FHolding: Boolean;               // "hold to run" button is down
     FDtcRows: TArray<TArray<string>>;
     FLastLogFile: string;            // the log recorded most recently
+    FSessionLog: string;             // One log: the log later starts carry on until UVScan closes
     FViewerLog: string;              // the log last handed to the viewer
     FZoom: Integer;                  // live grid zoom, percent
     FNormalBounds: TRect;            // window bounds when not maximized
@@ -1299,6 +1304,22 @@ begin
     'are closed properly first';
   lblAway.Visible := IsMobile;
   cbAway.Visible := IsMobile;
+  // Settings > Logging: a log with every scan (no Start log to forget on a drive).
+  chkAlwaysLog := TCheckBox.Create(Self);
+  chkAlwaysLog.Stored := False;
+  chkAlwaysLog.Parent := gbLogging;
+  chkAlwaysLog.Position.X := 12;
+  chkAlwaysLog.Height := 30;
+  chkAlwaysLog.Text := 'Always log while scanning (every scan writes a log to this folder)';
+  chkAlwaysLog.OnChange := chkAlwaysLogChange;
+  // ... and one log for a drive with stops in it.
+  chkOneLog := TCheckBox.Create(Self);
+  chkOneLog.Stored := False;
+  chkOneLog.Parent := gbLogging;
+  chkOneLog.Position.X := 12;
+  chkOneLog.Height := 30;
+  chkOneLog.Text := 'One log until UVScan closes (stop and start the scan or the car: the log carries on)';
+  chkOneLog.OnChange := chkOneLogChange;
   tiConnect.Text := 'Connection';
 
   // Connection: what is on the port, first in the row.
@@ -2564,6 +2585,26 @@ begin
   chkLockRotate.IsChecked := not chkLockRotate.IsChecked;
 end;
 
+procedure TMainForm.chkAlwaysLogChange(Sender: TObject);
+begin
+  if not FChromeReady then
+    Exit;
+  FSettings.AlwaysLog := chkAlwaysLog.IsChecked;
+  SaveSettings;
+  // Scanning already: the log starts now rather than at the next scan
+  if FSettings.AlwaysLog and (FState = esScanning) and not FLogging then
+    btnLogClick(nil);
+end;
+
+procedure TMainForm.chkOneLogChange(Sender: TObject);
+begin
+  if not FChromeReady then
+    Exit;
+  FSettings.OneLog := chkOneLog.IsChecked;
+  SaveSettings;
+  FSessionLog := ''; // the next log starts a file, the ones after it carry it on
+end;
+
 procedure TMainForm.chkRoundChange(Sender: TObject);
 begin
   if not FChromeReady then
@@ -2811,7 +2852,19 @@ begin
   if cbAway.Visible then
     Y := Row(lblAway, cbAway, nil, gbLogging, Y + 6);
   if gbLogging.Width >= 50 then
+  begin
+    Wide(chkAlwaysLog, gbLogging);
+    chkAlwaysLog.TextSettings.WordWrap := True;
+    chkAlwaysLog.Height := Max(30, WrappedTextHeight(chkAlwaysLog, chkAlwaysLog.Width - 40) + 8);
+    chkAlwaysLog.Position.Y := Y;
+    Y := Y + chkAlwaysLog.Height + 4;
+    Wide(chkOneLog, gbLogging);
+    chkOneLog.TextSettings.WordWrap := True;
+    chkOneLog.Height := Max(30, WrappedTextHeight(chkOneLog, chkOneLog.Width - 40) + 8);
+    chkOneLog.Position.Y := Y;
+    Y := Y + chkOneLog.Height + 4;
     gbLogging.Height := Y + 4;
+  end;
   Y := Row(lblRate, cbRate, nil, gbStream);
   if gbStream.Width >= 50 then
     gbStream.Height := Y + 4;
@@ -3506,6 +3559,8 @@ begin
   KeepAwake(FSettings.KeepScreenOn);
   chkRound.IsChecked := FSettings.RoundReadings;
   chkLockRotate.IsChecked := FSettings.LockRotation;
+  chkAlwaysLog.IsChecked := FSettings.AlwaysLog;
+  chkOneLog.IsChecked := FSettings.OneLog;
   LockRotation(FSettings.LockRotation);
   FUpdateCheck.IsChecked := FSettings.CheckUpdates;
   ShowUpdateStatus;
@@ -4257,6 +4312,10 @@ begin
   ForceDirectories(LogFolder);
   Cmd := Command(ecStartLog);
   Cmd.Text := System.IOUtils.TPath.Combine(LogFolder, 'UVScan_' + FormatDateTime('yyyy-mm-dd_hhnnss', Now) + '.csv');
+  // One log: carry on this run's log, if it is still in the log folder
+  if FSettings.OneLog and (FSessionLog <> '') and FileExists(FSessionLog) and
+    SameText(ExtractFileDir(FSessionLog), ExcludeTrailingPathDelimiter(LogFolder)) then
+    Cmd.AppendTo := FSessionLog;
   Post(Cmd);
 end;
 
@@ -4370,11 +4429,9 @@ begin
         SetupLiveRows(Ev.PidIds);
         if FQuickActive and (FQuickDash <> '') and (FDisplay.IndexOfDashboard(FQuickDash) >= 0) then
           SelectDashboard(FDisplay.IndexOfDashboard(FQuickDash)); // the quick start's
-        if FAutoLog then
-        begin
-          FAutoLog := False;
+        if (FAutoLog or FSettings.AlwaysLog) and not FLogging then
           btnLogClick(nil);
-        end;
+        FAutoLog := False;
         if FAutoChart then
         begin
           FAutoChart := False;
@@ -4413,10 +4470,15 @@ begin
     eeLogStarted:
       begin
         FLastLogFile := Ev.Text;
+        if FSettings.OneLog then
+          FSessionLog := Ev.Text;
         FLogging := True;
         FLogPaused := False;
         FLogWatch := TStopwatch.StartNew;
-        SetStatus(spLog, 'Logging to ' + ExtractFileName(Ev.Text));
+        if Ev.Flag then
+          SetStatus(spLog, 'Adding to ' + ExtractFileName(Ev.Text))
+        else
+          SetStatus(spLog, 'Logging to ' + ExtractFileName(Ev.Text));
         UpdateControls;
       end;
     eeControl:

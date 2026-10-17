@@ -41,6 +41,8 @@ type
   public
     { Creates (or replaces) the file; raises if it cannot. }
     class function Open(const FileName: string): TLogFileWriter;
+    { Adds to the end of an existing file; raises if it cannot. }
+    class function Append(const FileName: string): TLogFileWriter;
     { Takes over AFile. }
     constructor Create(AFile: TFileStream);
     destructor Destroy; override;
@@ -49,6 +51,11 @@ type
     function Error: string;
   end;
 
+{ A log's header line and the time of its last row (0 without rows), to
+  carry it on; False when the file is missing or not a UVScan log. }
+function ReadLogEnds(const FileName: string; out Header: string; out LastTime: Double): Boolean;
+
+type
   TVehicleInfo = record
     Firmware: string;
     Vin: string;
@@ -124,6 +131,7 @@ type
     Data: TBytes;
     Release: TBytes;
     Seconds: Integer;
+    AppendTo: string;            // ecStartLog: a log to carry on if it has the same PIDs (else Text is made)
   end;
 
   TFrameMatch = reference to function(const F: TAvtFrame): Boolean;
@@ -175,6 +183,7 @@ type
     FLogPaused: Boolean;
     FLogRows: Int64;
     FLogClock: TStopwatch;
+    FLogBase: Double;   // seconds the log's time starts from (a log carried on goes on from its last row)
 
     // Snapshot shared with the UI
     FLock: TCriticalSection;
@@ -218,7 +227,8 @@ type
     procedure StopStreaming;
     procedure Restream;
     procedure ResetStreamSlots;
-    procedure DoStartLog(const FileName: string);
+    procedure DoStartLog(const FileName, AppendTo: string);
+    function LogTime: Double;
     procedure DoStopLog;
     procedure DoReadDtcs;
     procedure DoClearDtcs;
@@ -263,6 +273,55 @@ const
 
 implementation
 
+uses
+  System.IOUtils, System.DateUtils;
+
+function ReadLogEnds(const FileName: string; out Header: string; out LastTime: Double): Boolean;
+const
+  Chunk = 65536;
+var
+  F: TFileStream;
+  Buf: TBytes;
+  Lines: TArray<string>;
+  Text: string;
+  I: Integer;
+begin
+  Result := False;
+  Header := '';
+  LastTime := 0;
+  if not FileExists(FileName) then
+    Exit;
+  try
+    F := TFileStream.Create(FileName, fmOpenRead or fmShareDenyWrite);
+    try
+      SetLength(Buf, Min(Chunk, F.Size));
+      F.ReadBuffer(Buf, Length(Buf));
+      Text := TEncoding.UTF8.GetString(Buf);
+      if (Text <> '') and (Text[1] = #$FEFF) then
+        Delete(Text, 1, 1);
+      Header := Text.Split([#13, #10])[0];
+      if F.Size > Chunk then
+      begin
+        F.Position := F.Size - Chunk;
+        F.ReadBuffer(Buf, Chunk);
+        Text := TEncoding.UTF8.GetString(Buf);
+      end;
+    finally
+      F.Free;
+    end;
+  except
+    Exit(False);
+  end;
+  if not StartsText('Time (s)', Header) then
+    Exit;
+  Result := True;
+  Lines := Text.Split([#13, #10], TStringSplitOptions.ExcludeEmpty);
+  for I := High(Lines) downto 1 do
+    if TryStrToFloat(Lines[I].Split([','])[0], LastTime, TFormatSettings.Invariant) then
+      Exit;
+  LastTime := 0;
+end;
+
 { TLogFileWriter }
 
 class function TLogFileWriter.Open(const FileName: string): TLogFileWriter;
@@ -278,6 +337,15 @@ begin
     F.Free;
     raise;
   end;
+  Result := TLogFileWriter.Create(F);
+end;
+
+class function TLogFileWriter.Append(const FileName: string): TLogFileWriter;
+var
+  F: TFileStream;
+begin
+  F := TFileStream.Create(FileName, fmOpenReadWrite or fmShareDenyWrite);
+  F.Seek(0, soEnd);
   Result := TLogFileWriter.Create(F);
 end;
 
@@ -725,7 +793,7 @@ begin
     ecReadVehicleInfo: if RequireConnected then DoReadVehicleInfo;
     ecStartScan: if RequireConnected then DoStartScan(Cmd.PidIds);
     ecStopScan: DoStopScan;
-    ecStartLog: DoStartLog(Cmd.Text);
+    ecStartLog: DoStartLog(Cmd.Text, Cmd.AppendTo);
     ecStopLog: DoStopLog;
     ecPauseLog:
       begin
@@ -1370,7 +1438,7 @@ begin
           SourceRuntime: Values[J] := FScanClock.Elapsed.TotalSeconds;
           SourceLogTime:
             if FLog <> nil then
-              Values[J] := FLogClock.Elapsed.TotalSeconds
+              Values[J] := LogTime
             else
               Values[J] := NaN;
           SourceMissing: Values[J] := NaN;
@@ -1458,11 +1526,17 @@ begin
     Result := S;
 end;
 
-procedure TScanEngine.DoStartLog(const FileName: string);
+{ A new log in FileName, or AppendTo carried on: its time goes on from its
+  last row plus the time since it was written (the chart shows the gap), so
+  stops and starts of the scan or the car make one log. A log of other PIDs
+  cannot take the rows: then FileName is made after all. }
+procedure TScanEngine.DoStartLog(const FileName, AppendTo: string);
 var
-  Header: string;
+  Header, OldHeader, Name: string;
   P: TPidDef;
   Ev: TEngineEvent;
+  LastTime: Double;
+  Appending: Boolean;
 begin
   if not FStreaming then
   begin
@@ -1470,23 +1544,52 @@ begin
     Exit;
   end;
   DoStopLog;
-  FLog := TLogFileWriter.Open(FileName);
   Header := 'Time (s)';
   for P in FScanPids do
     if P.Units <> '' then
       Header := Header + ',' + CsvField(P.DisplayName + ' (' + P.Units + ')')
     else
       Header := Header + ',' + CsvField(P.DisplayName);
-  FLog.WriteLine(Header);
+  Appending := False;
+  FLogBase := 0;
+  if AppendTo <> '' then
+  begin
+    if ReadLogEnds(AppendTo, OldHeader, LastTime) and (OldHeader = Header) then
+    begin
+      FLog := TLogFileWriter.Append(AppendTo);
+      FLogBase := LastTime + MilliSecondsBetween(Now, TFile.GetLastWriteTime(AppendTo)) / 1000;
+      Appending := True;
+    end
+    else
+      EmitText(eeWarning, Format('The scan has other PIDs than %s, so the log goes on in a new file',
+        [ExtractFileName(AppendTo)]));
+  end;
+  if Appending then
+    Name := AppendTo
+  else
+  begin
+    Name := FileName;
+    FLog := TLogFileWriter.Open(Name);
+    FLog.WriteLine(Header);
+  end;
   FLogRows := 0;
   FLogPaused := False;
   FLogClock := TStopwatch.StartNew;
-  Log('Logging to %s', [FileName]);
+  if Appending then
+    Log('Logging to ' + Name + ' again, from ' + FormatFloat('0.0', FLogBase, TFormatSettings.Invariant) + ' s')
+  else
+    Log('Logging to %s', [Name]);
   Ev := Default(TEngineEvent);
   Ev.Kind := eeLogStarted;
-  Ev.Text := FileName;
+  Ev.Text := Name;
+  Ev.Flag := Appending;
   Emit(Ev);
   PublishSnapshot;
+end;
+
+function TScanEngine.LogTime: Double;
+begin
+  Result := FLogBase + FLogClock.Elapsed.TotalSeconds;
 end;
 
 procedure TScanEngine.WriteLogRow;
@@ -1496,7 +1599,7 @@ var
 begin
   SB := TStringBuilder.Create;
   try
-    SB.Append(FormatFloat('0.000', FLogClock.Elapsed.TotalSeconds, TFormatSettings.Invariant));
+    SB.Append(FormatFloat('0.000', LogTime, TFormatSettings.Invariant));
     for I := 0 to High(FScanPids) do
     begin
       SB.Append(',');
@@ -1522,6 +1625,7 @@ begin
     Exit;
   FreeAndNil(FLog); // waits for the writer to put the rest in the file
   Log('Log closed (%d rows)', [FLogRows]);
+  FLogRows := 0; // the snapshot counts the open log's rows only
   Ev := Default(TEngineEvent);
   Ev.Kind := eeLogStopped;
   Emit(Ev);

@@ -41,6 +41,8 @@ type
     ActiveList: string;     // name of the scan list last chosen, '' if none
     StreamSpeed: TStreamSpeed;
     LogFolder: string;
+    AlwaysLog: Boolean;     // every scan writes a log, no Start log needed
+    OneLog: Boolean;        // a log started again carries on the same file until UVScan closes
     BackgroundStop: Integer; // phone: seconds in the background before the log, scan and connection stop
     PendingNotice: string;   // shown at the next start (Android may end the app before the user is back)
     Trace: Boolean;
@@ -120,6 +122,8 @@ begin
   ActiveList := '';
   StreamSpeed := ssFast;
   LogFolder := DefaultLogFolder;
+  AlwaysLog := False;
+  OneLog := False;
   BackgroundStop := 15;
   PendingNotice := '';
   Trace := False;
@@ -162,6 +166,8 @@ begin
 
   Sec := TJSONObject.Create;
   Sec.AddPair('folder', LogFolder);
+  Sec.AddPair('always', TJSONBool.Create(AlwaysLog));
+  Sec.AddPair('oneLog', TJSONBool.Create(OneLog));
   Sec.AddPair('backgroundStop', TJSONNumber.Create(BackgroundStop));
   if PendingNotice <> '' then
     Sec.AddPair('pendingNotice', PendingNotice);
@@ -246,6 +252,8 @@ begin
   if Sec <> nil then
   begin
     LogFolder := JStr(Sec, 'folder', LogFolder);
+    AlwaysLog := JBool(Sec, 'always', AlwaysLog);
+    OneLog := JBool(Sec, 'oneLog', OneLog);
     BackgroundStop := EnsureRange(JInt(Sec, 'backgroundStop', BackgroundStop), 5, 600);
     PendingNotice := JStr(Sec, 'pendingNotice', '');
   end;

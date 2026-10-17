@@ -61,6 +61,7 @@ type
     procedure SetMode(Value: TChartMode);
     procedure SetShowBands(Value: Boolean);
     function TimeAtX(X: Single): Double;
+    function GapTime: Double;
     function Visible_: TArray<Integer>;
     procedure Scale(Ch: Integer; out Lo, Hi: Double);
     procedure SetWindow(T0, T1: Double);
@@ -129,7 +130,7 @@ procedure AutoRange(const Ch: TLogChannel; out Lo, Hi: Double);
 implementation
 
 uses
-  System.StrUtils;
+  System.StrUtils, System.Generics.Collections;
 
 const
   Back = TAlphaColor($FF161A1E);
@@ -458,6 +459,29 @@ begin
   Result := FT0 + (X - FPlot.Left) / FPlot.Width * (FT1 - FT0);
 end;
 
+{ How long without rows breaks the line: ten of the log's usual steps (the
+  median of up to 1000 spread over it), at least 2 s, so a fast AVT log shows
+  a short stop and a slow ELM327 one is not cut up. }
+function TLogChart.GapTime: Double;
+var
+  Steps: TArray<Double>;
+  I, K, N, Stride: Integer;
+begin
+  Result := 2;
+  if (FData = nil) or (FData.Count < 3) then
+    Exit;
+  N := Min(1000, FData.Count - 1);
+  Stride := Max(1, (FData.Count - 1) div N);
+  SetLength(Steps, N);
+  for I := 0 to N - 1 do
+  begin
+    K := Min(FData.Count - 2, I * Stride);
+    Steps[I] := FData.Times[K + 1] - FData.Times[K];
+  end;
+  TArray.Sort<Double>(Steps);
+  Result := Max(2, 10 * Steps[N div 2]);
+end;
+
 function TLogChart.Visible_: TArray<Integer>;
 var
   I, J, T: Integer;
@@ -505,6 +529,7 @@ var
   Box: TArray<string>;
   BoxColors: TArray<TAlphaColor>;
   State: TCanvasSaveState;
+  Gap: Double;
 
   function Y_(const V, Lo_, Hi_: Double; Top, Height: Single): Single;
   begin
@@ -518,7 +543,9 @@ var
 
   { Draws one channel's line in [Top, Top+Height] for scale Lo_..Hi_. Long
     logs are reduced to the lowest and highest value per pixel column. Runs
-    where an alert level matches are drawn in the level's colour if wanted. }
+    where an alert level matches are drawn in the level's colour if wanted.
+    The line breaks where rows stop for longer than Gap (a log carried on
+    after the scan or the car was stopped, a pause). }
   procedure DrawSeries(C: Integer; const Lo_, Hi_: Double; Top, Height: Single);
   var
     Style: TChannelStyle;
@@ -602,7 +629,11 @@ var
       RunLvl := -2;
       if not Decimate then
         for J := I0 to I1 do
-          Add(FData.Times[J], Vals[J])
+        begin
+          if (J > I0) and (FData.Times[J] - FData.Times[J - 1] > Gap) then
+            Add(FData.Times[J], NaN);
+          Add(FData.Times[J], Vals[J]);
+        end
       else
       begin
         LastBucket := -1;
@@ -611,6 +642,19 @@ var
         for J := I0 to I1 do
         begin
           Bucket := Trunc(X_(FData.Times[J]));
+          if (J > I0) and (FData.Times[J] - FData.Times[J - 1] > Gap) and (LastBucket >= 0) then
+          begin
+            // the bucket before the gap, then a break
+            if not IsNan(BMin) then
+            begin
+              Add(TimeAtX(LastBucket), BMin);
+              Add(TimeAtX(LastBucket), BMax);
+            end;
+            Add(TimeAtX(LastBucket), NaN);
+            BMin := NaN;
+            BMax := NaN;
+            LastBucket := -1;
+          end;
           if (Bucket <> LastBucket) and (LastBucket >= 0) then
           begin
             if not IsNan(BMin) then
@@ -714,6 +758,7 @@ begin
     Exit;
   Vis := Visible_;
   N := Length(Vis);
+  Gap := GapTime;
   State := Canvas.SaveState;
   try
     Canvas.IntersectClipRect(LocalRect);

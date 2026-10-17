@@ -35,6 +35,8 @@ type
     [Test] procedure ReportsRejectedPidAndKeepsScanning;
     [Test] procedure LogsToCsv;
     [Test] procedure LogWriterKeepsEveryLine;
+    [Test] procedure LogCarriesOnInOneFile;
+    [Test] procedure ReadsLogEnds;
     [Test] procedure TestsPids;
     [Test] procedure ReadsDtcs;
     [Test] procedure RejectsScanWithNothingSelected;
@@ -545,6 +547,108 @@ begin
   finally
     Lines.Free;
     TFile.Delete(FileName);
+  end;
+end;
+
+{ One log: a log started again with AppendTo goes on in that file, its
+  time going on past the gap; other PIDs make a new file instead. }
+procedure TEngineTests.LogCarriesOnInOneFile;
+var
+  Cmd: TEngineCommand;
+  FileName, Other, Header: string;
+  Lines: TArray<string>;
+  I: Integer;
+  T, Prev, BeforeGap: Double;
+  Ev: TEngineEvent;
+
+  procedure LogSome(const Ids: TArray<Integer>; const Name, AppendTo: string);
+  begin
+    FEvents.Clear;
+    Cmd := Command(ecStartScan);
+    Cmd.PidIds := Ids;
+    FEngine.Post(Cmd);
+    Assert.IsTrue(WaitUntil(function: Boolean begin Result := FState = esScanning end), 'not scanning');
+    Cmd := Command(ecStartLog);
+    Cmd.Text := Name;
+    Cmd.AppendTo := AppendTo;
+    FEngine.Post(Cmd);
+    Assert.IsTrue(WaitUntil(function: Boolean begin Result := FEngine.GetSnapshot.LogRows >= 3 end), 'no log rows');
+    FEngine.Post(Command(ecStopScan)); // closes the log too
+    Assert.IsTrue(WaitUntil(function: Boolean begin Result := HasEvent(eeLogStopped) and (FState = esConnected) end), 'not stopped');
+  end;
+
+begin
+  FileName := TPath.Combine(TPath.GetTempPath, 'uvscan_test_onelog.csv');
+  Other := TPath.Combine(TPath.GetTempPath, 'uvscan_test_onelog2.csv');
+  Connect;
+  try
+    LogSome([IdRpm, IdEct], FileName, '');
+    Assert.IsTrue(ReadLogEnds(FileName, Header, BeforeGap), 'log ends');
+    Sleep(1500);
+    LogSome([IdRpm, IdEct], Other, FileName);
+    Assert.IsTrue(FindEvent(eeLogStarted, Ev), 'log started');
+    Assert.AreEqual(FileName, Ev.Text, 'carried on');
+    Assert.IsTrue(Ev.Flag, 'marked as carried on');
+    Assert.IsFalse(FileExists(Other), 'no new file');
+    Lines := TFile.ReadAllLines(FileName, TEncoding.UTF8);
+    Assert.AreEqual('Time (s),RPM (RPM),ECT (C)', Lines[0]);
+    Prev := -1;
+    for I := 1 to High(Lines) do
+    begin
+      Assert.AreNotEqual('Time (s),RPM (RPM),ECT (C)', Lines[I], 'one header');
+      T := StrToFloat(Lines[I].Split([','])[0], TFormatSettings.Invariant);
+      Assert.IsTrue(T > Prev, 'time goes on: ' + Lines[I]);
+      if Prev = BeforeGap then
+        Assert.IsTrue(T - Prev >= 1.4, Format('the gap shows: %g after %g', [T, Prev]));
+      Prev := T;
+    end;
+    Assert.IsTrue(Length(Lines) >= 7, 'rows');
+    // other PIDs: a new file, and a warning
+    LogSome([IdRpm], Other, FileName);
+    Assert.IsTrue(FindEvent(eeLogStarted, Ev), 'log started');
+    Assert.AreEqual(Other, Ev.Text);
+    Assert.IsFalse(Ev.Flag);
+    Assert.IsTrue(FindEvent(eeWarning, Ev), 'warning');
+    Assert.Contains(Ev.Text, 'other PIDs');
+    Assert.AreEqual('Time (s),RPM (RPM)', TFile.ReadAllLines(Other, TEncoding.UTF8)[0]);
+  finally
+    TFile.Delete(FileName);
+    if FileExists(Other) then
+      TFile.Delete(Other);
+  end;
+end;
+
+procedure TEngineTests.ReadsLogEnds;
+var
+  Name, Header: string;
+  T: Double;
+  SB: TStringBuilder;
+  I: Integer;
+begin
+  Name := TPath.Combine(TPath.GetTempPath, 'uvscan_test_ends.csv');
+  try
+    Assert.IsFalse(ReadLogEnds(Name, Header, T), 'no file');
+    TFile.WriteAllText(Name, 'Time (s),RPM (RPM)' + sLineBreak, TEncoding.UTF8);
+    Assert.IsTrue(ReadLogEnds(Name, Header, T), 'header only');
+    Assert.AreEqual('Time (s),RPM (RPM)', Header);
+    Assert.AreEqual(0.0, T, 0.0001);
+    // longer than the part read from each end
+    SB := TStringBuilder.Create;
+    try
+      SB.Append('Time (s),RPM (RPM)').Append(sLineBreak);
+      for I := 1 to 20000 do
+        SB.Append(FormatFloat('0.000', I / 10, TFormatSettings.Invariant)).Append(',800').Append(sLineBreak);
+      TFile.WriteAllText(Name, SB.ToString, TEncoding.UTF8);
+    finally
+      SB.Free;
+    end;
+    Assert.IsTrue(ReadLogEnds(Name, Header, T));
+    Assert.AreEqual('Time (s),RPM (RPM)', Header);
+    Assert.AreEqual(2000.0, T, 0.0001);
+    TFile.WriteAllText(Name, 'Name,Value' + sLineBreak + '1,2' + sLineBreak);
+    Assert.IsFalse(ReadLogEnds(Name, Header, T), 'not a UVScan log');
+  finally
+    TFile.Delete(Name);
   end;
 end;
 

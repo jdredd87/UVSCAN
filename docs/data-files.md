@@ -147,7 +147,7 @@ The top‑level `"defaults"` number records which set of built‑ins the file ha
 
 ## settings.json
 
-Port and baud (and `connection.tcpAddress`, the `host:port` of an adapter on the network, and `connection.adapter`, `avt` or `elm327`), the ticked PIDs and active scan list, stream speed, log folder, how long a phone may be away from UVScan before it stops (`logging.backgroundStop`, seconds), raw traffic option, alert sounds, live grid zoom and min / max columns, the live rows' order for scans without a scan list (`liveGrid.order`, PID ids top first), theme, keep the screen on, rounded readings (`appearance.roundReadings`), rotation lock (`appearance.lockRotation`), window position, PID panel width and whether it is on its own page (`window.pidsHidden`). Written when UVScan closes. An unreadable file is renamed to `settings.json.bad` and defaults are used.
+Port and baud (and `connection.tcpAddress`, the `host:port` of an adapter on the network, and `connection.adapter`, `avt` or `elm327`), the ticked PIDs and active scan list, stream speed, log folder, the logging options (`logging.always`: every scan logs; `logging.oneLog`: later logs carry on the same file until UVScan closes), how long a phone may be away from UVScan before it stops (`logging.backgroundStop`, seconds), raw traffic option, alert sounds, live grid zoom and min / max columns, the live rows' order for scans without a scan list (`liveGrid.order`, PID ids top first), theme, keep the screen on, rounded readings (`appearance.roundReadings`), rotation lock (`appearance.lockRotation`), window position, PID panel width and whether it is on its own page (`window.pidsHidden`). Written when UVScan closes. An unreadable file is renamed to `settings.json.bad` and defaults are used.
 
 `quickStarts` holds the [quick starts](user-guide.md#quick-start):
 
@@ -161,4 +161,4 @@ Optional: `"port"` (else the port chosen last), `"adapter"` (`avt` or `elm327`, 
 
 ## CSV logs
 
-`UVScan_<yyyy-mm-dd_hhnnss>.csv` in the log folder: a header row `Time (s),<PID name> (<units>),…` and one row per update while logging (paused rows are skipped).
+`UVScan_<yyyy-mm-dd_hhnnss>.csv` in the log folder: a header row `Time (s),<PID name> (<units>),…` and one row per update while logging (paused rows are skipped). With *One log until UVScan closes* a later log with the same header is appended to the file: its time goes on from the last row plus the time since the file was last written, so the stop shows as a gap (the chart breaks its lines where rows stop for more than ten usual steps, at least 2 s).
