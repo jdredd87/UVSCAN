@@ -277,7 +277,6 @@ type
     cbAway: TComboBox;
     FLiveLog: TLogData;       // the last minutes of the scan, for the live chart
     FLiveStart: UInt64;
-    btnChart: TSpeedButton;
     FMin, FMax: TArray<Double>;
     FLogging: Boolean;
     FLogPaused: Boolean;
@@ -1034,25 +1033,11 @@ begin
   for I := 0 to 2 do
     Icon.Data.AddEllipse(TRectF.Create(10, 3 + I * 7, 14, 7 + I * 7));
   Icon.Stroke.Kind := TBrushKind.None;
-  // Live and Gauges: the live chart.
-  btnChart := TSpeedButton.Create(Self);
-  btnChart.Parent := pnlAppBar;
-  btnChart.Stored := False;
-  btnChart.Align := TAlignLayout.Right;
-  btnChart.Position.X := btnAction.Position.X - 1; // left of the main action
-  btnChart.Width := 44;
-  btnChart.Text := '';
-  btnChart.Hint := 'Live chart (or back to the grid)';
-  btnChart.ShowHint := True;
-  btnChart.OnClick := LiveChartClick;
   // OrderAppBar places the right side of the bar
-  for var C in TArray<TControl>.Create(btnAction, btnMenu, btnChart) do
+  for var C in TArray<TControl>.Create(btnAction, btnMenu) do
     C.Align := TAlignLayout.None;
   btnAction.Height := 36;
   pnlAppBar.OnResized := AppBarResized;
-  Icon := AddIcon(btnChart);
-  Icon.Data.Data := 'M3 4 L3 20 L21 20 M6 15 L10 10 L14 13 L20 6';
-  Icon.Fill.Kind := TBrushKind.None;
   // Connect page: the Quick start menu, beside Start / Stop scan.
   btnQuick := TButton.Create(Self);
   btnQuick.Stored := False;
@@ -1553,7 +1538,6 @@ begin
   btnBack.Visible := (tcMain.ActiveTab = tiMore) and (P <> tiMoreMenu);
   btnMenu.Visible := (P = tiLive) or (P = tiDashboard) or (P = tiPids) or (P = tiMessages) or (P = tiConnect) or
     (P = tiControls);
-  btnChart.Visible := (P = tiLive) or (P = tiDashboard);
   btnFullScreen.Visible := P = tiDashboard;
   // Both can show: the PID list button after the back arrow (sharing its
   // place, a second tap on back hid the PID list).
@@ -1574,15 +1558,15 @@ begin
     FNavButtons[I].Repaint;
 end;
 
-{ The top bar's right side, from the edge: menu, main button, chart - placed
+{ The top bar's right side, from the edge: menu, main button, full screen - placed
   here rather than right aligned (the alignment mixed their order up after a
   turn with some of them hidden). The title gets the rest. }
 procedure TMainForm.OrderAppBar;
 var
   R, H: Single;
 begin
-  if btnChart = nil then
-    Exit;
+  if btnFullScreen = nil then
+    Exit; // not built yet
   H := pnlAppBar.Height;
   R := pnlAppBar.Width;
   if btnMenu.Visible then
@@ -1593,12 +1577,7 @@ begin
   R := R - btnAction.Margins.Right;
   btnAction.SetBounds(R - btnAction.Width, Round((H - btnAction.Height) / 2), btnAction.Width, btnAction.Height);
   R := btnAction.Position.X - 4;
-  if btnChart.Visible then
-  begin
-    btnChart.SetBounds(R - btnChart.Width, 0, btnChart.Width, H);
-    R := R - btnChart.Width;
-  end;
-  if (btnFullScreen <> nil) and btnFullScreen.Visible then
+  if btnFullScreen.Visible then
   begin
     btnFullScreen.SetBounds(R - btnFullScreen.Width, 0, btnFullScreen.Width, H);
     R := R - btnFullScreen.Width;
@@ -2663,7 +2642,6 @@ begin
   TLogViewerForm.LiveThemeChanged;
   Icon(btnBack);
   Icon(btnMenu);
-  Icon(btnChart);
   Icon(btnFullScreen);
   Icon(btnPidPanel);
   for var L in FAboutHeads do
@@ -4782,15 +4760,9 @@ begin
     FNotes.CancelNotification(AwayNote);
 end;
 
-{ The chart button and the menus' Live chart: the Live page's chart view.
-  The button on the Live page with the chart showing goes back to the grid. }
+{ The menus' Live chart (and a quick start's): the Live page's chart view. }
 procedure TMainForm.LiveChartClick(Sender: TObject);
 begin
-  if (Sender = btnChart) and FLiveChart and (CurrentPage = tiLive) then
-  begin
-    SetLiveChart(False);
-    Exit;
-  end;
   ShowPage(tiLive);
   SetLiveChart(True);
 end;

@@ -192,7 +192,7 @@ Press **Start scan**. Each ticked PID gets a row with its current value, units a
 
 ## Live chart
 
-**Grid | Chart** at the top of the *Live* page switches between the grid and the live chart: the running scan as a line chart — the [log viewer](#log-viewer)'s chart, fed by the scan instead of a file. The chart button in the top bar (on *Live* and *Gauges*, or **⋮ → Live chart**) goes to it too, and on the chart back to the grid. It also charts the [test display](#test-display), so you can try it without a car. On a narrow window or a phone, **⋮ → Chart view, colours and scales…** has what does not fit in its bars.
+**Grid | Chart** at the top of the *Live* page switches between the grid and the live chart: the running scan as a line chart — the [log viewer](#log-viewer)'s chart, fed by the scan instead of a file. On *Gauges*, **⋮ → Live chart** goes to it too. It also charts the [test display](#test-display), so you can try it without a car. On a narrow window or a phone, **⋮ → Chart view, colours and scales…** has what does not fit in its bars.
 
 ![Live chart](images/live-chart.png)
 
