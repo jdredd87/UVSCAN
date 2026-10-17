@@ -74,6 +74,7 @@ type
     FHost: string;
     FPort: Word;
     FSocket: System.Net.Socket.TSocket;
+    FOverWifi: Boolean; // Android: this connection made the app use the Wi-Fi (UVScan.Wifi.Android)
     procedure CheckOpen;
     procedure Lost(const Why: string);
   public
@@ -136,7 +137,7 @@ implementation
 uses
   {$IFDEF MSWINDOWS}System.Win.Registry, Winapi.Winsock2,{$ENDIF}
   {$IFDEF POSIX}Posix.SysSocket, Posix.NetinetIn, Posix.NetinetTCP,{$ENDIF}
-  {$IFDEF ANDROID}UVScan.Serial.Android, UVScan.Bluetooth.Android,{$ENDIF}
+  {$IFDEF ANDROID}UVScan.Serial.Android, UVScan.Bluetooth.Android, UVScan.Wifi.Android,{$ENDIF}
   System.Generics.Collections, System.Generics.Defaults, System.StrUtils, System.SyncObjs;
 
 { TTcpSerialPort }
@@ -307,6 +308,9 @@ begin
   Keep := Job; // the thread holds it too
   Host := FHost;
   Port := FPort;
+  {$IFDEF ANDROID}
+  FOverWifi := UseWifiFor(Host); // a Wi-Fi adapter's network, with mobile data on
+  {$ENDIF}
   TThread.CreateAnonymousThread(
     procedure
     var
@@ -322,10 +326,16 @@ begin
       Job.Done.SetEvent;
     end).Start;
   if Job.Done.WaitFor(TcpConnectTimeoutMs) <> TWaitResult.wrSignaled then
+  begin
+    Close;
     raise ESerialError.CreateFmt('No answer from %s within %d seconds. Is the interface on, and on this network?',
       [Description, TcpConnectTimeoutMs div 1000]);
+  end;
   if Job.Error <> '' then
+  begin
+    Close;
     raise ESerialError.CreateFmt('Could not connect to %s: %s', [Description, Job.Error]);
+  end;
   FSocket := Job.Socket;
   Job.Socket := nil;
   // The AVT's requests and answers are a few bytes each: send each one at
@@ -342,6 +352,11 @@ end;
 procedure TTcpSerialPort.Close;
 begin
   FreeSocket(FSocket);
+  {$IFDEF ANDROID}
+  if FOverWifi then
+    ReleaseWifi;
+  {$ENDIF}
+  FOverWifi := False;
 end;
 
 function TTcpSerialPort.Read(var Buffer; Count: Integer; TimeoutMs: Cardinal): Integer;
