@@ -4,7 +4,7 @@ A data logger and scan tool for GM vehicles on **J1850 VPW (GM Class 2)**, using
 
 It is a rewrite of the 2008 UVSCAN (Delphi 2007) for **Delphi 13 FireMonkey (FMX)**, with no third‑party components. It runs on Windows (Win32) and builds for **Android** (64‑bit); the last VCL version is git tag `vcl-final`.
 
-**Download:** the Windows setup program is on the [latest release](https://github.com/jdredd87/UVSCAN/releases/latest). UVScan checks for newer ones itself and offers to install them.
+**Download:** the Windows setup program is on the [latest release](https://github.com/jdredd87/UVSCAN/releases/latest). UVScan checks for newer ones itself and offers to install them, then starts again.
 
 ![Live data](docs/images/live-data.png)
 

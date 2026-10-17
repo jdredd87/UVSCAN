@@ -11,7 +11,7 @@ interface
 
 uses
   System.SysUtils, System.Types, System.UITypes, System.Classes, System.Variants, System.Math,
-  System.StrUtils, System.IOUtils, System.Generics.Collections,
+  System.StrUtils, System.IOUtils, System.Generics.Collections, System.Diagnostics,
   FMX.Types, FMX.Controls, FMX.Forms, FMX.Graphics, FMX.Dialogs, FMX.StdCtrls, FMX.Edit,
   FMX.ListBox, FMX.Layouts, FMX.Objects, FMX.TabControl, FMX.Menus, FMX.Controls.Presentation,
   FMX.Platform, System.Messaging, System.Notification,
@@ -299,6 +299,8 @@ type
     FFlowQueued: Boolean;
     FPageGridsSet, FPageGridsCompact: Boolean;
     FShownCycles: Int64;
+    FScanWatch: TStopwatch;     // since the scan started, for the status strip
+    FLogWatch: TStopwatch;      // since the log started
     FDisplay: TDisplaySettings;      // display.json: PID looks, alert levels, gauges
     FAlerts: TAlertTracker;
     FRowStyles: TArray<TResolvedStyle>; // per live row, as last evaluated
@@ -604,6 +606,18 @@ const
   ZoomSteps: array[0..8] of Integer = (75, 90, 100, 110, 125, 150, 175, 200, 250);
   NoListCaption = '(none)';
   MaxMessageLines = 5000;
+
+{ 0:42, 12:05, 1:02:09 }
+function ElapsedText(const Watch: TStopwatch): string;
+var
+  S: Int64;
+begin
+  S := Trunc(Watch.Elapsed.TotalSeconds);
+  if S >= 3600 then
+    Result := Format('%d:%.2d:%.2d', [S div 3600, S mod 3600 div 60, S mod 60])
+  else
+    Result := Format('%d:%.2d', [S div 60, S mod 60]);
+end;
 
 function ComboText(Combo: TComboBox): string;
 begin
@@ -2047,7 +2061,8 @@ begin
   if Notes <> '' then
     Notes := sLineBreak + sLineBreak + Notes;
   if CanInstallUpdate then
-    Ask := 'Download and install it now? UVScan closes while it installs; your PIDs, lists, settings and logs stay.'
+    Ask := 'Download and install it now? UVScan closes while it installs and starts again when it is done ' +
+      '(installed for all users, Windows asks for permission first); your PIDs, lists, settings and logs stay.'
   else
     Ask := 'Open its download page?';
   Confirm(Format('UVScan %s is out (this is %s).%s', [FUpdate.Version, AppVersion, Notes]) + sLineBreak +
@@ -2094,7 +2109,9 @@ begin
         Exit;
       end;
       AddMessage('Starting ' + FileName);
-      if not RunProgram(FileName) then
+      // Just a progress window: the choices made when it was installed (for
+      // whom, where, the desktop icon) are kept; it starts UVScan again.
+      if not RunProgram(FileName, '/SILENT /SUPPRESSMSGBOXES /NORESTART') then
       begin
         ShowNotice('Could not start ' + FileName, True);
         Exit;
@@ -4289,6 +4306,8 @@ begin
           RefreshDashboard;
           if not FTestMode then
             SetStatus(spRate, ''); // no updates any more
+          if not FLogging then
+            SetStatus(spLog, '');
         end;
         if (FState = esConnected) and FAutoScan then
         begin
@@ -4325,6 +4344,7 @@ begin
       begin
         if FTestMode then
           StopTest;
+        FScanWatch := TStopwatch.StartNew;
         SetupLiveRows(Ev.PidIds);
         if FQuickActive and (FQuickDash <> '') and (FDisplay.IndexOfDashboard(FQuickDash) >= 0) then
           SelectDashboard(FDisplay.IndexOfDashboard(FQuickDash)); // the quick start's
@@ -4373,6 +4393,7 @@ begin
         FLastLogFile := Ev.Text;
         FLogging := True;
         FLogPaused := False;
+        FLogWatch := TStopwatch.StartNew;
         SetStatus(spLog, 'Logging to ' + ExtractFileName(Ev.Text));
         UpdateControls;
       end;
@@ -4588,7 +4609,10 @@ begin
   else
     SetStatus(spRate, Format('%.1f updates/s', [FLive.CyclesPerSecond]));
   if FLive.Logging then
-    SetStatus(spLog, Format('Logging: %d rows%s', [FLive.LogRows, IfThen(FLive.LogPaused, ' (paused)', '')]));
+    SetStatus(spLog, Format('Logging: %d rows in %s%s', [FLive.LogRows, ElapsedText(FLogWatch),
+      IfThen(FLive.LogPaused, ' (paused)', '')]))
+  else if (FState = esScanning) and not FTestMode then
+    SetStatus(spLog, Format('%d updates in %s', [FLive.Cycles, ElapsedText(FScanWatch)]));
   if FLive.Cycles <> FShownCycles then
   begin
     FShownCycles := FLive.Cycles;
@@ -7095,9 +7119,9 @@ var
 begin
   if FStatus[Part] = Text then
     Exit; // avoid repainting the status strip for nothing
-  // The rate changes every tick: its lines are only measured again when it
-  // appears, goes or changes length (it may need another line then).
-  Refit := (Part <> spRate) or (Length(FStatus[Part]) <> Length(Text));
+  // The rate and the counts change every tick: their lines are only measured
+  // again when they appear, go or change length (they may need another line then).
+  Refit := not (Part in [spRate, spLog]) or (Length(FStatus[Part]) <> Length(Text));
   FStatus[Part] := Text;
   S := '';
   for P := Low(TStatusPart) to High(TStatusPart) do
