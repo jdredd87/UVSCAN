@@ -8,6 +8,7 @@
 ; logs in Documents\UVScan Logs are kept when UVScan is uninstalled.
 ; UVScan's update runs it with /SILENT /SUPPRESSMSGBOXES /NORESTART: a
 ; progress window only, the earlier choices kept, then UVScan starts again.
+; It waits for UVScan to close first (InitializeSetup).
 
 #ifndef AppVersion
   #define AppVersion "0.0.0"
@@ -69,3 +70,20 @@ Name: "{autodesktop}\UVScan"; Filename: "{app}\UVScan.exe"; Tasks: desktopicon
 Filename: "{app}\UVScan.exe"; Description: "{cm:LaunchProgram,UVScan}"; Flags: nowait postinstall skipifsilent
 ; An update started by UVScan: start it again (as the user, not as the admin setup ran as)
 Filename: "{app}\UVScan.exe"; Flags: nowait runasoriginaluser; Check: WizardSilent
+
+[Code]
+// Started by UVScan's update, which closes right after: give it time to.
+// A silent setup that finds it still running cannot ask, and gives up.
+// UVScan holds the mutex while it runs (UVScan.Update.RunningMutexName).
+function InitializeSetup(): Boolean;
+var
+  Waited: Integer;
+begin
+  Waited := 0;
+  while WizardSilent and CheckForMutexes('UVScanRunning') and (Waited < 10000) do
+  begin
+    Sleep(250);
+    Waited := Waited + 250;
+  end;
+  Result := True;
+end;

@@ -21,6 +21,11 @@ type
 
 const
   UpdateApiUrl = 'https://api.github.com/repos/jdredd87/UVSCAN/releases/latest';
+  { Held while UVScan runs (Windows). The setup program, started by the update
+    with /SILENT, waits for it to go before it installs: UVScan is still
+    closing then, and a silent setup that finds it running gives up.
+    installer\UVScan.iss uses the same name. }
+  RunningMutexName = 'UVScanRunning';
 
 { < 0: A is older than B, 0: the same, > 0: newer. Numbers compared one by
   one (2.10.0 is newer than 2.9.0); a leading 'v' and missing parts (2.1 =
@@ -28,8 +33,12 @@ const
 function CompareVersions(const A, B: string): Integer;
 { What to show in UVScan from a release's notes (Markdown): the section under
   the first heading that says "new" or "change" (### What's new, ### Changes
-  since v2.0.0), as plain text, at most MaxLines lines; '' if there is none. }
+  since v2.0.0), up to the next heading or, after a list, the next paragraph
+  that is not part of it; as plain text, at most MaxLines lines; '' if there
+  is none. }
 function ReleaseHighlights(const Notes: string; MaxLines: Integer = 12): string;
+{ Windows: marks this UVScan as running (RunningMutexName) until it ends. }
+procedure HoldRunningMutex;
 { An HTTP error in words a user follows: no internet (a phone on an ELM327's
   own Wi-Fi, say) or no answer in time; anything else as it is. }
 function FriendlyNetError(const Msg: string): string;
@@ -83,10 +92,12 @@ end;
 function ReleaseHighlights(const Notes: string; MaxLines: Integer): string;
 var
   Line, L: string;
-  Inside: Boolean;
+  Inside, InList, AfterBlank, Item: Boolean;
   Lines: TArray<string>;
 begin
   Inside := False;
+  InList := False;
+  AfterBlank := False;
   Lines := nil;
   for Line in Notes.Replace(#13, '').Split([#10]) do
   begin
@@ -101,9 +112,15 @@ begin
     end;
     if not Inside or ((L = '') and (Lines = nil)) then
       Continue;
+    Item := L.StartsWith('* ') or L.StartsWith('- ');
+    if (L <> '') and InList and AfterBlank and not Item then
+      Break; // the list is over: what follows (how to install, ...) is not news
+    AfterBlank := L = '';
+    InList := InList or Item;
     L := L.Replace('**', '').Replace('`', '').Replace('__', '');
-    if L.StartsWith('* ') or L.StartsWith('- ') then
+    if Item then
       L := '- ' + Trim(Copy(L, 3, MaxInt));
+    L := L.Replace('*', ''); // *emphasis*
     if Length(Lines) = MaxLines then
     begin
       Lines := Lines + ['...'];
@@ -112,6 +129,18 @@ begin
     Lines := Lines + [L];
   end;
   Result := Trim(string.Join(sLineBreak, Lines));
+end;
+
+{$IFDEF MSWINDOWS}
+function CreateMutexW(Attributes: Pointer; InitialOwner: LongBool; Name: PWideChar): THandle; stdcall;
+  external 'kernel32.dll';
+{$ENDIF}
+
+procedure HoldRunningMutex;
+begin
+  {$IFDEF MSWINDOWS}
+  CreateMutexW(nil, False, RunningMutexName); // the handle closes when UVScan ends
+  {$ENDIF}
 end;
 
 function ParseRelease(const Json: string; out Info: TUpdateInfo): Boolean;

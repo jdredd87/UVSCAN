@@ -417,6 +417,10 @@ begin
   Assert.AreEqual('- Faster DPID scans'#13#10'- Log viewer: zoom', ReleaseHighlights(Notes));
   Assert.AreEqual('', ReleaseHighlights('Just text, no headings.'));
   Assert.AreEqual('- a'#13#10'...', ReleaseHighlights('# What''s new'#10'- a'#10'- b'#10'- c', 1));
+  // The 2.0.1 notes: after the list, how to install it is not news; *emphasis* goes.
+  Assert.AreEqual('- About says it'#13#10'on two lines',
+    ReleaseHighlights('### What''s new'#10#10'- *About* says it'#10'  on two lines'#10#10 +
+    '**Windows:** download it.'#10#10'Android: not yet.'));
 end;
 
 procedure TUpdateTests.SaysNoInternet;

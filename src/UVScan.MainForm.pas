@@ -633,6 +633,7 @@ procedure TMainForm.FormCreate(Sender: TObject);
 var
   Events: IFMXApplicationEventService;
 begin
+  HoldRunningMutex; // a silent update waits for it to go
   FZoom := 100;
   FSelected := TList<Integer>.Create;
   FSupport := TDictionary<Integer, Boolean>.Create;
