@@ -11,7 +11,9 @@
   the tag is new; builds and tests (build.cmd), builds the setup program
   (build.cmd installer), tags, pushes the tag and makes the release (gh).
   Without -Notes the release says how to install it and lists the commits
-  since the last release. -DryRun stops before the tag.
+  since the last release; in -Notes, {VERSION} and {BUILD} are filled in (for
+  the setup program's name). Start the notes with a "### What's new" section:
+  that is what the update question shows. -DryRun stops before the tag.
 #>
 param([string]$Notes = '', [switch]$DryRun)
 $ErrorActionPreference = 'Continue' # git and gh write to stderr; their exit codes are checked
@@ -45,7 +47,8 @@ $setup = "installer\Output\UVScan-$ver-build$build-setup.exe"
 if (-not (Test-Path $setup)) { Fail "no $setup" }
 
 if ($Notes) {
-  $text = Get-Content $Notes -Raw
+  # {VERSION} and {BUILD} in the notes become this release's
+  $text = (Get-Content $Notes -Raw).Replace('{VERSION}', $ver).Replace('{BUILD}', $build)
 } else {
   $text = "UVScan $ver (build $build).`n`n" +
     "**Windows:** download ``UVScan-$ver-build$build-setup.exe`` below and run it. " +
