@@ -58,8 +58,9 @@ procedure PickPicture(Control: TControl; const Title: string; MaxSize: Integer; 
 procedure ShowInfo(const Msg: string; const OnClose: TProc = nil);
 procedure ShowWarning(const Msg: string; const OnClose: TProc = nil);
 procedure ShowError(const Msg: string; const OnClose: TProc = nil);
-{ Yes / No question; OnYes runs only on Yes. }
-procedure Confirm(const Msg: string; const OnYes: TProc; const OnNo: TProc = nil);
+{ Yes / No question; OnYes runs only on Yes. No is the default button
+  (Enter) unless DefaultYes. }
+procedure Confirm(const Msg: string; const OnYes: TProc; const OnNo: TProc = nil; DefaultYes: Boolean = False);
 { For an editor's OnCloseQuery: closing other than with OK while Changed
   asks Question first (Yes closes it, No keeps it open). }
 function CanCloseEditor(Form: TCustomForm; Changed: Boolean; const Question: string): Boolean;
@@ -1095,10 +1096,12 @@ begin
     end);
 end;
 
-procedure Confirm(const Msg: string; const OnYes: TProc; const OnNo: TProc);
+procedure Confirm(const Msg: string; const OnYes: TProc; const OnNo: TProc; DefaultYes: Boolean);
+const
+  Defaults: array[Boolean] of TMsgDlgBtn = (TMsgDlgBtn.mbNo, TMsgDlgBtn.mbYes);
 begin
   TDialogService.MessageDialog(Msg, TMsgDlgType.mtConfirmation, [TMsgDlgBtn.mbYes, TMsgDlgBtn.mbNo],
-    TMsgDlgBtn.mbNo, 0,
+    Defaults[DefaultYes], 0,
     procedure(const AResult: TModalResult)
     begin
       if AResult = mrYes then

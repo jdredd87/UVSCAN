@@ -67,6 +67,9 @@ type
     chkLockRotate: TCheckBox;
     chkAlwaysLog: TCheckBox;
     chkOneLog: TCheckBox;
+    chkAskKeep: TCheckBox;
+    lblKeepDefault: TLabel;
+    cbKeepDefault: TComboBox;
     gbAlerts: TGroupBox;
     chkSound: TCheckBox;
     gbStream: TGroupBox;
@@ -196,6 +199,8 @@ type
     procedure chkLockRotateChange(Sender: TObject);
     procedure chkAlwaysLogChange(Sender: TObject);
     procedure chkOneLogChange(Sender: TObject);
+    procedure KeepLogOptionChange(Sender: TObject);
+    procedure AskKeepLog(const Ev: TEngineEvent);
     procedure ToggleLockRotateClick(Sender: TObject);
     procedure btnRefreshPortsClick(Sender: TObject);
     procedure btnConnectClick(Sender: TObject);
@@ -333,6 +338,7 @@ type
     FDtcRows: TArray<TArray<string>>;
     FLastLogFile: string;            // the log recorded most recently
     FSessionLog: string;             // One log: the log later starts carry on until UVScan closes
+    FUserStop: Boolean;              // the user stopped the scan, log or connection: may ask to keep the log
     FViewerLog: string;              // the log last handed to the viewer
     FZoom: Integer;                  // live grid zoom, percent
     FNormalBounds: TRect;            // window bounds when not maximized
@@ -1326,6 +1332,26 @@ begin
   chkOneLog.Height := 30;
   chkOneLog.Text := 'One log until UVScan closes (stop and start the scan or the car: the log carries on)';
   chkOneLog.OnChange := chkOneLogChange;
+  // ... and whether to keep it, asked when the scan stops.
+  chkAskKeep := TCheckBox.Create(Self);
+  chkAskKeep.Stored := False;
+  chkAskKeep.Parent := gbLogging;
+  chkAskKeep.Position.X := 12;
+  chkAskKeep.Height := 30;
+  chkAskKeep.Text := 'Ask whether to keep the log when the scan stops (No deletes it)';
+  chkAskKeep.OnChange := KeepLogOptionChange;
+  lblKeepDefault := TLabel.Create(Self);
+  lblKeepDefault.Parent := gbLogging;
+  lblKeepDefault.Stored := False;
+  lblKeepDefault.Text := 'Answer chosen at first';
+  cbKeepDefault := TComboBox.Create(Self);
+  cbKeepDefault.Parent := gbLogging;
+  cbKeepDefault.Stored := False;
+  cbKeepDefault.Height := edtLogFolder.Height;
+  cbKeepDefault.Items.Add('Yes, keep it');
+  cbKeepDefault.Items.Add('No, delete it');
+  cbKeepDefault.Hint := 'The button Enter presses in the question';
+  cbKeepDefault.OnChange := KeepLogOptionChange;
   tiConnect.Text := 'Connection';
 
   // Connection: what is on the port, first in the row.
@@ -2602,6 +2628,72 @@ begin
     btnLogClick(nil);
 end;
 
+procedure TMainForm.KeepLogOptionChange(Sender: TObject);
+begin
+  cbKeepDefault.Enabled := chkAskKeep.IsChecked;
+  lblKeepDefault.Enabled := chkAskKeep.IsChecked;
+  if not FChromeReady then
+    Exit;
+  FSettings.AskKeep := chkAskKeep.IsChecked;
+  FSettings.KeepByDefault := cbKeepDefault.ItemIndex <> 1;
+  SaveSettings;
+end;
+
+{ The log just closed (Ev: eeLogStopped): keep it or delete it. A log
+  carried on (One log) loses only this part: the file is cut back to where
+  it started. }
+procedure TMainForm.AskKeepLog(const Ev: TEngineEvent);
+var
+  FileName, Msg: string;
+  Start: Int64;
+begin
+  FileName := Ev.Text;
+  Start := Ev.LogStart;
+  Msg := Format('Keep the log of this scan?' + sLineBreak + sLineBreak + '%s: %d rows in %s.',
+    [ExtractFileName(FileName), Ev.LogRows, ElapsedText(FLogWatch)]);
+  if Start > 0 then
+    Msg := Msg + sLineBreak + sLineBreak + 'No deletes only this part; what the file held before stays.';
+  Confirm(Msg,
+    procedure
+    begin
+      AddMessage('Log saved: ' + FileName + IfThen(IsMobile, '', '  (F7 opens it in the log viewer)'));
+    end,
+    procedure
+    var
+      F: TFileStream;
+    begin
+      try
+        if Start = 0 then
+        begin
+          if not System.SysUtils.DeleteFile(FileName) then
+            RaiseLastOSError;
+          if SameText(FSessionLog, FileName) then
+            FSessionLog := '';
+          AddMessage('Log deleted: ' + FileName);
+          ShowNotice('Log deleted', False);
+        end
+        else
+        begin
+          F := TFileStream.Create(FileName, fmOpenReadWrite or fmShareDenyWrite);
+          try
+            F.Size := Start;
+          finally
+            F.Free;
+          end;
+          AddMessage('Last part of the log deleted: ' + FileName);
+          ShowNotice('Last part of the log deleted', False);
+        end;
+      except
+        on E: Exception do
+        begin
+          AddMessage('Could not delete the log ' + FileName + ': ' + E.Message);
+          ShowNotice('Could not delete the log: ' + E.Message, True);
+        end;
+      end;
+    end,
+    FSettings.KeepByDefault);
+end;
+
 procedure TMainForm.chkOneLogChange(Sender: TObject);
 begin
   if not FChromeReady then
@@ -2869,6 +2961,16 @@ begin
     chkOneLog.Height := Max(30, WrappedTextHeight(chkOneLog, chkOneLog.Width - 40) + 8);
     chkOneLog.Position.Y := Y;
     Y := Y + chkOneLog.Height + 4;
+    Wide(chkAskKeep, gbLogging);
+    chkAskKeep.TextSettings.WordWrap := True;
+    chkAskKeep.Height := Max(30, WrappedTextHeight(chkAskKeep, chkAskKeep.Width - 40) + 8);
+    chkAskKeep.Position.Y := Y;
+    Y := Y + chkAskKeep.Height + 4;
+  end;
+  Y := Row(lblKeepDefault, cbKeepDefault, nil, gbLogging, Y);
+  if gbLogging.Width >= 50 then
+  begin
+    cbKeepDefault.Width := Min(cbKeepDefault.Width, 220);
     gbLogging.Height := Y + 4;
   end;
   Y := Row(lblRate, cbRate, nil, gbStream);
@@ -3567,6 +3669,13 @@ begin
   chkLockRotate.IsChecked := FSettings.LockRotation;
   chkAlwaysLog.IsChecked := FSettings.AlwaysLog;
   chkOneLog.IsChecked := FSettings.OneLog;
+  chkAskKeep.IsChecked := FSettings.AskKeep;
+  if FSettings.KeepByDefault then
+    cbKeepDefault.ItemIndex := 0
+  else
+    cbKeepDefault.ItemIndex := 1;
+  cbKeepDefault.Enabled := FSettings.AskKeep;
+  lblKeepDefault.Enabled := FSettings.AskKeep;
   LockRotation(FSettings.LockRotation);
   FUpdateCheck.IsChecked := FSettings.CheckUpdates;
   ShowUpdateStatus;
@@ -4268,6 +4377,7 @@ procedure TMainForm.btnDisconnectClick(Sender: TObject);
 begin
   FQuickActive := False; // no more retries
   FRetryAt := 0;
+  FUserStop := True;
   Post(ecDisconnect);
 end;
 
@@ -4296,6 +4406,7 @@ procedure TMainForm.btnStopScanClick(Sender: TObject);
 begin
   FQuickActive := False; // no more retries
   FRetryAt := 0;
+  FUserStop := True;
   Post(ecStopScan);
 end;
 
@@ -4312,6 +4423,7 @@ var
 begin
   if FLogging then
   begin
+    FUserStop := True;
     Post(ecStopLog);
     Exit;
   end;
@@ -4476,6 +4588,7 @@ begin
     eeLogStarted:
       begin
         FLastLogFile := Ev.Text;
+        FUserStop := False;
         if FSettings.OneLog then
           FSessionLog := Ev.Text;
         FLogging := True;
@@ -4497,12 +4610,17 @@ begin
       end;
     eeLogStopped:
       begin
-        if FLastLogFile <> '' then
-          AddMessage('Log saved: ' + FLastLogFile + IfThen(IsMobile, '', '  (F7 opens it in the log viewer)'));
         FLogging := False;
         FLogPaused := False;
         SetStatus(spLog, '');
         UpdateControls;
+        // Stopped by the user: maybe ask whether to keep it. Stopped by
+        // anything else (a lost link, a phone away too long) it is kept.
+        if FUserStop and FSettings.AskKeep and (Ev.Text <> '') then
+          AskKeepLog(Ev)
+        else if Ev.Text <> '' then
+          AddMessage('Log saved: ' + Ev.Text + IfThen(IsMobile, '', '  (F7 opens it in the log viewer)'));
+        FUserStop := False;
       end;
   end;
 end;

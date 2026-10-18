@@ -289,10 +289,11 @@ The gauge editor shows the gauge at the top; drag **Try a value** to see it at a
 
 While scanning, **Start log (F8)** (on the *Connect* page, the *Live* and *Gauges* bars, and their **⋮** menus) writes every update to a CSV file named `UVScan_<date>_<time>.csv` in the log folder (default *Documents\UVScan Logs*, change it in *More → Settings*). **Pause (F9)** stops writing rows without closing the file. While it logs, the status dot is red and the strip counts the rows written (*Logging: 1234 rows*).
 
-Two options in *More → Settings → Logging* help on a drive:
+Three options in *More → Settings → Logging* help on a drive:
 
 - **Always log while scanning**: every scan starts a log by itself, so there is no Start log to forget.
-- **One log until UVScan closes**: stop and start the scan, the log or the car (disconnect and connect again) as often as you like; each new start adds to the same file instead of making another one, as long as UVScan stays open. Its time carries on, gaps included, and the log viewer's chart leaves a break where nothing was recorded. A scan with other PIDs cannot go in the same file, so that one starts a new log (UVScan says so), and the logs after it carry on that one. The first column is the time since the log started, then one column per PID with its units in the header.
+- **One log until UVScan closes**: stop and start the scan, the log or the car (disconnect and connect again) as often as you like; each new start adds to the same file instead of making another one, as long as UVScan stays open. Its time carries on, gaps included, and the log viewer's chart leaves a break where nothing was recorded. A scan with other PIDs cannot go in the same file, so that one starts a new log (UVScan says so), and the logs after it carry on that one.
+- **Ask whether to keep the log when the scan stops**: stopping the scan, the log or the connection asks *Keep the log of this scan?* with the file, its rows and how long it ran. **No** deletes it; with *One log* it deletes only this part and keeps what the file held before. **Answer chosen at first** sets which button is ready (Enter presses it): *Yes, keep it* or *No, delete it*. A log stopped any other way (the link lost, a phone away too long) is always kept. The first column is the time since the log started, then one column per PID with its units in the header.
 
 ![Logging: Stop log on the Live bar, the row count in the status strip](images/win-live-logging.png)
 

@@ -560,6 +560,7 @@ var
   I: Integer;
   T, Prev, BeforeGap: Double;
   Ev: TEngineEvent;
+  SizeBefore: Int64;
 
   procedure LogSome(const Ids: TArray<Integer>; const Name, AppendTo: string);
   begin
@@ -583,12 +584,20 @@ begin
   Connect;
   try
     LogSome([IdRpm, IdEct], FileName, '');
+    // the closed log says which file, from where (a new file: 0) and its rows
+    Assert.IsTrue(FindEvent(eeLogStopped, Ev), 'log stopped');
+    Assert.AreEqual(FileName, Ev.Text);
+    Assert.AreEqual(Int64(0), Ev.LogStart);
+    Assert.IsTrue(Ev.LogRows >= 3, 'rows');
     Assert.IsTrue(ReadLogEnds(FileName, Header, BeforeGap), 'log ends');
+    SizeBefore := TFile.GetSize(FileName);
     Sleep(1500);
     LogSome([IdRpm, IdEct], Other, FileName);
     Assert.IsTrue(FindEvent(eeLogStarted, Ev), 'log started');
     Assert.AreEqual(FileName, Ev.Text, 'carried on');
     Assert.IsTrue(Ev.Flag, 'marked as carried on');
+    Assert.IsTrue(FindEvent(eeLogStopped, Ev), 'log stopped');
+    Assert.AreEqual(SizeBefore, Ev.LogStart, 'this part starts where the file ended');
     Assert.IsFalse(FileExists(Other), 'no new file');
     Lines := TFile.ReadAllLines(FileName, TEncoding.UTF8);
     Assert.AreEqual('Time (s),RPM (RPM),ECT (C)', Lines[0]);

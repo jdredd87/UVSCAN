@@ -33,6 +33,7 @@ type
     FWake: TEvent;
     FPending: TStringBuilder;
     FError: string;
+    FSize: Int64;
     function TakePending: string;
     procedure WriteOut(const Text: string);
   protected
@@ -47,6 +48,8 @@ type
     constructor Create(AFile: TFileStream);
     destructor Destroy; override;
     procedure WriteLine(const Line: string);
+    { The file's size when it was opened (Append: where the new lines start). }
+    function Size: Int64;
     { The first write error, or ''. Lines after it are dropped. }
     function Error: string;
   end;
@@ -88,6 +91,9 @@ type
     Raw: string;               // eePidFound: data bytes as hex; eeControl: details
     Flag: Boolean;             // eeControl: the control is now active (held);
                                // eeWarning: stopped because the app was away (StopForBackground)
+                               // eeLogStarted: an existing log carried on
+    LogStart: Int64;           // eeLogStopped: the file's size before this log (one carried on), 0: a new file
+    LogRows: Int64;            // eeLogStopped: rows this log wrote (Text: the file)
   end;
 
   TEngineEventHandler = reference to procedure(const Event: TEngineEvent);
@@ -184,6 +190,8 @@ type
     FLogRows: Int64;
     FLogClock: TStopwatch;
     FLogBase: Double;   // seconds the log's time starts from (a log carried on goes on from its last row)
+    FLogFile: string;
+    FLogStart: Int64;   // the file's size before this log: 0 for a new file
 
     // Snapshot shared with the UI
     FLock: TCriticalSection;
@@ -352,6 +360,7 @@ end;
 constructor TLogFileWriter.Create(AFile: TFileStream);
 begin
   FFile := AFile;
+  FSize := AFile.Size;
   FLock := TCriticalSection.Create;
   FWake := TEvent.Create(nil, False, False, '');
   FPending := TStringBuilder.Create;
@@ -381,6 +390,11 @@ begin
   finally
     FLock.Leave;
   end;
+end;
+
+function TLogFileWriter.Size: Int64;
+begin
+  Result := FSize;
 end;
 
 function TLogFileWriter.Error: string;
@@ -1557,6 +1571,7 @@ begin
     if ReadLogEnds(AppendTo, OldHeader, LastTime) and (OldHeader = Header) then
     begin
       FLog := TLogFileWriter.Append(AppendTo);
+      FLogStart := FLog.Size;
       FLogBase := LastTime + MilliSecondsBetween(Now, TFile.GetLastWriteTime(AppendTo)) / 1000;
       Appending := True;
     end
@@ -1569,9 +1584,11 @@ begin
   else
   begin
     Name := FileName;
+    FLogStart := 0;
     FLog := TLogFileWriter.Open(Name);
     FLog.WriteLine(Header);
   end;
+  FLogFile := Name;
   FLogRows := 0;
   FLogPaused := False;
   FLogClock := TStopwatch.StartNew;
@@ -1625,9 +1642,12 @@ begin
     Exit;
   FreeAndNil(FLog); // waits for the writer to put the rest in the file
   Log('Log closed (%d rows)', [FLogRows]);
-  FLogRows := 0; // the snapshot counts the open log's rows only
   Ev := Default(TEngineEvent);
   Ev.Kind := eeLogStopped;
+  Ev.Text := FLogFile;
+  Ev.LogStart := FLogStart;
+  Ev.LogRows := FLogRows;
+  FLogRows := 0; // the snapshot counts the open log's rows only
   Emit(Ev);
   PublishSnapshot;
 end;

@@ -43,6 +43,8 @@ type
     LogFolder: string;
     AlwaysLog: Boolean;     // every scan writes a log, no Start log needed
     OneLog: Boolean;        // a log started again carries on the same file until UVScan closes
+    AskKeep: Boolean;       // stopping the scan (or the log) asks whether to keep the log
+    KeepByDefault: Boolean; // that question's default answer is Yes
     BackgroundStop: Integer; // phone: seconds in the background before the log, scan and connection stop
     PendingNotice: string;   // shown at the next start (Android may end the app before the user is back)
     Trace: Boolean;
@@ -124,6 +126,8 @@ begin
   LogFolder := DefaultLogFolder;
   AlwaysLog := False;
   OneLog := False;
+  AskKeep := False;
+  KeepByDefault := True;
   BackgroundStop := 15;
   PendingNotice := '';
   Trace := False;
@@ -168,6 +172,8 @@ begin
   Sec.AddPair('folder', LogFolder);
   Sec.AddPair('always', TJSONBool.Create(AlwaysLog));
   Sec.AddPair('oneLog', TJSONBool.Create(OneLog));
+  Sec.AddPair('askKeep', TJSONBool.Create(AskKeep));
+  Sec.AddPair('keepByDefault', TJSONBool.Create(KeepByDefault));
   Sec.AddPair('backgroundStop', TJSONNumber.Create(BackgroundStop));
   if PendingNotice <> '' then
     Sec.AddPair('pendingNotice', PendingNotice);
@@ -254,6 +260,8 @@ begin
     LogFolder := JStr(Sec, 'folder', LogFolder);
     AlwaysLog := JBool(Sec, 'always', AlwaysLog);
     OneLog := JBool(Sec, 'oneLog', OneLog);
+    AskKeep := JBool(Sec, 'askKeep', AskKeep);
+    KeepByDefault := JBool(Sec, 'keepByDefault', KeepByDefault);
     BackgroundStop := EnsureRange(JInt(Sec, 'backgroundStop', BackgroundStop), 5, 600);
     PendingNotice := JStr(Sec, 'pendingNotice', '');
   end;
