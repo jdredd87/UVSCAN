@@ -1132,7 +1132,8 @@ begin
   // top bar, between back and the menu.
   ShowControls([btnOpen, lblView, cbView, btnSaveView, btnDeleteView, lblMode, cbMode, btnImage, btnTrim], False);
   PutLogRow(FShort and not FEmbedded);
-  pnlBar.Visible := not FEmbedded; // only the log row is left in it
+  // only the log row is left in it, and a short window has that in the top bar
+  pnlBar.Visible := not FEmbedded and not FShort;
   btnDemo.Text := 'Demo';
   btnLive.Text := 'Live';
   FitTextWidth(btnDemo, 72);

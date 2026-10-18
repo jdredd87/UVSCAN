@@ -466,6 +466,7 @@ type
     procedure BuildChrome;
     procedure ArrangeLayout;
     procedure FitFlowHeights;
+    function BudgetHeight: Single;
     procedure FlowBoxResized(Sender: TObject);
     procedure FitVehicleColumns;
     procedure FitFormRows;
@@ -3603,6 +3604,10 @@ begin
     lblCtlNotes.Height := Max(18, WrappedTextHeight(lblCtlNotes, pnlCtlRun.Width - pnlCtlRun.Padding.Left -
       pnlCtlRun.Padding.Right));
   end;
+  // PID list footer: "12 selected - 15 / 48 bytes - 3 DPID(s) - ~10/s - locked"
+  // takes two lines on a phone
+  if pnlPidFooter.Width > 50 then
+    lblBudget.Height := BudgetHeight;
   if gbDiscover.Width > 50 then
   begin
     lblDiscoverHelp.WordWrap := True;
@@ -4914,6 +4919,15 @@ begin
     [Count, Bytes, MaxDpids * DpidDataBytes, Dpids]);
   if PidsLocked then
     lblBudget.Text := lblBudget.Text + '  -  locked';
+  // a line more or less: the footer's height again
+  if (pnlPidFooter.Width > 50) and (Abs(BudgetHeight - lblBudget.Height) > 0.5) then
+    FlowBoxResized(nil);
+end;
+
+function TMainForm.BudgetHeight: Single;
+begin
+  lblBudget.WordWrap := True;
+  Result := Max(30, WrappedTextHeight(lblBudget, pnlPidFooter.Width) + 6);
 end;
 
 procedure TMainForm.btnTestPidsClick(Sender: TObject);
