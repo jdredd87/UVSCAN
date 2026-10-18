@@ -35,6 +35,7 @@ uses
   UVScan.Controls in 'src\UVScan.Controls.pas',
   UVScan.LogData in 'src\UVScan.LogData.pas',
   UVScan.LogViews in 'src\UVScan.LogViews.pas',
+  UVScan.Share in 'src\UVScan.Share.pas',
   UVScan.UI.Common in 'src\UVScan.UI.Common.pas',
   UVScan.UI.Theme in 'src\UVScan.UI.Theme.pas',
   UVScan.UI.DataGrid in 'src\UVScan.UI.DataGrid.pas',

@@ -317,6 +317,15 @@
             <RemoteCommand/>
             <Overwrite>True</Overwrite>
         </DeployFile>
+        <DeployFile Include="Android64\Debug\provider_paths.xml" Condition="'$(Config)'=='Debug'">
+            <RemoteDir>UVScan\res\xml\</RemoteDir>
+            <RemoteName>provider_paths.xml</RemoteName>
+            <DeployClass>AndroidFileProvider</DeployClass>
+            <Operation>1</Operation>
+            <LocalCommand/>
+            <RemoteCommand/>
+            <Overwrite>True</Overwrite>
+        </DeployFile>
         <DeployFile Include="Android64\Debug\strings.xml" Condition="'$(Config)'=='Debug'">
             <RemoteDir>UVScan\res\values\</RemoteDir>
             <RemoteName>strings.xml</RemoteName>

@@ -342,6 +342,14 @@ Something happened on the drive — a stumble, a noise, a light? Press **F12** (
 
 **Image…** saves the chart as a PNG (for forum posts or a tuner). You can also drop a log file onto the viewer to open it, and after you stop logging, **F7** opens the log you just recorded. [Marks](#marks) in a log are amber lines with their number; **M** goes to the next one, **Shift+M** to the one before, and the status line counts them. The [hotkeys](#hotkeys) work in the viewer's window too.
 
+**Sharing a log (phone or tablet):** **⋮ → Share or save the log…** (on a tablet, **Share** in the bar) offers:
+
+- **Send the log (email, Drive…)** opens Android's share sheet with the log attached: Gmail or another email app, Google Drive, Messages, Quick Share, Bluetooth — whatever the phone has. An email gets the log's name as its subject and a line saying how long it is.
+- **Save to Drive or Downloads…** opens Android's file picker to save a copy: Downloads, Google Drive (in the picker's side menu), a USB stick or any other storage app. The log in UVScan stays where it is.
+- **Send a picture of the chart** shares the chart as you see it, as a PNG.
+
+They work for the demo drive and the live chart too: UVScan writes them to a file first. On Windows the logs are ordinary files in the log folder (*Documents\UVScan Logs* unless changed in *More → Settings*), so attach or copy them from there.
+
 **On a phone or a narrow window** the viewer is a page: the recent logs and **Demo** at the top, the playback buttons, then the chart above **Channels | Data** (one at a time). The selected channel's colour, scale and alert levels are on a page of their own — **Colour, scale, alerts: …** under the list. **⋮** holds the view set‑ups (pick, **Save view…**, **Delete view**), the chart mode, **Save chart picture** (saved next to the logs), **Follow the cursor**, **Level bands** and **Levels from Display & alerts**. Select a stretch by long‑pressing the chart (or **Select range**) and dragging. The back key (or arrow) leaves the channel page, then the viewer.
 
 <p>

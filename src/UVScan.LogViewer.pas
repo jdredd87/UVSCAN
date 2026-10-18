@@ -52,6 +52,7 @@ type
     chkUseDisplay: TCheckBox;
     btnSelect: TSpeedButton;
     btnTrim: TButton; // Save selection: the selected stretch as a log of its own
+    btnShare: TButton; // a tablet's Share (ShareMenu)
     pnlLeft: TLayout;
     layChannels: TLayout;
     gbChannel: TGroupBox;
@@ -159,6 +160,11 @@ type
     procedure PutLogRow(InTopBar: Boolean);
     procedure PlaceShortTitle;
     procedure MenuSelectRange(Sender: TObject);
+    procedure ShareMenu(Sender: TObject);
+    function ShareableLog: string;
+    procedure ShareLogClick(Sender: TObject);
+    procedure SaveLogCopyClick(Sender: TObject);
+    procedure ShareChartClick(Sender: TObject);
     procedure MainResized(Sender: TObject);
     procedure LayoutWide;
     procedure FlowWideBars;
@@ -271,7 +277,7 @@ implementation
 {$R *.fmx}
 
 uses
-  System.StrUtils, FMX.Dialogs, UVScan.UI.Theme, UVScan.DisplayEditor;
+  System.StrUtils, FMX.Dialogs, UVScan.UI.Theme, UVScan.DisplayEditor, UVScan.Share;
 
 var
   Viewer: TLogViewerForm;      // the window (logs, the demo)
@@ -606,6 +612,15 @@ begin
   btnTrim.OnClick := btnTrimClick;
   btnTrim.Enabled := False;
   btnTrim.SetBounds(btnImage.Position.X + btnImage.Width + 6, btnImage.Position.Y, 120, btnImage.Height);
+  // a tablet's bar; a phone has it in the menu
+  btnShare := TButton.Create(Self);
+  btnShare.Parent := btnImage.Parent;
+  btnShare.Stored := False;
+  btnShare.Text := 'Share';
+  btnShare.Hint := 'Send the log by email, to Google Drive, in a message..., or save a copy';
+  btnShare.ShowHint := True;
+  btnShare.OnClick := ShareMenu;
+  btnShare.Visible := False;
   for var I := 1 to 4 do
     cbWidth.Items.Add(IntToStr(I) + ' px');
   FillColors;
@@ -919,7 +934,10 @@ begin
     Item('Delete view', btnDeleteViewClick, btnDeleteView, btnDeleteView.Enabled),
     Item('Chart: ' + ComboText(cbMode), MenuModes, nil),
     Item('Save chart picture', btnImageClick, btnImage, FData.Count > 0),
-    Item('Save selection as a log', btnTrimClick, btnTrim, FChart.HasSelection),
+    Item('Save selection as a log', btnTrimClick, btnTrim, FChart.HasSelection)];
+  if CanShareFiles then
+    Items := Items + [Item('Share or save the log...', ShareMenu, nil, FData.Count > 0)];
+  Items := Items + [
     Item('-', nil, nil),
     Item('Follow the cursor', MenuToggle, chkFollow, True, chkFollow.IsChecked),
     Item('Level bands', MenuToggle, chkBands, True, chkBands.IsChecked),
@@ -929,6 +947,89 @@ begin
   if IsMobile and not btnSelect.Visible then // no room for it in the bar
     Items := Items + [Item('Select range', MenuSelectRange, nil, FData.Count > 0, btnSelect.IsPressed)];
   ShowMenu(Items);
+end;
+
+{ Share (a tablet's button, a phone's menu): the log or the chart picture to
+  another app, or a copy of the log where the file picker says. }
+procedure TLogViewerForm.ShareMenu(Sender: TObject);
+
+  function Item(const Text: string; OnClick: TNotifyEvent): TActionItem;
+  begin
+    Result.Text := Text;
+    Result.OnClick := OnClick;
+    Result.Sender := nil;
+    Result.Enabled := FData.Count > 0;
+    Result.Checked := False;
+  end;
+
+begin
+  ShowMenu([
+    Item('Send the log (email, Drive...)', ShareLogClick),
+    Item('Save to Drive or Downloads...', SaveLogCopyClick),
+    Item('Send a picture of the chart', ShareChartClick)]);
+end;
+
+{ The log's file; the demo drive and the live data are written to one first. }
+function TLogViewerForm.ShareableLog: string;
+begin
+  if not FLive and (FData.FileName <> '') and FileExists(FData.FileName) then
+    Exit(FData.FileName);
+  Result := System.IOUtils.TPath.Combine(ShareFolder,
+    IfThen(FLive, 'UVScan_live_' + FormatDateTime('yyyy-mm-dd_hhnnss', Now), 'UVScan demo drive') + '.csv');
+  FData.SaveToFile(Result);
+end;
+
+procedure TLogViewerForm.ShareLogClick(Sender: TObject);
+var
+  F: string;
+begin
+  try
+    F := ShareableLog;
+    ShareFile(F, 'text/csv', 'UVScan log ' + ExtractFileName(F),
+      Format('A UVScan log: %s long, %d samples, %d channels. It opens in UVScan''s log viewer, or as a spreadsheet.',
+      [FormatLogTime(FData.Duration), FData.Count, FData.ChannelCount]));
+  except
+    on E: Exception do
+      ShowWarning('Could not share the log: ' + E.Message);
+  end;
+end;
+
+procedure TLogViewerForm.SaveLogCopyClick(Sender: TObject);
+var
+  F: string;
+begin
+  try
+    F := ShareableLog;
+    SaveFileCopy(F, 'text/csv',
+      procedure(const Error: string)
+      begin
+        if Error = '' then
+          ShowInfo('Copy of ' + ExtractFileName(F) + ' saved')
+        else
+          ShowWarning('Could not save the copy: ' + Error);
+      end);
+  except
+    on E: Exception do
+      ShowWarning('Could not save a copy: ' + E.Message);
+  end;
+end;
+
+procedure TLogViewerForm.ShareChartClick(Sender: TObject);
+var
+  Name, F: string;
+begin
+  if FLive or (FData.FileName = '') then
+    Name := IfThen(FLive, 'UVScan_live_' + FormatDateTime('yyyy-mm-dd_hhnnss', Now), 'UVScan demo drive')
+  else
+    Name := ChangeFileExt(ExtractFileName(FData.FileName), '');
+  try
+    F := System.IOUtils.TPath.Combine(ShareFolder, Name + '.png');
+    FChart.SaveImage(F);
+    ShareFile(F, 'image/png', 'UVScan chart ' + Name, '');
+  except
+    on E: Exception do
+      ShowWarning('Could not share the chart: ' + E.Message);
+  end;
 end;
 
 procedure TLogViewerForm.MenuSelectRange(Sender: TObject);
@@ -1136,7 +1237,8 @@ begin
   FMenuButton.Visible := True;
   // The log row: the recent logs and the demo. A short window has them in the
   // top bar, between back and the menu.
-  ShowControls([btnOpen, lblView, cbView, btnSaveView, btnDeleteView, lblMode, cbMode, btnImage, btnTrim], False);
+  ShowControls([btnOpen, lblView, cbView, btnSaveView, btnDeleteView, lblMode, cbMode, btnImage, btnTrim, btnShare],
+    False);
   PutLogRow(FShort and not FEmbedded);
   // only the log row is left in it, and a short window has that in the top bar
   pnlBar.Visible := not FEmbedded and not FShort;
@@ -1300,6 +1402,7 @@ begin
   pnlBar.Visible := True;
   RestoreBounds;
   btnOpen.Visible := not IsMobile and not FEmbedded;
+  btnShare.Visible := CanShareFiles;
   ShowControls([lblView, cbView, btnSaveView, btnDeleteView, lblMode, cbMode, btnImage, btnTrim, chkFollow, chkBands,
     chkUseDisplay], True);
   btnSelect.Visible := IsMobile;
@@ -1427,7 +1530,7 @@ begin
   cbMode.Width := 210;
   cbSpeed.Width := 84; // "10 min" too
   pnlBar.Height := Flow([Ctls([btnOpen, cbRecent, btnDemo, btnLive]), Ctls([lblView, cbView, btnSaveView, btnDeleteView]),
-    Ctls([lblMode, cbMode, btnImage, btnTrim])], AreaWidth);
+    Ctls([lblMode, cbMode, btnImage, btnTrim, btnShare])], AreaWidth);
   pnlPlay.Height := Flow([Ctls([btnStart, btnPlay, btnEnd, cbSpeed]), Ctls([tbPos, lblTime]), Ctls([chkFollow, chkBands]),
     Ctls([chkUseDisplay]), Ctls([btnSelect])], AreaWidth);
 end;
