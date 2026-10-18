@@ -8,7 +8,7 @@ unit UVScan.Version;
 interface
 
 const
-  AppVersion = '2.0.4';
+  AppVersion = '2.0.5';
   AppRepo = 'https://github.com/jdredd87/UVSCAN';
 
 {$I UVScan.BuildStamp.inc}
