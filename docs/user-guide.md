@@ -148,7 +148,7 @@ Quick starts are kept in `settings.json`. On a phone they are on the same menu (
 
 ## Choosing PIDs and scan lists
 
-Tick PIDs on the *PIDs* page, or in the list on the left of a wide window (type in **Search PIDs…** to filter). The footer shows how many are ticked and how many of the PCM's 48 streaming bytes they use; it turns red when there are too many.
+Tick PIDs on the *PIDs* page, or in the list on the left of a wide window (type in **Search PIDs…** to filter). The footer shows how many are ticked, how many of the PCM's 48 streaming bytes they use, the DPIDs (6‑byte blocks) they pack into and the updates a second to expect: about 10 up to 4 DPIDs (24 bytes), about 5 above that (with the *Fast* stream speed). It turns red when there are too many.
 
 The ticks are what the scan asks the PCM for, so they are locked while scanning (the check boxes fade, the footer says *locked*): **Stop scan**, change them, **Start scan**. Everything else stays usable while scanning: the search, *Display & alerts*, *Add to dashboard*, the rows' order and the PID list put away.
 

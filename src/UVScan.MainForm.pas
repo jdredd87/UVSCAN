@@ -4680,7 +4680,7 @@ end;
 
 procedure TMainForm.UpdateBudget;
 var
-  Id, Bytes, Count: Integer;
+  Id, Bytes, Count, N: Integer;
   P: TPidDef;
   Reqs: TArray<TDpidRequest>;
   R: TDpidRequest;
@@ -4706,7 +4706,13 @@ begin
   end;
   lblBudget.StyledSettings := lblBudget.StyledSettings - [TStyledSetting.FontColor];
   try
-    Dpids := Format('%d DPID(s)', [Length(PlanDpids(Reqs).Dpids)]);
+    N := Length(PlanDpids(Reqs).Dpids);
+    Dpids := Format('%d DPID(s)', [N]);
+    // up to 4 DPIDs go in both PCM schedule slots: twice the updates
+    if (N > 0) and (cbRate.ItemIndex > 0) then
+      Dpids := Dpids + '  -  slower (stream speed)'
+    else if N > 0 then
+      Dpids := Dpids + IfThen(N <= DpidsPerRequest, '  -  ~10/s', '  -  ~5/s');
     lblBudget.TextSettings.FontColor := Palette.Text;
   except
     on E: EDpidPlanError do
@@ -6874,6 +6880,8 @@ procedure TMainForm.cbRateChange(Sender: TObject);
 begin
   if (FEngine <> nil) and (cbRate.ItemIndex >= 0) then
     FEngine.StreamSpeed := StreamSpeedNibble(TStreamSpeed(cbRate.ItemIndex)); // applies from the next scan start
+  if FCatalog <> nil then
+    UpdateBudget; // its rate
 end;
 
 { Messages }
