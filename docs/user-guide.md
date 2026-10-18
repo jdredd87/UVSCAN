@@ -330,9 +330,11 @@ Something happened on the drive — a stumble, a noise, a light? Press **F12** (
 
 ![Log viewer, lanes](images/log-viewer-lanes.png)
 
-**Moving around:** click or drag in the chart to move the cursor (the grid jumps to that row); the mouse wheel zooms around the mouse; drag with the right mouse button to pan; double‑click to see the whole log. With the chart focused, ←/→ step one sample (Shift: 10), Home / End jump to the ends. Clicking a grid row moves the cursor there too. **Level bands** shades each channel's alert levels behind its line.
+**Moving around:** click or drag in the chart to move the cursor (the grid jumps to that row); the mouse wheel zooms around the mouse; drag with the right mouse button to pan; double‑click to see the whole log. Without a wheel, the buttons in the chart's bottom right corner do it: **−** and **+** zoom out and in around the cursor (tap or click where to look first), **All** shows the whole log. They work in the live chart too. With the chart focused, ←/→ step one sample (Shift: 10), Home / End jump to the ends. Clicking a grid row moves the cursor there too. **Level bands** shades each channel's alert levels behind its line.
 
 **Selecting a stretch:** hold Shift and drag in the chart. The stretch is shaded with its length, and the *Min\* / Avg\* / Max\** columns on the left show the values over just that stretch (for ON / OFF channels the average is how much of the time it was on) — e.g. select a wide‑open pull to see peak knock retard and average MAP. Enter zooms to the selection, Esc clears it.
+
+**Trimming a log:** select the stretch you want and press **Save selection** (on a phone, **⋮ → Save selection as a log**). It is saved as a log of its own next to the original — `<log> part 2m10s-3m10s.csv`, its time starting at 0, its marks kept — and opens. The original log stays as it was; delete it yourself if you no longer need it. Every value is copied exactly as it was logged. It works for the demo drive and the live chart too (those go in the log folder).
 
 ![Selecting a stretch](images/log-viewer-selection.png)
 

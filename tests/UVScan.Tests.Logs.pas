@@ -25,6 +25,8 @@ type
     [Test] procedure PausedLiveChartKeepsItsSpan;
     [Test] procedure DecimalsForSteadyText;
     [Test] procedure ReadsMarks;
+    [Test] procedure TrimsALogFile;
+    [Test] procedure SavesAPart;
   end;
 
   [TestFixture]
@@ -283,6 +285,70 @@ begin
   finally
     L.Free;
     D.Free;
+  end;
+end;
+
+{ A stretch of a log file, copied as written: header, the rows in the range
+  (times from 0), switches and marks as they were. }
+procedure TLogDataTests.TrimsALogFile;
+var
+  Src, Dst: string;
+  L: TArray<string>;
+  D: TLogData;
+begin
+  Src := TPath.Combine(TPath.GetTempPath, 'uvscan_trim_src.csv');
+  Dst := TPath.Combine(TPath.GetTempPath, 'uvscan_trim_dst.csv');
+  TFile.WriteAllText(Src, 'Time (s),RPM (RPM),PE Mode,Mark' + sLineBreak +
+    '0.000,800,OFF,' + sLineBreak + '0.500,900.25,OFF,' + sLineBreak + '1.000,1000,ON,' + sLineBreak +
+    '1.500,1100.125,ON,1' + sLineBreak + 'broken row' + sLineBreak + '2.000,1200,OFF,' + sLineBreak +
+    '2.500,1300,OFF,' + sLineBreak, TEncoding.UTF8);
+  D := TLogData.Create;
+  try
+    Assert.AreEqual(3, TrimLogFile(Src, Dst, 1.0, 2.0), 'rows');
+    L := TFile.ReadAllLines(Dst, TEncoding.UTF8);
+    Assert.AreEqual(4, Integer(Length(L)));
+    Assert.AreEqual('Time (s),RPM (RPM),PE Mode,Mark', L[0]);
+    Assert.AreEqual('0.000,1000,ON,', L[1], 'from 0');
+    Assert.AreEqual('0.500,1100.125,ON,1', L[2], 'every digit, the mark');
+    Assert.AreEqual('1.000,1200,OFF,', L[3]);
+    D.LoadFromFile(Dst);
+    Assert.AreEqual(3, D.Count);
+    Assert.IsTrue(D.Channels[1].IsSwitch);
+    Assert.AreEqual(1, Integer(Length(D.Marks)));
+    Assert.AreEqual(0.5, D.Marks[0].Time, 1E-9);
+    Assert.WillRaise(procedure begin TrimLogFile(Dst + '.missing', Dst, 0, 1) end);
+  finally
+    D.Free;
+    System.SysUtils.DeleteFile(Src);
+    System.SysUtils.DeleteFile(Dst);
+  end;
+end;
+
+{ A part of a log in memory (the demo, the live chart): its rows from time 0,
+  the marks in it only. }
+procedure TLogDataTests.SavesAPart;
+var
+  A, B: TLogData;
+  F: string;
+begin
+  A := TLogData.Create;
+  B := TLogData.Create;
+  F := TPath.Combine(TPath.GetTempPath, 'uvscan_part.csv');
+  try
+    A.MakeDemo; // marks at 301 and 405 s, 10 rows a second
+    A.SaveToFile(F, 300, 310);
+    B.LoadFromFile(F);
+    Assert.AreEqual(101, B.Count);
+    Assert.AreEqual(0.0, B.Times[0], 1E-9);
+    Assert.AreEqual(10.0, B.Duration, 1E-6);
+    Assert.AreEqual(A.ChannelCount, B.ChannelCount);
+    Assert.AreEqual(A.Channels[0].Values[3005], B.Channels[0].Values[5], 1E-3);
+    Assert.AreEqual(1, Integer(Length(B.Marks)), 'only the mark in the part');
+    Assert.AreEqual(1.0, B.Marks[0].Time, 1E-6);
+  finally
+    System.SysUtils.DeleteFile(F);
+    A.Free;
+    B.Free;
   end;
 end;
 

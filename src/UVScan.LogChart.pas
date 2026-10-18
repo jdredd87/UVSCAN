@@ -11,6 +11,8 @@ unit UVScan.LogChart;
   wheel = zoom time around the mouse, right or middle drag = pan,
   double-click = show the whole log.
   Marks in the log (the Mark hotkey) are amber lines with their number on top.
+  Buttons in the plot's bottom right corner zoom without a wheel or a pinch:
+  - (out), + (in, both around the cursor) and All (the whole log).
   Touch: drag = move the cursor, pinch = zoom (and pan with two fingers),
   double tap = whole log, long press then drag = select a range (or turn on
   SelectMode so a drag selects).
@@ -58,6 +60,8 @@ type
     FOnFollowChange: TNotifyEvent;
     FEmptyText: string;
     FNoSamplesText: string;
+    FButtonDown: Integer;      // the zoom button the last press was on, -1: none
+    FNoButtons: Boolean;       // saving a picture: without them
     procedure SetFollow(Value: Boolean);
     procedure SetMode(Value: TChartMode);
     procedure SetShowBands(Value: Boolean);
@@ -72,6 +76,9 @@ type
     procedure Fill(X, Y, W, H: Single; C: TAlphaColor; Alpha: Byte = 255);
     procedure Line(X1, Y1, X2, Y2, Width: Single; C: TAlphaColor; Alpha: Byte = 255);
     procedure StartSelect(X: Single);
+    function ZoomButtonRect(I: Integer): TRectF;
+    function ZoomButtonAt(X, Y: Single): Integer;
+    procedure ZoomButtonClick(I: Integer);
   protected
     procedure Paint; override;
     procedure MouseDown(Button: TMouseButton; Shift: TShiftState; X, Y: Single); override;
@@ -141,6 +148,7 @@ const
   CursorColor = TAlphaColor($FFFFFFFF);
   SelColor = TAlphaColor($FF46AAFF);
   MarkColor = TAlphaColor($FFFFB020);
+  ZoomCaptions: array[0..2] of string = (#$2212, '+', 'All');
 
 procedure AutoRange(const Ch: TLogChannel; out Lo, Hi: Double);
 var
@@ -227,6 +235,7 @@ begin
   FSel1 := NaN;
   FShowBands := True;
   FLiveSpan := 60;
+  FButtonDown := -1;
   FEmptyText := 'Open a log (or the demo) to see it here';
   FNoSamplesText := 'This log has no samples';
   CanFocus := True;
@@ -754,6 +763,7 @@ var
   VText: string;
   Lvl: Integer;
   Mk: TLogMark;
+  R: TRectF;
 begin
   W := Width;
   H := Height;
@@ -976,6 +986,22 @@ begin
         Txt(S, X, FPlot.Bottom - 20, Y - X, 17, 10.5, SelColor, TTextAlign.Center, True);
       end;
     end;
+    // zoom buttons: out, in, all
+    if not FNoButtons then
+      for I := 0 to 2 do
+      begin
+        R := ZoomButtonRect(I);
+        Canvas.Fill.Kind := TBrushKind.Solid;
+        Canvas.Fill.Color := (Back and $00FFFFFF) or $E0000000;
+        Canvas.FillRect(R, 5, 5, AllCorners, 1);
+        Canvas.Stroke.Kind := TBrushKind.Solid;
+        Canvas.Stroke.Dash := TStrokeDash.Solid;
+        Canvas.Stroke.Thickness := 1;
+        Canvas.Stroke.Color := DimText;
+        Canvas.DrawRect(R, 5, 5, AllCorners, 1);
+        Txt(ZoomCaptions[I], R.Left, R.Top, R.Width, R.Height, IfThen(I = 2, 13, 19), CursorColor,
+          TTextAlign.Center, True);
+      end;
     if IsFocused then
       Line(0, H - 1, W, H - 1, 2, SelColor);
   finally
@@ -1010,8 +1036,18 @@ begin
   if CanFocus and not IsFocused then
     SetFocus;
   FLastX := X;
+  FButtonDown := -1;
   if (FData = nil) or (FData.Count < 2) then
     Exit;
+  if Button = TMouseButton.mbLeft then
+  begin
+    FButtonDown := ZoomButtonAt(X, Y);
+    if FButtonDown >= 0 then
+    begin
+      ZoomButtonClick(FButtonDown);
+      Exit;
+    end;
+  end;
   FDragX := X;
   FDragT0 := FT0;
   FDragT1 := FT1;
@@ -1083,7 +1119,61 @@ procedure TLogChart.DblClick;
 begin
   inherited;
   FDrag := dgNone;
-  FitAll;
+  if FButtonDown < 0 then // (two quick presses of a zoom button are two presses)
+    FitAll;
+end;
+
+{ The zoom buttons in the plot's bottom right corner: 0 out, 1 in, 2 all;
+  bigger on a phone or tablet. }
+function TLogChart.ZoomButtonRect(I: Integer): TRectF;
+const
+  {$IF DEFINED(ANDROID) or DEFINED(IOS)}
+  BW = 44; BH = 38;
+  {$ELSE}
+  BW = 34; BH = 28;
+  {$ENDIF}
+  AllW = BW + 10;
+var
+  R: Single;
+begin
+  // right to left: All, +, -
+  R := FPlot.Right - 6;
+  if I < 2 then
+    R := R - AllW - 4 - (1 - I) * (BW + 4);
+  Result := TRectF.Create(R - IfThen(I = 2, AllW, BW), FPlot.Bottom - 6 - BH, R, FPlot.Bottom - 6);
+end;
+
+function TLogChart.ZoomButtonAt(X, Y: Single): Integer;
+var
+  R: TRectF;
+begin
+  if FNoButtons or (FPlot.Width < 20) then
+    Exit(-1);
+  for Result := 0 to 2 do
+  begin
+    R := ZoomButtonRect(Result);
+    R.Inflate(3, 3); // a finger is not exact
+    if R.Contains(TPointF.Create(X, Y)) then
+      Exit;
+  end;
+  Result := -1;
+end;
+
+{ In and out: around the cursor when it is in view, else the middle. }
+procedure TLogChart.ZoomButtonClick(I: Integer);
+var
+  Around: Double;
+begin
+  FDrag := dgNone;
+  Around := (FT0 + FT1) / 2;
+  if (FCursor >= FT0) and (FCursor <= FT1) then
+    Around := FCursor;
+  case I of
+    0: Zoom(2, Around);
+    1: Zoom(0.5, Around);
+  else
+    FitAll;
+  end;
 end;
 
 { Touch: pinch zooms around the fingers and pans as they move; double tap
@@ -1122,7 +1212,8 @@ begin
           FPinchDist := 0;
       end;
     igiDoubleTap:
-      FitAll;
+      if ZoomButtonAt(P.X, P.Y) < 0 then // (a quick second tap on a zoom button is a press)
+        FitAll;
     igiLongTap:
         StartSelect(P.X); // the finger is still down: dragging extends the range
   else
@@ -1154,7 +1245,12 @@ procedure TLogChart.SaveImage(const FileName: string);
 var
   Bmp: TBitmap;
 begin
-  Bmp := MakeScreenshot;
+  FNoButtons := True;
+  try
+    Bmp := MakeScreenshot;
+  finally
+    FNoButtons := False;
+  end;
   try
     Bmp.SaveToFile(FileName);
   finally

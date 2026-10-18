@@ -51,7 +51,10 @@ type
     { A made-up 10-minute drive (cold start, idle, city, highway, a hard pull
       with knock retard, back to idle) at 10 updates a second. }
     procedure MakeDemo;
-    procedure SaveToFile(const FileName: string);
+    { The rows from T0 to T1 (default: all) as a UVScan log; a part starts at
+      time 0. Switches are written ON / OFF, numbers with up to 3 decimals. }
+    procedure SaveToFile(const FileName: string; const T0: Double = NegInfinity;
+      const T1: Double = Infinity);
     { An empty log with these channels, to be filled by Append. }
     procedure StartLive(const Title: string; const Names, Units: TArray<string>; const Switches: TArray<Boolean>);
     { Adds a sample (one value per channel, NaN = no data; T not before the
@@ -81,6 +84,10 @@ type
 function SplitCsvLine(const Line: string): TArray<string>;
 { "RPM (RPM)" -> name "RPM", units "RPM"; "Runtime" -> name only. }
 procedure SplitHeader(const Header: string; out Name, Units: string);
+{ The rows of a UVScan log file from T0 to T1 (its own times) into Dest, as
+  they are written there (every digit kept), times from 0; marks go along.
+  Returns the rows copied. }
+function TrimLogFile(const Source, Dest: string; const T0, T1: Double): Integer;
 { "1.5" / "ON" / "YES" -> number; "--" / "" / other -> NaN. Switch is set for ON/OFF/YES/NO. }
 function ParseLogValue(const S: string; out Switch: Boolean): Double;
 { m:ss.s for a time in seconds. }
@@ -90,6 +97,9 @@ function FormatLogTime(const Seconds: Double): string;
 function DecimalsNeeded(const Values: TArray<Double>; Count: Integer): Integer;
 
 implementation
+
+uses
+  System.StrUtils;
 
 function SplitCsvLine(const Line: string): TArray<string>;
 var
@@ -346,12 +356,23 @@ begin
   end;
 end;
 
-procedure TLogData.SaveToFile(const FileName: string);
+procedure TLogData.SaveToFile(const FileName: string; const T0, T1: Double);
 var
   W: TStreamWriter;
   SB: TStringBuilder;
-  I, C, Mk: Integer;
+  I, C, Mk, First, Last: Integer;
+  Base, V: Double;
 begin
+  // the rows in the range, and what a part's time counts from
+  First := 0;
+  while (First < FCount) and (FTimes[First] < T0) do
+    Inc(First);
+  Last := FCount - 1;
+  while (Last >= First) and (FTimes[Last] > T1) do
+    Dec(Last);
+  Base := 0;
+  if not IsInfinite(T0) and (First <= Last) then
+    Base := FTimes[First];
   W := TStreamWriter.Create(FileName, False, TEncoding.UTF8);
   SB := TStringBuilder.Create;
   try
@@ -362,23 +383,30 @@ begin
       SB.Append(',Mark');
     W.WriteLine(SB.ToString);
     Mk := 0;
-    for I := 0 to FCount - 1 do
+    if First <= Last then
+      while (Mk <= High(FMarks)) and (FMarks[Mk].Time < FTimes[First]) do
+        Inc(Mk); // before the part
+    for I := First to Last do
     begin
       SB.Clear;
-      SB.Append(FormatFloat('0.000', FTimes[I], TFormatSettings.Invariant));
+      SB.Append(FormatFloat('0.000', FTimes[I] - Base, TFormatSettings.Invariant));
       for C := 0 to High(FChannels) do
       begin
         SB.Append(',');
-        if IsNan(FChannels[C].Values[I]) then
+        V := FChannels[C].Values[I];
+        if IsNan(V) then
           SB.Append('--')
+        else if FChannels[C].IsSwitch then
+          SB.Append(IfThen(V >= 0.5, 'ON', 'OFF'))
         else
-          SB.Append(FormatFloat('0.###', FChannels[C].Values[I], TFormatSettings.Invariant));
+          SB.Append(FormatFloat('0.###', V, TFormatSettings.Invariant));
       end;
       if FMarks <> nil then
       begin
         // a mark goes on the last row at or before its time
         SB.Append(',');
-        if (Mk <= High(FMarks)) and ((I = FCount - 1) or (FMarks[Mk].Time < FTimes[I + 1])) then
+        if (Mk <= High(FMarks)) and ((I = Last) and (FMarks[Mk].Time <= T1) or
+          (I < Last) and (FMarks[Mk].Time < FTimes[I + 1])) then
         begin
           SB.Append(FMarks[Mk].Number);
           Inc(Mk);
@@ -389,6 +417,51 @@ begin
   finally
     SB.Free;
     W.Free;
+  end;
+end;
+
+function TrimLogFile(const Source, Dest: string; const T0, T1: Double): Integer;
+var
+  R: TStreamReader;
+  W: TStreamWriter;
+  Line, Header: string;
+  Comma: Integer;
+  T, Base: Double;
+begin
+  Result := 0;
+  // (a log still being written - One log - may be trimmed too)
+  R := TStreamReader.Create(TFileStream.Create(Source, fmOpenRead or fmShareDenyNone), TEncoding.UTF8, True);
+  R.OwnStream;
+  try
+    Header := R.ReadLine;
+    if (Header <> '') and (Header[1] = #$FEFF) then
+      Delete(Header, 1, 1);
+    if not SameText(Trim(SplitCsvLine(Header)[0]).Split([' '])[0], 'Time') then
+      raise ELogError.Create('Not a UVScan log: the first column must be "Time (s)"');
+    W := TStreamWriter.Create(Dest, False, TEncoding.UTF8);
+    try
+      W.WriteLine(Header);
+      Base := NaN;
+      while not R.EndOfStream do
+      begin
+        Line := R.ReadLine;
+        Comma := Pos(',', Line);
+        if (Comma = 0) or not TryStrToFloat(Trim(Copy(Line, 1, Comma - 1)), T, TFormatSettings.Invariant) then
+          Continue;
+        if T < T0 then
+          Continue;
+        if T > T1 then
+          Break;
+        if IsNan(Base) then
+          Base := T;
+        W.WriteLine(FormatFloat('0.000', T - Base, TFormatSettings.Invariant) + Copy(Line, Comma, MaxInt));
+        Inc(Result);
+      end;
+    finally
+      W.Free;
+    end;
+  finally
+    R.Free;
   end;
 end;
 

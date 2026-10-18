@@ -51,6 +51,7 @@ type
     chkBands: TCheckBox;
     chkUseDisplay: TCheckBox;
     btnSelect: TSpeedButton;
+    btnTrim: TButton; // Save selection: the selected stretch as a log of its own
     pnlLeft: TLayout;
     layChannels: TLayout;
     gbChannel: TGroupBox;
@@ -88,6 +89,7 @@ type
     procedure btnDeleteViewClick(Sender: TObject);
     procedure cbModeChange(Sender: TObject);
     procedure btnImageClick(Sender: TObject);
+    procedure btnTrimClick(Sender: TObject);
     procedure btnStartClick(Sender: TObject);
     procedure btnPlayClick(Sender: TObject);
     procedure btnEndClick(Sender: TObject);
@@ -595,6 +597,15 @@ begin
   btnLive.OnClick := btnLiveClick;
   btnLive.Enabled := LiveSource <> nil;
   btnLive.SetBounds(btnDemo.Position.X + btnDemo.Width + 6, btnDemo.Position.Y, 90, btnDemo.Height);
+  btnTrim := TButton.Create(Self);
+  btnTrim.Parent := btnImage.Parent;
+  btnTrim.Stored := False;
+  btnTrim.Text := 'Save selection';
+  btnTrim.Hint := 'Save the selected stretch as a log of its own (Shift+drag in the chart selects one)';
+  btnTrim.ShowHint := True;
+  btnTrim.OnClick := btnTrimClick;
+  btnTrim.Enabled := False;
+  btnTrim.SetBounds(btnImage.Position.X + btnImage.Width + 6, btnImage.Position.Y, 120, btnImage.Height);
   for var I := 1 to 4 do
     cbWidth.Items.Add(IntToStr(I) + ' px');
   FillColors;
@@ -908,6 +919,7 @@ begin
     Item('Delete view', btnDeleteViewClick, btnDeleteView, btnDeleteView.Enabled),
     Item('Chart: ' + ComboText(cbMode), MenuModes, nil),
     Item('Save chart picture', btnImageClick, btnImage, FData.Count > 0),
+    Item('Save selection as a log', btnTrimClick, btnTrim, FChart.HasSelection),
     Item('-', nil, nil),
     Item('Follow the cursor', MenuToggle, chkFollow, True, chkFollow.IsChecked),
     Item('Level bands', MenuToggle, chkBands, True, chkBands.IsChecked),
@@ -1118,7 +1130,7 @@ begin
   FMenuButton.Visible := True;
   // The log row: the recent logs and the demo. A short window has them in the
   // top bar, between back and the menu.
-  ShowControls([btnOpen, lblView, cbView, btnSaveView, btnDeleteView, lblMode, cbMode, btnImage], False);
+  ShowControls([btnOpen, lblView, cbView, btnSaveView, btnDeleteView, lblMode, cbMode, btnImage, btnTrim], False);
   PutLogRow(FShort and not FEmbedded);
   pnlBar.Visible := not FEmbedded; // only the log row is left in it
   btnDemo.Text := 'Demo';
@@ -1281,7 +1293,7 @@ begin
   pnlBar.Visible := True;
   RestoreBounds;
   btnOpen.Visible := not IsMobile and not FEmbedded;
-  ShowControls([lblView, cbView, btnSaveView, btnDeleteView, lblMode, cbMode, btnImage, chkFollow, chkBands,
+  ShowControls([lblView, cbView, btnSaveView, btnDeleteView, lblMode, cbMode, btnImage, btnTrim, chkFollow, chkBands,
     chkUseDisplay], True);
   btnSelect.Visible := IsMobile;
   btnDemo.Text := 'Demo drive (made up)';
@@ -1407,7 +1419,7 @@ begin
   cbMode.Width := 210;
   cbSpeed.Width := 84; // "10 min" too
   pnlBar.Height := Flow([Ctls([btnOpen, cbRecent, btnDemo, btnLive]), Ctls([lblView, cbView, btnSaveView, btnDeleteView]),
-    Ctls([lblMode, cbMode, btnImage])], AreaWidth);
+    Ctls([lblMode, cbMode, btnImage, btnTrim])], AreaWidth);
   pnlPlay.Height := Flow([Ctls([btnStart, btnPlay, btnEnd, cbSpeed]), Ctls([tbPos, lblTime]), Ctls([chkFollow, chkBands]),
     Ctls([chkUseDisplay]), Ctls([btnSelect])], AreaWidth);
 end;
@@ -1703,6 +1715,65 @@ begin
     Dlg.Free;
   end;
   {$ENDIF}
+end;
+
+{ The selected stretch as a log of its own, next to the log (the demo's or
+  the live chart's in the log folder), its time from 0; the log stays as it
+  is. A log file is copied row by row, as written. }
+procedure TLogViewerForm.btnTrimClick(Sender: TObject);
+
+  function Tag(S: Double): string;
+  begin
+    Result := Format('%dm%.2ds', [Trunc(S) div 60, Trunc(S) mod 60]);
+  end;
+
+var
+  T0, T1: Double;
+  Folder, Name, Dest: string;
+  N: Integer;
+begin
+  if (FData.Count = 0) or not FChart.HasSelection then
+  begin
+    ShowInfo('Select a stretch first: Shift+drag in the chart' + IfThen(IsMobile, ' (or long-press and drag)', ''));
+    Exit;
+  end;
+  T0 := Min(FChart.SelStart, FChart.SelEnd);
+  T1 := Max(FChart.SelStart, FChart.SelEnd);
+  if FData.FileName <> '' then
+  begin
+    Folder := ExtractFilePath(FData.FileName);
+    Name := ChangeFileExt(ExtractFileName(FData.FileName), '');
+  end
+  else
+  begin
+    Folder := FLogFolder;
+    Name := IfThen(FLive, 'UVScan_live_' + FormatDateTime('yyyy-mm-dd_hhnnss', Now), 'Demo drive');
+  end;
+  Name := Format('%s part %s-%s', [Name, Tag(T0 - FData.Times[0]), Tag(T1 - FData.Times[0])]);
+  Dest := System.IOUtils.TPath.Combine(Folder, Name + '.csv');
+  N := 2;
+  while FileExists(Dest) do
+  begin
+    Dest := System.IOUtils.TPath.Combine(Folder, Format('%s (%d).csv', [Name, N]));
+    Inc(N);
+  end;
+  try
+    ForceDirectories(Folder);
+    if FData.FileName <> '' then
+      TrimLogFile(FData.FileName, Dest, T0, T1)
+    else
+      FData.SaveToFile(Dest, T0, T1);
+  except
+    on E: Exception do
+    begin
+      ShowWarning('Could not save the selection: ' + E.Message);
+      Exit;
+    end;
+  end;
+  if not FEmbedded then
+    OpenFile(Dest); // the live chart opens no logs
+  FillRecent;
+  ShowInfo(Format('%s of the log saved as %s', [FormatLogTime(T1 - T0), Dest]));
 end;
 
 procedure TLogViewerForm.btnDemoClick(Sender: TObject);
@@ -2504,6 +2575,7 @@ var
   Lo, Avg, Hi: Double;
   Suffix: string;
 begin
+  btnTrim.Enabled := FChart.HasSelection;
   if FChart.HasSelection then
   begin
     Suffix := '*';
