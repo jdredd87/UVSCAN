@@ -194,7 +194,7 @@ Press **Start scan**. Each ticked PID gets a row with its current value, units a
 
 ## Live chart
 
-**Grid | Chart** at the top of the *Live* page (or **Ctrl+G**) switches between the grid and the live chart: the running scan as a line chart — the [log viewer](#log-viewer)'s chart, fed by the scan instead of a file. On *Gauges*, **⋮ → Live chart** goes to it too. It also charts the [test display](#test-display), so you can try it without a car. On a narrow window or a phone, **⋮ → Chart view, colours and scales…** has what does not fit in its bars. **When a scan starts, Live shows** (*Settings → Appearance*) picks what a new scan opens on: *What it showed last*, *The PID grid* or *The chart*. Marks made with the [Mark key](#marks) show as numbered amber lines.
+**Grid | Chart** at the top of the *Live* page (or **Ctrl+G**) switches between the grid and the live chart: the running scan as a line chart — the [log viewer](#log-viewer)'s chart, fed by the scan instead of a file. On *Gauges*, **⋮ → Live chart** goes to it too. It also charts the [test display](#test-display), so you can try it without a car. On a narrow window or a phone, **⋮ → Chart view, colours and scales…** has what does not fit in its bars. **When a scan starts, Live shows** (*Settings → Appearance*) picks what a new scan opens on: *What it showed last*, *The PID grid* or *The chart*. [Marks](#marks) show as numbered amber lines.
 
 ![Live chart](images/live-chart.png)
 
@@ -301,7 +301,7 @@ The first column is the time since the log started, then one column per PID with
 
 ### Marks
 
-Something happened on the drive — a stumble, a noise, a light? Press **F12** (*Mark this moment in the log*, see [Hotkeys](#hotkeys)). The log gets a numbered mark on that row (*Mark 1*, *Mark 2*, … — a notice says which, with its time, and a beep if alert sounds are on), the live chart shows it at once, and the [log viewer](#log-viewer) draws each mark as an amber line with its number on top. In the viewer, **M** jumps to the next mark and **Shift+M** to the one before. Marking needs a log running and not paused. In the CSV file a mark is its number in the *Mark* column, so a spreadsheet can filter on it.
+Something happened on the drive — a stumble, a noise, a light? Press **F12** (*Mark this moment in the log*, see [Hotkeys](#hotkeys)), or tap **Mark** — in the top bar of *Live* and *Gauges* while a log runs, in their **⋮** menu, and as a flag beside the way out of a full screen dashboard. The log gets a numbered mark on that row (*Mark 1*, *Mark 2*, … — a notice says which, with its time, and goes again after a few seconds; in full screen the flag lights up instead, so the gauges do not move; a beep if alert sounds are on), the live chart shows it at once, and the [log viewer](#log-viewer) draws each mark as an amber line with its number on top. In the viewer, **M** jumps to the next mark and **Shift+M** to the one before. Marking needs a log running and not paused. In the CSV file a mark is its number in the *Mark* column, so a spreadsheet can filter on it.
 
 ![Logging: Stop log on the Live bar, the row count in the status strip](images/win-live-logging.png)
 
@@ -330,7 +330,7 @@ Something happened on the drive — a stumble, a noise, a light? Press **F12** (
 
 ![Log viewer, lanes](images/log-viewer-lanes.png)
 
-**Moving around:** click or drag in the chart to move the cursor (the grid jumps to that row); the mouse wheel zooms around the mouse; drag with the right mouse button to pan; double‑click to see the whole log. Without a wheel, the buttons in the chart's bottom right corner do it: **−** and **+** zoom out and in around the cursor (tap or click where to look first), **All** shows the whole log. They work in the live chart too. With the chart focused, ←/→ step one sample (Shift: 10), Home / End jump to the ends. Clicking a grid row moves the cursor there too. **Level bands** shades each channel's alert levels behind its line.
+**Moving around:** click or drag in the chart to move the cursor (the grid jumps to that row); the mouse wheel zooms around the mouse; drag with the right mouse button to pan; double‑click to see the whole log. Without a wheel, the buttons in the chart's bottom left corner do it (left, so they do not cover the newest values of a live chart): **−** and **+** zoom out and in around the cursor (tap or click where to look first), **All** shows the whole log. They work in the live chart too. With the chart focused, ←/→ step one sample (Shift: 10), Home / End jump to the ends. Clicking a grid row moves the cursor there too. **Level bands** shades each channel's alert levels behind its line.
 
 **Selecting a stretch:** hold Shift and drag in the chart. The stretch is shaded with its length, and the *Min\* / Avg\* / Max\** columns on the left show the values over just that stretch (for ON / OFF channels the average is how much of the time it was on) — e.g. select a wide‑open pull to see peak knock retard and average MAP. Enter zooms to the selection, Esc clears it.
 

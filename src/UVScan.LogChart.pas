@@ -534,7 +534,7 @@ var
   W, H: Single;
   I, N, Lane: Integer;
   Lo, Hi, SLo, SHi, Step, Tick, Px: Double;
-  LaneTop, LaneH, AxisW, X, Y: Single;
+  LaneTop, LaneH, AxisW, X, Y, BoxTop: Single;
   Ch: Integer;
   S: string;
   Box: TArray<string>;
@@ -965,11 +965,13 @@ begin
           X := X - Px - 8
         else
           X := X + 8;
-        Fill(X, FPlot.Top + 6, Px, Length(Box) * 17 + 8, Back, 230);
+        // below the mark flags when the log has marks, so it never hides them
+        BoxTop := FPlot.Top + IfThen(FData.Marks <> nil, 20, 6);
+        Fill(X, BoxTop, Px, Length(Box) * 17 + 8, Back, 230);
         for I := 0 to High(Box) do
         begin
-          Fill(X + 4, FPlot.Top + 10 + I * 17 + 4, 6, 9, BoxColors[I]);
-          Txt(Box[I], X + 13, FPlot.Top + 10 + I * 17, Px - 14, 17, 12, BoxColors[I], TTextAlign.Leading, True);
+          Fill(X + 4, BoxTop + 4 + I * 17 + 4, 6, 9, BoxColors[I]);
+          Txt(Box[I], X + 13, BoxTop + 4 + I * 17, Px - 14, 17, 12, BoxColors[I], TTextAlign.Leading, True);
         end;
       end;
     end;
@@ -1123,8 +1125,10 @@ begin
     FitAll;
 end;
 
-{ The zoom buttons in the plot's bottom right corner: 0 out, 1 in, 2 all;
-  bigger on a phone or tablet. }
+{ The zoom buttons in the plot's bottom left corner: 0 out, 1 in, 2 all;
+  bigger on a phone or tablet. Left, where a live chart has its oldest data
+  (the newest comes in at the right), clear of the values box and the mark
+  flags at the top. }
 function TLogChart.ZoomButtonRect(I: Integer): TRectF;
 const
   {$IF DEFINED(ANDROID) or DEFINED(IOS)}
@@ -1134,13 +1138,11 @@ const
   {$ENDIF}
   AllW = BW + 10;
 var
-  R: Single;
+  L: Single;
 begin
-  // right to left: All, +, -
-  R := FPlot.Right - 6;
-  if I < 2 then
-    R := R - AllW - 4 - (1 - I) * (BW + 4);
-  Result := TRectF.Create(R - IfThen(I = 2, AllW, BW), FPlot.Bottom - 6 - BH, R, FPlot.Bottom - 6);
+  // left to right: -, +, All
+  L := FPlot.Left + 6 + I * (BW + 4);
+  Result := TRectF.Create(L, FPlot.Bottom - 6 - BH, L + IfThen(I = 2, AllW, BW), FPlot.Bottom - 6);
 end;
 
 function TLogChart.ZoomButtonAt(X, Y: Single): Integer;

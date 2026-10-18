@@ -228,6 +228,8 @@ type
     procedure HotkeyWndProc(var Msg: Winapi.Messages.TMessage);
     {$ENDIF}
     procedure MarkLog;
+    procedure MarkClick(Sender: TObject);
+    procedure UpdateMarkButtons;
     procedure ToggleLockRotateClick(Sender: TObject);
     procedure btnRefreshPortsClick(Sender: TObject);
     procedure btnConnectClick(Sender: TObject);
@@ -415,6 +417,7 @@ type
     FFocusBtn: TCircle;              // (in FGaugeBar) fill the screen with the gauge, or back
     FFocusFor: Integer;              // the gauge FFocusBtn is for
     FFocusHideAt: UInt64;            // tick count FFocusBtn goes again
+    FNoticeHideAt: UInt64;           // tick count a passing notice (a mark) goes by itself, 0 = stays
     FFocusItem: TMenuItem;           // gauge menu: Fill the screen
     btnPidPanel: TSpeedButton;       // wide windows: the PID list beside the pages or on its own page
     btnPidsHide: TSpeedButton;       // on the PID list beside the pages: puts it away
@@ -434,6 +437,8 @@ type
     FUpdateError: string;            // why the last check failed
     btnLiveLog: TButton;             // Start / Stop log on the Live page's bar
     btnDashLog: TButton;             // and on the dashboard's
+    btnMark: TButton;                // top bar on Live / Gauges while logging: mark this moment
+    FMarkFull: TCircle;              // full screen while logging: the same
     FPidsShow: TRectangle;           // the strip down the left edge that brings it back
     FScanStarting: Boolean;          // Start scan pressed, the engine not scanning yet
     btnFullScreen: TSpeedButton;     // Gauges: the dashboard on the whole screen
@@ -1129,6 +1134,17 @@ begin
   Icon := AddIcon(btnFullScreen);
   Icon.Data.Data := 'M4 9 L4 4 L9 4 M15 4 L20 4 L20 9 M20 15 L20 20 L15 20 M9 20 L4 20 L4 15';
   Icon.Fill.Kind := TBrushKind.None;
+  // Live / Gauges while logging: mark this moment in the log (no keyboard
+  // needed, e.g. on a phone).
+  btnMark := TButton.Create(Self);
+  btnMark.Parent := pnlAppBar;
+  btnMark.Stored := False;
+  btnMark.Width := 80;
+  btnMark.Height := 36;
+  btnMark.Text := 'Mark';
+  btnMark.ShowHint := True;
+  btnMark.OnClick := MarkClick;
+  btnMark.Visible := False;
   // Wide windows: the PID list beside the pages, or on a page of its own.
   btnPidPanel := TSpeedButton.Create(Self);
   btnPidPanel.Parent := pnlAppBar;
@@ -1206,6 +1222,21 @@ begin
   FExitFull.Visible := False;
   Icon := AddIcon(FExitFull);
   Icon.Data.Data := 'M9 4 L9 9 L4 9 M15 4 L15 9 L20 9 M20 15 L15 15 L15 20 M9 20 L9 15 L4 15';
+  Icon.Fill.Kind := TBrushKind.None;
+  // Full screen while logging: a flag to mark this moment, beside the way back.
+  FMarkFull := TCircle.Create(Self);
+  FMarkFull.Parent := tiDashboard;
+  FMarkFull.Stored := False;
+  FMarkFull.SetBounds(0, 0, 44, 44);
+  FMarkFull.Stroke.Kind := TBrushKind.None;
+  FMarkFull.Opacity := 0.55;
+  FMarkFull.HitTest := True;
+  FMarkFull.Cursor := crHandPoint;
+  FMarkFull.ShowHint := True;
+  FMarkFull.OnClick := MarkClick;
+  FMarkFull.Visible := False;
+  Icon := AddIcon(FMarkFull);
+  Icon.Data.Data := 'M6 21 L6 3 L19 8 L6 13';
   Icon.Fill.Kind := TBrushKind.None;
   // A tapped gauge gets a row of round buttons on its corner: move it
   // earlier or later, edit it, fill the screen with it.
@@ -1659,6 +1690,7 @@ begin
   btnMenu.Visible := (P = tiLive) or (P = tiDashboard) or (P = tiPids) or (P = tiMessages) or (P = tiConnect) or
     (P = tiControls);
   btnFullScreen.Visible := P = tiDashboard;
+  UpdateMarkButtons;
   // Both can show: the PID list button after the back arrow (sharing its
   // place, a second tap on back hid the PID list).
   btnPidPanel.Visible := FWide;
@@ -1678,7 +1710,7 @@ begin
     FNavButtons[I].Repaint;
 end;
 
-{ The top bar's right side, from the edge: menu, main button, full screen - placed
+{ The top bar's right side, from the edge: menu, main button, Mark, full screen - placed
   here rather than right aligned (the alignment mixed their order up after a
   turn with some of them hidden). The title gets the rest. }
 procedure TMainForm.OrderAppBar;
@@ -1697,6 +1729,11 @@ begin
   R := R - btnAction.Margins.Right;
   btnAction.SetBounds(R - btnAction.Width, Round((H - btnAction.Height) / 2), btnAction.Width, btnAction.Height);
   R := btnAction.Position.X - 4;
+  if btnMark.Visible then
+  begin
+    btnMark.SetBounds(R - btnMark.Width, Round((H - btnMark.Height) / 2), btnMark.Width, btnMark.Height);
+    R := btnMark.Position.X - 4;
+  end;
   if btnFullScreen.Visible then
   begin
     btnFullScreen.SetBounds(R - btnFullScreen.Width, 0, btnFullScreen.Width, H);
@@ -1789,6 +1826,7 @@ begin
     FDashEmpty.BringToFront;
     FAddGauge.BringToFront;
     FExitFull.BringToFront;
+    FMarkFull.BringToFront;
   end;
   if not FDashBackImg.Visible then
     Exit;
@@ -1981,6 +2019,11 @@ begin
   FExitFull.Position.Point := TPointF.Create(sbDash.Position.X + sbDash.Width - FExitFull.Width - 4,
     sbDash.Position.Y + 4);
   FExitFull.BringToFront;
+  if FMarkFull.Visible then
+  begin
+    FMarkFull.Position.Point := TPointF.Create(FExitFull.Position.X - FMarkFull.Width - 8, FExitFull.Position.Y);
+    FMarkFull.BringToFront;
+  end;
 end;
 
 { More > About: which UVScan this is, who wrote it, where the source is,
@@ -2338,6 +2381,7 @@ begin
     pnlNotice.Visible := False;
   FAddGauge.Visible := not Value;
   FExitFull.Visible := Value;
+  UpdateMarkButtons;
   UpdateFullState;
   if IsMobile then
   begin
@@ -2572,6 +2616,8 @@ begin
   if (P = tiLive) and FLiveChart then
   begin
     AddPageMenuItem(IfThen(FLogging, 'Stop log', 'Start log'), btnLogClick, btnLog.Enabled);
+    if FLogging then
+      AddPageMenuItem('Mark this moment', MarkClick, not FLogPaused);
     AddPageMenuItem('Grid', LiveSwitchClick);
     AddPageMenuItem('Chart view, colours and scales...', LiveChartMenuClick);
     if IsMobile then
@@ -2582,6 +2628,8 @@ begin
   else if P = tiLive then
   begin
     AddPageMenuItem(IfThen(FLogging, 'Stop log', 'Start log'), btnLogClick, btnLog.Enabled);
+    if FLogging then
+      AddPageMenuItem('Mark this moment', MarkClick, not FLogPaused);
     AddPageMenuItem('Live chart', LiveChartClick);
     AddPageMenuItem('Reset min / max', btnResetMinMaxClick);
     AddPageMenuItem(btnLiveTest.Text, btnTestDisplayClick, btnLiveTest.Enabled);
@@ -2598,6 +2646,8 @@ begin
   else if P = tiDashboard then
   begin
     AddPageMenuItem(IfThen(FLogging, 'Stop log', 'Start log'), btnLogClick, btnLog.Enabled);
+    if FLogging then
+      AddPageMenuItem('Mark this moment', MarkClick, not FLogPaused);
     AddPageMenuItem('Dashboards...', ChooseDashboardClick, FDisplay.DashboardCount > 1);
     AddPageMenuItem('Add gauge...', btnAddGaugeClick);
     AddPageMenuItem('Tick these PIDs', btnTickDashPidsClick, not PidsLocked);
@@ -3112,6 +3162,29 @@ begin
     Post(ecMarkLog);
 end;
 
+procedure TMainForm.MarkClick(Sender: TObject);
+begin
+  MarkLog;
+end;
+
+{ Mark buttons for a touch screen: in the top bar on Live and Gauges, and on
+  the full screen dashboard, only while logging. }
+procedure TMainForm.UpdateMarkButtons;
+var
+  P: TTabItem;
+  Hint: string;
+begin
+  P := CurrentPage;
+  btnMark.Visible := FLogging and ((P = tiLive) or (P = tiDashboard));
+  btnMark.Enabled := not FLogPaused;
+  Hint := 'Mark this moment in the log' + KeyHint(haMark);
+  btnMark.Hint := Hint;
+  FMarkFull.Hint := Hint;
+  FMarkFull.Visible := FLogging and FFullScreen;
+  FMarkFull.Opacity := IfThen(FLogPaused, 0.25, 0.55);
+  PlaceExitFull;
+end;
+
 procedure TMainForm.chkOneLogChange(Sender: TObject);
 begin
   if not FChromeReady then
@@ -3218,6 +3291,8 @@ begin
   begin
     FExitFull.Fill.Color := P.Panel;
     TPath(FExitFull.Controls[0]).Stroke.Color := P.Text;
+    FMarkFull.Fill.Color := P.Panel;
+    TPath(FMarkFull.Controls[0]).Stroke.Color := $FFFFB020; // the chart's mark colour
   end;
   if FAddGauge <> nil then
   begin
@@ -5207,7 +5282,20 @@ begin
     eeLogMark:
       begin
         AddMessage(Format('Mark %d at %s in %s', [Ev.Progress, FormatLogTime(Ev.LogTime), ExtractFileName(Ev.Text)]));
-        ShowNotice(Format('Mark %d at %s', [Ev.Progress, FormatLogTime(Ev.LogTime)]), False);
+        // Marked on a drive: nothing to tap away. Full screen lights its flag
+        // instead (a notice there would move every gauge).
+        if FFullScreen then
+        begin
+          FMarkFull.Opacity := 1;
+          FMarkFull.Fill.Color := $FFFFB020;
+          TPath(FMarkFull.Controls[0]).Stroke.Color := TAlphaColors.Black;
+          FNoticeHideAt := TThread.GetTickCount64 + 1500;
+        end
+        else
+        begin
+          ShowNotice(Format('Mark %d at %s', [Ev.Progress, FormatLogTime(Ev.LogTime)]), False);
+          FNoticeHideAt := TThread.GetTickCount64 + 4000;
+        end;
         if FSettings.AlertSounds then
           PlayAlertSound(asBeep, ''); // heard without looking
         // the live chart: at its newest sample
@@ -5262,6 +5350,11 @@ begin
   end;
   btnPause.Enabled := FLogging;
   btnPause.Text := IfThen(FLogPaused, 'Resume', 'Pause') + KeyHint(haPause);
+  if btnMark <> nil then
+  begin
+    UpdateMarkButtons;
+    OrderAppBar;
+  end;
   btnTestPids.Enabled := Idle;
   btnEditPids.Enabled := FState in [esDisconnected, esConnected];
   // Stop the scan to change what it scans.
@@ -5353,6 +5446,14 @@ begin
   begin
     FFocusHideAt := 0;
     HideGaugeBar;
+  end;
+  if (FNoticeHideAt <> 0) and (TThread.GetTickCount64 >= FNoticeHideAt) then
+  begin
+    FNoticeHideAt := 0;
+    pnlNotice.Visible := False;
+    FMarkFull.Fill.Color := Palette.Panel; // the full screen flag back to dim
+    TPath(FMarkFull.Controls[0]).Stroke.Color := $FFFFB020;
+    UpdateMarkButtons;
   end;
   if FQuickActive and FQuick.Retry and (FState = esDisconnected) and not FConnecting then
   begin
@@ -7079,6 +7180,7 @@ begin
     pnlNotice.Fill.Color := Palette.NoticeWarn;
   pnlNotice.Tag := Ord(IsError);
   pnlNotice.Visible := True;
+  FNoticeHideAt := 0;
   TThread.ForceQueue(nil, FitWrappedText);
 end;
 
