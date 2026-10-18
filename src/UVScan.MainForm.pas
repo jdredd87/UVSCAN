@@ -381,6 +381,7 @@ type
     FHotkeyWnd: HWND;                // gets the keys registered for all of Windows
     {$ENDIF}
     FViewerLog: string;              // the log last handed to the viewer
+    FViewerLogTime: TDateTime;       // when it had last been written then
     FZoom: Integer;                  // live grid zoom, percent
     FNormalBounds: TRect;            // window bounds when not maximized
     FStatus: array[TStatusPart] of string;
@@ -7184,10 +7185,16 @@ begin
       if (Last = '') or (TFile.GetLastWriteTime(F) > TFile.GetLastWriteTime(Last)) then
         Last := F;
   end;
-  if SameText(Last, FViewerLog) or FLogging then
-    Last := '' // keep what the viewer shows (a log still being written is incomplete)
+  // keep what the viewer shows: the same file, not written since (One log adds
+  // to it), or a log still being written (incomplete)
+  if FLogging or (SameText(Last, FViewerLog) and (TFile.GetLastWriteTime(Last) = FViewerLogTime)) then
+    Last := ''
   else
+  begin
     FViewerLog := Last;
+    if Last <> '' then
+      FViewerLogTime := TFile.GetLastWriteTime(Last);
+  end;
   TLogViewerForm.ShowViewer(FCatalog, FDisplay, LogFolder, LogViewsFile, Last);
 end;
 
