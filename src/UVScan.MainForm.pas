@@ -707,6 +707,12 @@ begin
   FEngine.SetTrace(chkTrace.IsChecked);
   SetZoom(FSettings.LiveZoom);
   BuildDashboard;
+  // Buttons do not keep the focus after a click: Enter or Space would press
+  // the same button again, which by then does something else (Connect turns
+  // into Start scan, then Stop). Their keys (F8, F9...) still work.
+  for var I := 0 to ComponentCount - 1 do
+    if Components[I] is TCustomButton then
+      TCustomButton(Components[I]).CanFocus := False;
   FState := esDisconnected;
   FChromeReady := True;
   // A box of wrapping buttons fits its rows again whenever its width changes
