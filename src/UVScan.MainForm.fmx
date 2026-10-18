@@ -225,7 +225,7 @@ object MainForm: TMainForm
           Size.Height = 30.000000000000000000
           Size.PlatformDefault = False
           TabOrder = 1
-          Text = 'Clear selection'
+          Text = 'Untick all'
           OnClick = btnClearSelectionClick
         end
         object btnEditPids: TButton

@@ -40,6 +40,7 @@ type
     TcpAddress: string;     // host:port of an adapter on the network (port 'Network (TCP/IP)')
     SelectedPids: TArray<Integer>;
     ActiveList: string;     // name of the scan list last chosen, '' if none
+    FoldedGroups: TArray<string>; // PID list groups shown folded (their names: 'Engine', ...)
     StreamSpeed: TStreamSpeed;
     LogFolder: string;
     AlwaysLog: Boolean;     // every scan writes a log, no Start log needed
@@ -126,6 +127,7 @@ begin
   TcpAddress := '';
   SelectedPids := nil;
   ActiveList := '';
+  FoldedGroups := nil;
   StreamSpeed := ssFast;
   LogFolder := DefaultLogFolder;
   AlwaysLog := False;
@@ -153,7 +155,7 @@ end;
 function TAppSettings.ToJson: TJSONObject;
 var
   Sec: TJSONObject;
-  Ids: TJSONArray;
+  Ids, Names: TJSONArray;
   Id: Integer;
 begin
   Result := TJSONObject.Create;
@@ -172,6 +174,10 @@ begin
     Ids.Add(Id);
   Sec.AddPair('selectedPids', Ids);
   Sec.AddPair('activeList', ActiveList);
+  Names := TJSONArray.Create;
+  for var G in FoldedGroups do
+    Names.Add(G);
+  Sec.AddPair('foldedGroups', Names);
   Sec.AddPair('streamSpeed', StreamSpeedKeys[StreamSpeed]);
   Result.AddPair('scan', Sec);
 
@@ -263,6 +269,12 @@ begin
         if Ids.Items[I] is TJSONNumber then
           SelectedPids := SelectedPids + [TJSONNumber(Ids.Items[I]).AsInt];
     ActiveList := JStr(Sec, 'activeList');
+    FoldedGroups := nil;
+    Ids := JArr(Sec, 'foldedGroups');
+    if Ids <> nil then
+      for I := 0 to Ids.Count - 1 do
+        if Ids.Items[I] is TJSONString then
+          FoldedGroups := FoldedGroups + [Ids.Items[I].Value];
     for S := Low(TStreamSpeed) to High(TStreamSpeed) do
       if SameText(JStr(Sec, 'streamSpeed'), StreamSpeedKeys[S]) then
         StreamSpeed := S;

@@ -49,7 +49,7 @@ Windows and Android share one layout:
 | Area | What it is |
 |---|---|
 | Top bar | The page's title, one main button that follows the connection (**Connect** → **Start scan** → **Stop**), and **⋮** with the page's other actions. Pages under *More* get a back arrow. On Android the back button or gesture does what the arrow does: it leaves an editor or sub‑page (asking first if there are unsaved changes), goes from a *More* page to the menu and from any page to *Live*; on *Live* it sends UVScan to the background like Home (a scan carries on for the time set in *Settings → Logging*). |
-| Pages | **Connect** (adapter, scan, logging, vehicle info), **PIDs** (the PID list with the **Scan list** row, the byte count — the PCM streams at most 48 — and **Test PIDs / Clear selection / Edit PIDs…**), **Live** (live data grid), **Gauges** (dashboard), **Codes** (trouble codes), **Logs** (opens the log viewer) and **More**: *Real‑time controls*, *Tools*, *Settings*, *Messages*. A coloured notice line appears at the top when something needs your attention (tap or click it to dismiss). |
+| Pages | **Connect** (adapter, scan, logging, vehicle info), **PIDs** (the PID list with the **Scan list** row, the byte count — the PCM streams at most 48 — and **Test PIDs / Untick all / Edit PIDs…**), **Live** (live data grid), **Gauges** (dashboard), **Codes** (trouble codes), **Logs** (opens the log viewer) and **More**: *Real‑time controls*, *Tools*, *Settings*, *Messages*. A coloured notice line appears at the top when something needs your attention (tap or click it to dismiss). |
 | Status strip | A dot — grey idle, blue connected, green scanning, red logging, amber paused — then state, port, VIN, OS ID, update rate and logging. Tap it to go to *Connect*. |
 | Tab bar | **Connect · PIDs · Live · Gauges · Codes · Logs · More** at the bottom (down the left side when the phone is held sideways). |
 
@@ -148,7 +148,9 @@ Quick starts are kept in `settings.json`. On a phone they are on the same menu (
 
 ## Choosing PIDs and scan lists
 
-Tick PIDs on the *PIDs* page, or in the list on the left of a wide window (type in **Search PIDs…** to filter). The footer shows how many are ticked, how many of the PCM's 48 streaming bytes they use, the DPIDs (6‑byte blocks) they pack into and the updates a second to expect: about 10 up to 4 DPIDs (24 bytes), about 5 above that (with the *Fast* stream speed). It turns red when there are too many.
+Tick PIDs on the *PIDs* page, or in the list on the left of a wide window (type in **Search PIDs…** to filter). The footer shows how many are ticked, how many of the PCM's 48 streaming bytes they use, the DPIDs (6‑byte blocks) they pack into and the updates a second to expect: about 10 up to 4 DPIDs (24 bytes), about 5 above that (with the *Fast* stream speed). It turns red when there are too many. **Untick all** clears every tick.
+
+The PIDs are grouped (*Engine*, *Transmission*, *Body*…). Click or tap a group's header to fold it to just the header (it then says how many PIDs it holds and how many are ticked), and again to open it; the PIDs page's **⋮** has **Fold all groups** and **Unfold all groups**. UVScan remembers which are folded. A search shows every match, folded or not.
 
 The ticks are what the scan asks the PCM for, so they are locked while scanning (the check boxes fade, the footer says *locked*): **Stop scan**, change them, **Start scan**. Everything else stays usable while scanning: the search, *Display & alerts*, *Add to dashboard*, the rows' order and the PID list put away.
 

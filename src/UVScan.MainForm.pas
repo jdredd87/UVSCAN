@@ -244,6 +244,10 @@ type
     procedure edtSearchChange(Sender: TObject);
     procedure btnTestPidsClick(Sender: TObject);
     procedure btnClearSelectionClick(Sender: TObject);
+    procedure PidsGroupClick(Sender: TObject; Row: Integer);
+    procedure FoldAllClick(Sender: TObject);
+    procedure UnfoldAllClick(Sender: TObject);
+    procedure SetFolded(const Folded: TArray<TPidCategory>);
     procedure btnEditPidsClick(Sender: TObject);
     procedure pnlNoticeClick(Sender: TObject);
     procedure btnResetMinMaxClick(Sender: TObject);
@@ -302,6 +306,7 @@ type
     FSupport: TDictionary<Integer, Boolean>; // PID test results
     FRejected: TList<Integer>;
     FPidRows: TArray<Integer>;      // PID list rows: PID id, or -(category + 1) for a group row
+    FFolded: set of TPidCategory;   // PID list groups showing their header only
     FLiveIds: TArray<Integer>;       // live rows, top first (the order the user chose)
     FEngineIds: TArray<Integer>;     // the same PIDs in the scan's own order (its snapshots)
     FRowEngine: TArray<Integer>;     // live row -> index in FEngineIds
@@ -539,6 +544,8 @@ type
     procedure PidsGetChecked(Sender: TObject; Row: Integer; var Checked: Boolean);
     procedure PidsToggle(Sender: TObject; Row: Integer);
     procedure PidsIsGroup(Sender: TObject; Row: Integer; var IsGroup: Boolean);
+    function GroupText(Cat: TPidCategory): string;
+    procedure PidsGroupFolded(Sender: TObject; Row: Integer; var Folded: Boolean);
     procedure PidsDblClick(Sender: TObject; Row: Integer);
     procedure LiveGetText(Sender: TObject; Col, Row: Integer; var Text: string);
     procedure LiveGetStyle(Sender: TObject; Col, Row: Integer; var Style: TCellStyle);
@@ -867,6 +874,8 @@ begin
   grdPids.OnToggleCheck := PidsToggle;
   grdPids.OnIsGroupRow := PidsIsGroup;
   grdPids.OnRowDblClick := PidsDblClick;
+  grdPids.OnGroupClick := PidsGroupClick;
+  grdPids.OnIsGroupFolded := PidsGroupFolded;
   grdPids.OnMouseDown := GridMouseDown;
   grdPids.PopupMenu := pmPid;
   grdPids.Touch.InteractiveGestures := [TInteractiveGesture.LongTap];
@@ -2608,8 +2617,11 @@ begin
   else if P = tiPids then
   begin
     AddPageMenuItem('Test PIDs', btnTestPidsClick, btnTestPids.Enabled);
-    AddPageMenuItem('Clear selection', btnClearSelectionClick, not PidsLocked);
+    AddPageMenuItem('Untick all', btnClearSelectionClick, not PidsLocked);
     AddPageMenuItem('Edit PIDs...', btnEditPidsClick, btnEditPids.Enabled);
+    AddPageMenuItem('-', nil);
+    AddPageMenuItem('Fold all groups', FoldAllClick);
+    AddPageMenuItem('Unfold all groups', UnfoldAllClick);
   end
   else if P = tiMessages then
   begin
@@ -4147,6 +4159,10 @@ begin
   LockRotation(FSettings.LockRotation);
   FUpdateCheck.IsChecked := FSettings.CheckUpdates;
   ShowUpdateStatus;
+  FFolded := [];
+  for var C := Low(TPidCategory) to High(TPidCategory) do
+    if MatchText(CategoryNames[C], FSettings.FoldedGroups) then
+      Include(FFolded, C);
   for N in FSettings.SelectedPids do
     if (FCatalog.FindById(N) <> nil) and FCatalog.FindById(N).Enabled and not FSelected.Contains(N) then
       FSelected.Add(N);
@@ -4352,6 +4368,8 @@ begin
           Rows.Add(-(Ord(Cat) + 1));
           Added := True;
         end;
+        if (Cat in FFolded) and (Filter = '') then
+          Break; // folded: its header only (a search shows what matches)
         Rows.Add(P.Id);
       end;
     end;
@@ -4370,6 +4388,101 @@ begin
   UpdateBudget;
 end;
 
+{ A group's header: open / folded, its name, and how many of it are ticked
+  (folded: how many it holds). }
+function TMainForm.GroupText(Cat: TPidCategory): string;
+var
+  I, Count, Ticked: Integer;
+  P: TPidDef;
+  Folded: Boolean;
+begin
+  Count := 0;
+  Ticked := 0;
+  for I := 0 to FCatalog.Count - 1 do
+  begin
+    P := FCatalog[I];
+    if not P.Enabled or (P.Category <> Cat) then
+      Continue;
+    Inc(Count);
+    if FSelected.Contains(P.Id) then
+      Inc(Ticked);
+  end;
+  Folded := (Cat in FFolded) and (Trim(edtSearch.Text) = '');
+  Result := CategoryNames[Cat];
+  if Folded then
+    Result := Result + Format('   (%d PIDs%s)', [Count, IfThen(Ticked > 0, Format(', %d ticked', [Ticked]))])
+  else if Ticked > 0 then
+    Result := Result + Format('   (%d ticked)', [Ticked]);
+end;
+
+procedure TMainForm.PidsGroupFolded(Sender: TObject; Row: Integer; var Folded: Boolean);
+begin
+  Folded := (Row <= High(FPidRows)) and (FPidRows[Row] < 0) and
+    (TPidCategory(-FPidRows[Row] - 1) in FFolded) and (Trim(edtSearch.Text) = '');
+end;
+
+{ A click on a group's header folds or unfolds it (remembered). }
+procedure TMainForm.PidsGroupClick(Sender: TObject; Row: Integer);
+var
+  Cat: TPidCategory;
+  Folded: TArray<TPidCategory>;
+begin
+  if (Row > High(FPidRows)) or (FPidRows[Row] >= 0) or (Trim(edtSearch.Text) <> '') then
+    Exit; // (searching shows every match: nothing to fold)
+  Cat := TPidCategory(-FPidRows[Row] - 1);
+  Folded := nil;
+  for var C := Low(TPidCategory) to High(TPidCategory) do
+    if (C in FFolded) <> (C = Cat) then
+      Folded := Folded + [C];
+  SetFolded(Folded);
+end;
+
+procedure TMainForm.FoldAllClick(Sender: TObject);
+var
+  Folded: TArray<TPidCategory>;
+begin
+  Folded := nil;
+  for var C := Low(TPidCategory) to High(TPidCategory) do
+    Folded := Folded + [C];
+  SetFolded(Folded);
+end;
+
+procedure TMainForm.UnfoldAllClick(Sender: TObject);
+begin
+  SetFolded(nil);
+end;
+
+procedure TMainForm.SetFolded(const Folded: TArray<TPidCategory>);
+var
+  TopRow, Group: Integer;
+begin
+  // the group clicked stays where it was: keep the top row's group in view
+  TopRow := grdPids.TopRow;
+  Group := -1;
+  if (TopRow >= 0) and (TopRow <= High(FPidRows)) then
+    for var I := TopRow downto 0 do
+      if FPidRows[I] < 0 then
+      begin
+        Group := FPidRows[I];
+        Break;
+      end;
+  FFolded := [];
+  FSettings.FoldedGroups := nil;
+  for var C in Folded do
+  begin
+    Include(FFolded, C);
+    FSettings.FoldedGroups := FSettings.FoldedGroups + [CategoryNames[C]];
+  end;
+  SettingsChanged;
+  FillPidList;
+  for var I := 0 to High(FPidRows) do
+    if FPidRows[I] = Group then
+    begin
+      grdPids.TopRow := Min(I, TopRow);
+      Break;
+    end;
+end;
+
 procedure TMainForm.PidsIsGroup(Sender: TObject; Row: Integer; var IsGroup: Boolean);
 begin
   IsGroup := (Row <= High(FPidRows)) and (FPidRows[Row] < 0);
@@ -4385,7 +4498,7 @@ begin
   if FPidRows[Row] < 0 then
   begin
     if Col = 0 then
-      Text := CategoryNames[TPidCategory(-FPidRows[Row] - 1)];
+      Text := GroupText(TPidCategory(-FPidRows[Row] - 1));
     Exit;
   end;
   P := FCatalog.FindById(FPidRows[Row]);

@@ -8,7 +8,9 @@ unit UVScan.UI.DataGrid;
   - Columns are set up in code (AddColumn); a Stretch column takes the room
     the others leave. Header borders can be dragged to resize.
   - Optional check box in the first column (OnGetChecked / OnToggleCheck).
-  - Optional group rows (OnIsGroupRow): a full-width band, not selectable.
+  - Optional group rows (OnIsGroupRow): a full-width band, not selectable;
+    a click (or tap) on one calls OnGroupClick (to fold it, say), and with
+    OnIsGroupFolded it starts with a triangle: right folded, down open.
   - Rows can be taller than RowHeight (RowHeights[]).
   - Mouse wheel, scroll bar, keyboard, and dragging with a finger scroll. }
 
@@ -93,9 +95,11 @@ type
     FOnGetStyle: TGridStyleEvent;
     FOnSelect: TNotifyEvent;
     FOnRowDblClick: TGridRowEvent;
+    FOnGroupClick: TGridRowEvent;
     FOnGetChecked: TGridCheckedEvent;
     FOnToggleCheck: TGridRowEvent;
     FOnIsGroupRow: TGridGroupEvent;
+    FOnIsGroupFolded: TGridGroupEvent;
     FOnHeaderClick: TGridColEvent;
     FOnTopRowChange: TNotifyEvent;
     procedure SetRowCount(Value: Integer);
@@ -125,6 +129,7 @@ type
     procedure DrawText(const R: TRectF; const S: string; Align: TGridAlign; Color: TAlphaColor; Size: Single;
       Bold: Boolean; Wrap: Boolean = False; Shrink: Boolean = False; ElideMiddle: Boolean = False);
     procedure DrawCheck(const R: TRectF; Checked: Boolean; Color: TAlphaColor);
+    procedure DrawFoldMark(X, MidY: Single; Folded: Boolean; Color: TAlphaColor);
     function CheckRect(const RowRect: TRectF): TRectF;
   protected
     procedure Paint; override;
@@ -224,9 +229,11 @@ type
     property OnGetStyle: TGridStyleEvent read FOnGetStyle write FOnGetStyle;
     property OnSelect: TNotifyEvent read FOnSelect write FOnSelect;
     property OnRowDblClick: TGridRowEvent read FOnRowDblClick write FOnRowDblClick;
+    property OnGroupClick: TGridRowEvent read FOnGroupClick write FOnGroupClick;
     property OnGetChecked: TGridCheckedEvent read FOnGetChecked write FOnGetChecked;
     property OnToggleCheck: TGridRowEvent read FOnToggleCheck write FOnToggleCheck;
     property OnIsGroupRow: TGridGroupEvent read FOnIsGroupRow write FOnIsGroupRow;
+    property OnIsGroupFolded: TGridGroupEvent read FOnIsGroupFolded write FOnIsGroupFolded;
     property OnHeaderClick: TGridColEvent read FOnHeaderClick write FOnHeaderClick;
     property OnTopRowChange: TNotifyEvent read FOnTopRowChange write FOnTopRowChange;
     property OnMouseDown;
@@ -1043,6 +1050,37 @@ begin
   FLayout.RenderLayout(Canvas);
 end;
 
+{ A group's triangle at X, centred on MidY: pointing right when folded,
+  down when open. }
+procedure TDataGrid.DrawFoldMark(X, MidY: Single; Folded: Boolean; Color: TAlphaColor);
+var
+  P: TPathData;
+  S: Single;
+begin
+  S := FFontSize * 0.42;
+  P := TPathData.Create;
+  try
+    if Folded then
+    begin
+      P.MoveTo(TPointF.Create(X, MidY - S));
+      P.LineTo(TPointF.Create(X + S * 1.3, MidY));
+      P.LineTo(TPointF.Create(X, MidY + S));
+    end
+    else
+    begin
+      P.MoveTo(TPointF.Create(X - S * 0.15, MidY - S * 0.6));
+      P.LineTo(TPointF.Create(X + S * 1.85, MidY - S * 0.6));
+      P.LineTo(TPointF.Create(X + S * 0.85, MidY + S * 0.75));
+    end;
+    P.ClosePath;
+    Canvas.Fill.Kind := TBrushKind.Solid;
+    Canvas.Fill.Color := Color;
+    Canvas.FillPath(P, 1);
+  finally
+    P.Free;
+  end;
+end;
+
 procedure TDataGrid.DrawCheck(const R: TRectF; Checked: Boolean; Color: TAlphaColor);
 var
   P: TPathData;
@@ -1128,7 +1166,15 @@ begin
         Text := '';
         if Assigned(FOnGetText) then
           FOnGetText(Self, 0, Row, Text);
-        DrawText(TRectF.Create(R.Left + FCellPadding, R.Top, R.Right - FCellPadding, R.Bottom), Text, gaLeft,
+        X := R.Left + FCellPadding;
+        if Assigned(FOnIsGroupFolded) then
+        begin
+          Checked := False;
+          FOnIsGroupFolded(Self, Row, Checked);
+          DrawFoldMark(X + 2, (R.Top + R.Bottom) / 2, Checked, FGroupTextColor);
+          X := X + FFontSize * 1.4;
+        end;
+        DrawText(TRectF.Create(X, R.Top, R.Right - FCellPadding, R.Bottom), Text, gaLeft,
           FGroupTextColor, FFontSize, True);
       end
       else
@@ -1342,7 +1388,9 @@ begin
   begin
     Row := RowAt(Y);
     if (Row >= 0) and not IsGroupRow(Row) then
-      SetItemIndex(Row);
+      SetItemIndex(Row)
+    else if (Row >= 0) and Assigned(FOnGroupClick) then
+      FOnGroupClick(Self, Row);
   end;
   FDown := False;
   FDragScroll := False;
