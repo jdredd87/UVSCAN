@@ -1066,6 +1066,12 @@ begin
     lblStatus1.Position.X := lblStatus0.Width + 1;
     Exit;
   end;
+  // smaller on a phone, where the chart and the lists need the room
+  for L in [lblStatus0, lblStatus1, lblStatus2] do
+  begin
+    L.StyledSettings := L.StyledSettings - [TStyledSetting.Size];
+    L.TextSettings.Font.Size := 12;
+  end;
   W := AreaWidth - 16;
   H := 0;
   if FShort or (AreaHeight < 700) then // a small phone: the lists need the room
@@ -1326,6 +1332,7 @@ begin
   begin
     L.Visible := True;
     L.WordWrap := False;
+    L.StyledSettings := L.StyledSettings + [TStyledSetting.Size];
     L.Margins.Rect := TRectF.Create(8, 0, 0, 0);
   end;
   lblStatus0.Align := TAlignLayout.Left;
@@ -2295,7 +2302,7 @@ begin
   else if (Length(FData.Marks) > 0) and not IsMobile then
     lblStatus2.Text := 'M: the next mark, Shift+M: the one before; Shift+drag in the chart to select a range'
   else if IsMobile then
-    lblStatus2.Text := 'Long-press (or Select range) and drag in the chart to select a range'
+    lblStatus2.Text := 'Long-press and drag in the chart to select a range'
   else
     lblStatus2.Text := 'Shift+drag in the chart to select a range';
   LayoutStatus;

@@ -149,6 +149,12 @@ const
   SelColor = TAlphaColor($FF46AAFF);
   MarkColor = TAlphaColor($FFFFB020);
   ZoomCaptions: array[0..2] of string = (#$2212, '+', 'All');
+  // the zoom buttons, in the time row under the plot: bigger on a phone or tablet
+  {$IF DEFINED(ANDROID) or DEFINED(IOS)}
+  ZoomBW = 38; ZoomBH = 28; ZoomFont = 18;
+  {$ELSE}
+  ZoomBW = 30; ZoomBH = 22; ZoomFont = 16;
+  {$ENDIF}
 
 procedure AutoRange(const Ch: TLogChannel; out Lo, Hi: Double);
 var
@@ -535,6 +541,7 @@ var
   I, N, Lane: Integer;
   Lo, Hi, SLo, SHi, Step, Tick, Px: Double;
   LaneTop, LaneH, AxisW, X, Y, BoxTop: Single;
+  TimeY, TimeMin: Single; // the time labels' top, and their leftmost left
   Ch: Integer;
   S: string;
   Box: TArray<string>;
@@ -745,6 +752,13 @@ var
     Txt(S_, Xc + 5, Yc, Tw - 5, BoxH, Fs, Col, TTextAlign.Leading, True);
   end;
 
+  // Where a time label is drawn: under X, but right of the zoom buttons and
+  // inside at the right edge.
+  function TimeLeft(X: Single): Single;
+  begin
+    Result := Min(Max(X - 40, TimeMin), Width - 82);
+  end;
+
   // A lane's name on a faint backing, so its line does not run through it.
   procedure LaneName(const S_: string; X, Y, W: Single; Col: TAlphaColor; Align: TTextAlign);
   var
@@ -782,7 +796,13 @@ begin
     else
       AxisW := 58;
     end;
-    FPlot := TRectF.Create(Round(AxisW + 6), 8, Round(W - 10), Round(H - 26));
+    // under the plot: the time row, with the zoom buttons at its left, so
+    // they never cover a line
+    FPlot := TRectF.Create(Round(AxisW + 6), 8, Round(W - 10), Round(H - IfThen(FNoButtons, 26, ZoomBH + 6)));
+    TimeY := FPlot.Bottom + (H - FPlot.Bottom - 18) / 2;
+    TimeMin := -1E9;
+    if not FNoButtons then
+      TimeMin := ZoomButtonRect(2).Right - 14; // (the text is narrower than its 80)
     if (FData = nil) or (FData.Count < 2) or (FPlot.Width < 20) or (FPlot.Height < 20) then
     begin
       if (FData = nil) or (FData.ChannelCount = 0) then
@@ -805,9 +825,9 @@ begin
     begin
       X := X_(Tick);
       Line(X, FPlot.Top, X, FPlot.Bottom, 1, GridColor);
-      // (both kept inside at the right edge, so compare where they are drawn)
-      if Abs(Min(X - 40, Width - 82) - Min(X_(FCursor) - 40, Width - 82)) > 70 then
-        Txt(FormatLogTime(Tick), Min(X - 40, Width - 82), FPlot.Bottom + 3, 80, 18, 11, DimText, TTextAlign.Center);
+      // (both kept inside, so compare where they are drawn; none moved off its line by the buttons)
+      if (X - 40 >= TimeMin) and (Abs(TimeLeft(X) - TimeLeft(X_(FCursor))) > 70) then
+        Txt(FormatLogTime(Tick), TimeLeft(X), TimeY, 80, 18, 11, DimText, TTextAlign.Center);
       Tick := Tick + Step;
     end;
 
@@ -938,8 +958,7 @@ begin
     if (X >= FPlot.Left) and (X <= FPlot.Right) then
     begin
       Line(X, FPlot.Top, X, FPlot.Bottom, 1.2, CursorColor, 200);
-      Txt(FormatLogTime(FCursor), Min(X - 40, Width - 82), FPlot.Bottom + 3, 80, 18, 11, CursorColor,
-        TTextAlign.Center, True); // kept inside at the right edge
+      Txt(FormatLogTime(FCursor), TimeLeft(X), TimeY, 80, 18, 11, CursorColor, TTextAlign.Center, True);
       // overlay / shared: one box with every value at the cursor
       if (FMode <> cmLanes) and (N > 0) then
       begin
@@ -1001,7 +1020,7 @@ begin
         Canvas.Stroke.Thickness := 1;
         Canvas.Stroke.Color := DimText;
         Canvas.DrawRect(R, 5, 5, AllCorners, 1);
-        Txt(ZoomCaptions[I], R.Left, R.Top, R.Width, R.Height, IfThen(I = 2, 13, 19), CursorColor,
+        Txt(ZoomCaptions[I], R.Left, R.Top, R.Width, R.Height, IfThen(I = 2, ZoomFont - 6, ZoomFont), CursorColor,
           TTextAlign.Center, True);
       end;
     if IsFocused then
@@ -1125,24 +1144,15 @@ begin
     FitAll;
 end;
 
-{ The zoom buttons in the plot's bottom left corner: 0 out, 1 in, 2 all;
-  bigger on a phone or tablet. Left, where a live chart has its oldest data
-  (the newest comes in at the right), clear of the values box and the mark
-  flags at the top. }
+{ The zoom buttons under the plot, at the left of the time row: 0 out, 1 in,
+  2 all. Outside the plot, so no line or value is ever under them. }
 function TLogChart.ZoomButtonRect(I: Integer): TRectF;
-const
-  {$IF DEFINED(ANDROID) or DEFINED(IOS)}
-  BW = 44; BH = 38;
-  {$ELSE}
-  BW = 34; BH = 28;
-  {$ENDIF}
-  AllW = BW + 10;
 var
   L: Single;
 begin
   // left to right: -, +, All
-  L := FPlot.Left + 6 + I * (BW + 4);
-  Result := TRectF.Create(L, FPlot.Bottom - 6 - BH, L + IfThen(I = 2, AllW, BW), FPlot.Bottom - 6);
+  L := 4 + I * (ZoomBW + 4);
+  Result := TRectF.Create(L, FPlot.Bottom + 3, L + IfThen(I = 2, ZoomBW + 10, ZoomBW), FPlot.Bottom + 3 + ZoomBH);
 end;
 
 function TLogChart.ZoomButtonAt(X, Y: Single): Integer;
@@ -1155,6 +1165,7 @@ begin
   begin
     R := ZoomButtonRect(Result);
     R.Inflate(3, 3); // a finger is not exact
+    R.Top := Max(R.Top, FPlot.Bottom); // (but a touch in the plot is the plot's)
     if R.Contains(TPointF.Create(X, Y)) then
       Exit;
   end;
