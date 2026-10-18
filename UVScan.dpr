@@ -24,6 +24,7 @@ uses
   UVScan.Paths in 'src\UVScan.Paths.pas',
   UVScan.JsonFile in 'src\UVScan.JsonFile.pas',
   UVScan.Update in 'src\UVScan.Update.pas',
+  UVScan.Hotkeys in 'src\UVScan.Hotkeys.pas',
   UVScan.Settings in 'src\UVScan.Settings.pas',
   UVScan.Defaults in 'src\UVScan.Defaults.pas',
   UVScan.PidLists in 'src\UVScan.PidLists.pas',

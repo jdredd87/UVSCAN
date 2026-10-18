@@ -192,7 +192,7 @@ Press **Start scan**. Each ticked PID gets a row with its current value, units a
 
 ## Live chart
 
-**Grid | Chart** at the top of the *Live* page switches between the grid and the live chart: the running scan as a line chart — the [log viewer](#log-viewer)'s chart, fed by the scan instead of a file. On *Gauges*, **⋮ → Live chart** goes to it too. It also charts the [test display](#test-display), so you can try it without a car. On a narrow window or a phone, **⋮ → Chart view, colours and scales…** has what does not fit in its bars.
+**Grid | Chart** at the top of the *Live* page (or **Ctrl+G**) switches between the grid and the live chart: the running scan as a line chart — the [log viewer](#log-viewer)'s chart, fed by the scan instead of a file. On *Gauges*, **⋮ → Live chart** goes to it too. It also charts the [test display](#test-display), so you can try it without a car. On a narrow window or a phone, **⋮ → Chart view, colours and scales…** has what does not fit in its bars. **When a scan starts, Live shows** (*Settings → Appearance*) picks what a new scan opens on: *What it showed last*, *The PID grid* or *The chart*. Marks made with the [Mark key](#marks) show as numbered amber lines.
 
 ![Live chart](images/live-chart.png)
 
@@ -293,7 +293,13 @@ Three options in *More → Settings → Logging* help on a drive:
 
 - **Always log while scanning**: every scan starts a log by itself, so there is no Start log to forget.
 - **One log until UVScan closes**: stop and start the scan, the log or the car (disconnect and connect again) as often as you like; each new start adds to the same file instead of making another one, as long as UVScan stays open. Its time carries on, gaps included, and the log viewer's chart leaves a break where nothing was recorded. A scan with other PIDs cannot go in the same file, so that one starts a new log (UVScan says so), and the logs after it carry on that one.
-- **Ask whether to keep the log when the scan stops**: stopping the scan, the log or the connection asks *Keep the log of this scan?* with the file, its rows and how long it ran. **No** deletes it; with *One log* it deletes only this part and keeps what the file held before. **Answer chosen at first** sets which button is ready (Enter presses it): *Yes, keep it* or *No, delete it*. A log stopped any other way (the link lost, a phone away too long) is always kept. The first column is the time since the log started, then one column per PID with its units in the header.
+- **Ask whether to keep the log when the scan stops**: stopping the scan, the log or the connection asks *Keep the log of this scan?* with the file, its rows and how long it ran. **No** deletes it; with *One log* it deletes only this part and keeps what the file held before. **Answer chosen at first** sets which button is ready (Enter presses it): *Yes, keep it* or *No, delete it*. A log stopped any other way (the link lost, a phone away too long) is always kept.
+
+The first column is the time since the log started, then one column per PID with its units in the header, and a last *Mark* column (see below).
+
+### Marks
+
+Something happened on the drive — a stumble, a noise, a light? Press **F12** (*Mark this moment in the log*, see [Hotkeys](#hotkeys)). The log gets a numbered mark on that row (*Mark 1*, *Mark 2*, … — a notice says which, with its time, and a beep if alert sounds are on), the live chart shows it at once, and the [log viewer](#log-viewer) draws each mark as an amber line with its number on top. In the viewer, **M** jumps to the next mark and **Shift+M** to the one before. Marking needs a log running and not paused. In the CSV file a mark is its number in the *Mark* column, so a spreadsheet can filter on it.
 
 ![Logging: Stop log on the Live bar, the row count in the status strip](images/win-live-logging.png)
 
@@ -330,7 +336,7 @@ Three options in *More → Settings → Logging* help on a drive:
 
 [![Selecting a pull, zooming to it and playing it back](media/win-log-viewer.webp)](media/win-log-viewer.mp4)
 
-**Image…** saves the chart as a PNG (for forum posts or a tuner). You can also drop a log file onto the viewer to open it, and after you stop logging, **F7** opens the log you just recorded.
+**Image…** saves the chart as a PNG (for forum posts or a tuner). You can also drop a log file onto the viewer to open it, and after you stop logging, **F7** opens the log you just recorded. [Marks](#marks) in a log are amber lines with their number; **M** goes to the next one, **Shift+M** to the one before, and the status line counts them. The [hotkeys](#hotkeys) work in the viewer's window too.
 
 **On a phone or a narrow window** the viewer is a page: the recent logs and **Demo** at the top, the playback buttons, then the chart above **Channels | Data** (one at a time). The selected channel's colour, scale and alert levels are on a page of their own — **Colour, scale, alerts: …** under the list. **⋮** holds the view set‑ups (pick, **Save view…**, **Delete view**), the chart mode, **Save chart picture** (saved next to the logs), **Follow the cursor**, **Level bands** and **Levels from Display & alerts**. Select a stretch by long‑pressing the chart (or **Select range**) and dragging. The back key (or arrow) leaves the channel page, then the viewer.
 
@@ -459,18 +465,36 @@ Everything UVScan does is written here with a timestamp: connection steps, PCM a
 
 ## Keyboard and command line
 
+### Hotkeys
+
+A key for each main action, to press without looking — on a drive, say. Change them in *More → Settings → Hotkeys*: click a box and press the key. Only keys that never type into a text box can be one: an F key (with Ctrl, Alt or Shift if you like), Ctrl or Alt with a letter or digit, Pause, Scroll Lock or a media key (Play/Pause, next / previous track). So typing in a box elsewhere in UVScan never sets one off. Backspace or **Clear** empties a box; a key another action has moves to this one, and that action gets this one's old key. **Reset to defaults** puts these back:
+
 | Key | Action |
 |---|---|
+| F5 | Connect / disconnect |
+| F6 | Start / stop scan |
 | F7 | Log viewer |
 | F8 | Start / stop log |
 | F9 | Pause / resume log |
-| F11 | Dashboard full screen / back |
+| F12 | [Mark this moment in the log](#marks) |
+| F11 | Full screen / back |
+| Ctrl + G | Live grid / live chart |
+
+Each key works both ways (it connects or disconnects, starts or stops), and holding it down counts as one press. A key that cannot do anything now says why in a notice (*Not connected: F5 connects*).
+
+**Work even when UVScan is not the window in front** (Windows): the hotkeys then work while a map or music player has the focus — and other programs cannot use those keys while UVScan is open. A key Windows or another program already holds stays UVScan's only while UVScan is in front, and the box says which: Windows keeps **F12** for debuggers, so pick another key for *Mark* if you want it to work from other programs.
+
+### Other keys
+
+| Key | Action |
+|---|---|
 | Ctrl + L | PID list beside the pages, or on its own page (wide windows) |
 | Alt + Up / Alt + Down | Move the selected live data row |
 | Ctrl + / Ctrl ‑ / Ctrl 0 | Zoom the live grid (Live data tab) |
 | Ctrl + mouse wheel | Zoom the live grid |
 | Space (log viewer) | Play / pause (live chart: pause / back to now) |
 | ← → Home End (log viewer chart) | Step through the log |
+| M / Shift + M (log viewer) | Next / previous mark |
 | Esc | Close an open **⋮** menu; leave full screen; leave an editor (asking first if you changed something); in the log viewer chart, clear the selection |
 
 ```

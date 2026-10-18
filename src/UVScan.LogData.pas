@@ -5,7 +5,8 @@ unit UVScan.LogData;
   The logger writes "Time (s),<name> (<units>),..." and one row per update,
   numbers with a '.' decimal point, "--" for no data and ON / OFF, YES / NO
   for switch PIDs (read back as 1 / 0). Rows that cannot be read are skipped
-  and counted.
+  and counted. A last column "Mark" (UVScan 2.0.6 on) is not a channel: it is
+  empty, or a mark's number on the row it was made (the Mark hotkey).
 
   The live chart fills one sample at a time (StartLive, Append) and keeps only
   the last few minutes. Times and Values hold Count samples; the arrays may be
@@ -26,12 +27,18 @@ type
     function Caption: string; // "Name (units)"
   end;
 
+  TLogMark = record
+    Time: Double;
+    Number: Integer;
+  end;
+
   TLogData = class
   private
     FFileName: string;
     FTitle: string;
     FTimes: TArray<Double>;
     FChannels: TArray<TLogChannel>;
+    FMarks: TArray<TLogMark>; // in time order
     FCount: Integer;
     FSkipped: Integer;
     procedure Finish;
@@ -50,6 +57,10 @@ type
     { Adds a sample (one value per channel, NaN = no data; T not before the
       last one) and drops the samples older than KeepSeconds before T. }
     procedure Append(const T: Double; const Values: TArray<Double>; const KeepSeconds: Double);
+    { A mark at T (not before the last one). }
+    procedure AddMark(const T: Double; Number: Integer);
+    { The first mark after T (Forward) or before it; False when there is none. }
+    function FindMark(const T: Double; Forward: Boolean; out Mark: TLogMark): Boolean;
     { Index of the last sample at or before T (0 if T is before the start). }
     function IndexAt(const T: Double): Integer;
     function Duration: Double;
@@ -58,6 +69,7 @@ type
     property Title: string read FTitle;
     property Times: TArray<Double> read FTimes;
     property Channels: TArray<TLogChannel> read FChannels;
+    property Marks: TArray<TLogMark> read FMarks;
     property Count: Integer read GetCount;
     property ChannelCount: Integer read GetChannelCount;
     property Skipped: Integer read FSkipped;
@@ -211,6 +223,7 @@ begin
   FTitle := '';
   FTimes := nil;
   FChannels := nil;
+  FMarks := nil;
   FCount := 0;
   FSkipped := 0;
 end;
@@ -242,7 +255,7 @@ end;
 procedure TLogData.LoadFromStrings(Lines: TStrings; const Title: string);
 var
   Header, Fields: TArray<string>;
-  I, C, N, Row: Integer;
+  I, C, N, Row, MarkCol, M: Integer;
   T: Double;
   Switch: Boolean;
   Lists: TArray<TArray<Double>>;
@@ -259,7 +272,12 @@ begin
   Header := SplitCsvLine(First);
   if (Length(Header) < 2) or not SameText(Trim(Header[0]).Split([' '])[0], 'Time') then
     raise ELogError.Create('Not a UVScan log: the first column must be "Time (s)"');
+  MarkCol := -1;
+  if SameText(Trim(Header[High(Header)]), 'Mark') then
+    MarkCol := High(Header);
   N := Length(Header) - 1;
+  if MarkCol > 0 then
+    Dec(N);
   SetLength(FChannels, N);
   SetLength(Lists, N);
   SetLength(Switches, N);
@@ -291,6 +309,8 @@ begin
       end
       else
         Lists[C][Row] := NaN;
+    if (MarkCol > 0) and (MarkCol < Length(Fields)) and TryStrToInt(Trim(Fields[MarkCol]), M) and (M > 0) then
+      AddMark(T, M);
     Inc(Row);
   end;
   SetLength(FTimes, Row);
@@ -330,7 +350,7 @@ procedure TLogData.SaveToFile(const FileName: string);
 var
   W: TStreamWriter;
   SB: TStringBuilder;
-  I, C: Integer;
+  I, C, Mk: Integer;
 begin
   W := TStreamWriter.Create(FileName, False, TEncoding.UTF8);
   SB := TStringBuilder.Create;
@@ -338,7 +358,10 @@ begin
     SB.Append('Time (s)');
     for C := 0 to High(FChannels) do
       SB.Append(',').Append(FChannels[C].Caption);
+    if FMarks <> nil then
+      SB.Append(',Mark');
     W.WriteLine(SB.ToString);
+    Mk := 0;
     for I := 0 to FCount - 1 do
     begin
       SB.Clear;
@@ -350,6 +373,16 @@ begin
           SB.Append('--')
         else
           SB.Append(FormatFloat('0.###', FChannels[C].Values[I], TFormatSettings.Invariant));
+      end;
+      if FMarks <> nil then
+      begin
+        // a mark goes on the last row at or before its time
+        SB.Append(',');
+        if (Mk <= High(FMarks)) and ((I = FCount - 1) or (FMarks[Mk].Time < FTimes[I + 1])) then
+        begin
+          SB.Append(FMarks[Mk].Number);
+          Inc(Mk);
+        end;
       end;
       W.WriteLine(SB.ToString);
     end;
@@ -423,6 +456,8 @@ begin
       Move(FChannels[C].Values[Drop], FChannels[C].Values[0], (FCount - Drop) * SizeOf(Double));
     Dec(FCount, Drop);
     Finish; // the lowest / highest may have gone
+    while (FMarks <> nil) and (FMarks[0].Time < FTimes[0]) do
+      Delete(FMarks, 0, 1);
   end;
   if FCount >= Length(FTimes) then
   begin
@@ -446,6 +481,40 @@ begin
       FChannels[C].MaxValue := V;
   end;
   Inc(FCount);
+end;
+
+procedure TLogData.AddMark(const T: Double; Number: Integer);
+var
+  M: TLogMark;
+begin
+  M.Time := T;
+  M.Number := Number;
+  FMarks := FMarks + [M];
+end;
+
+function TLogData.FindMark(const T: Double; Forward: Boolean; out Mark: TLogMark): Boolean;
+const
+  Near = 1E-6;
+var
+  I: Integer;
+begin
+  if Forward then
+  begin
+    for I := 0 to High(FMarks) do
+      if FMarks[I].Time > T + Near then
+      begin
+        Mark := FMarks[I];
+        Exit(True);
+      end;
+  end
+  else
+    for I := High(FMarks) downto 0 do
+      if FMarks[I].Time < T - Near then
+      begin
+        Mark := FMarks[I];
+        Exit(True);
+      end;
+  Result := False;
 end;
 
 function TLogData.IndexOfChannel(const Name: string): Integer;
@@ -557,6 +626,9 @@ begin
     FChannels[8].Values[I] := Round(Stft * 10) / 10;
     FChannels[9].Values[I] := Round(Volts * 10) / 10;
   end;
+  // as if Mark was pressed at the voltage dip and at the knock
+  AddMark(301, 1);
+  AddMark(405, 2);
   Finish;
 end;
 

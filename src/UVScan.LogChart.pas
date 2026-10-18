@@ -10,6 +10,7 @@ unit UVScan.LogChart;
   Mouse: left click / drag = move the cursor, Shift+drag = select a range,
   wheel = zoom time around the mouse, right or middle drag = pan,
   double-click = show the whole log.
+  Marks in the log (the Mark hotkey) are amber lines with their number on top.
   Touch: drag = move the cursor, pinch = zoom (and pan with two fingers),
   double tap = whole log, long press then drag = select a range (or turn on
   SelectMode so a drag selects).
@@ -139,6 +140,7 @@ const
   DimText = TAlphaColor($FF828C96);
   CursorColor = TAlphaColor($FFFFFFFF);
   SelColor = TAlphaColor($FF46AAFF);
+  MarkColor = TAlphaColor($FFFFB020);
 
 procedure AutoRange(const Ch: TLogChannel; out Lo, Hi: Double);
 var
@@ -751,6 +753,7 @@ var
   V: Double;
   VText: string;
   Lvl: Integer;
+  Mk: TLogMark;
 begin
   W := Width;
   H := Height;
@@ -894,6 +897,19 @@ begin
               DrawSeries(Ch, SLo, SHi, FPlot.Top, FPlot.Height);
           end;
       end;
+
+    // marks: a line, and the number in a flag at the top
+    for Mk in FData.Marks do
+    begin
+      X := X_(Mk.Time);
+      if (X < FPlot.Left) or (X > FPlot.Right) then
+        Continue;
+      Line(X, FPlot.Top, X, FPlot.Bottom, 1.5, MarkColor, 190);
+      S := IntToStr(Mk.Number);
+      Px := TextWidth(S, 11, True) + 8;
+      Fill(X, FPlot.Top, Px, 16, MarkColor);
+      Txt(S, X, FPlot.Top, Px, 16, 11, Back, TTextAlign.Center, True);
+    end;
 
     // selected range
     if HasSelection then

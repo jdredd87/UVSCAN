@@ -75,7 +75,8 @@ type
     eePidRejected, eeDtcs, eePidTest, eeLogStarted, eeLogStopped,
     eePidFound, eePidSearchProgress, eePidSearchDone,
     eeControl,                 // Text = control name, Supported = accepted, Raw = details
-    eeStreamBack);             // the PCM streams again after a gap (Text says how long)
+    eeStreamBack,              // the PCM streams again after a gap (Text says how long)
+    eeLogMark);                // a mark in the log: Progress = its number, LogTime = when
 
   TEngineEvent = record
     Kind: TEngineEventKind;
@@ -94,6 +95,7 @@ type
                                // eeLogStarted: an existing log carried on
     LogStart: Int64;           // eeLogStopped: the file's size before this log (one carried on), 0: a new file
     LogRows: Int64;            // eeLogStopped: rows this log wrote (Text: the file)
+    LogTime: Double;           // eeLogMark: seconds into the log
   end;
 
   TEngineEventHandler = reference to procedure(const Event: TEngineEvent);
@@ -119,6 +121,7 @@ type
 
   TEngineCommandKind = (ecConnect, ecDisconnect, ecReadVehicleInfo, ecStartScan, ecStopScan,
     ecStartLog, ecStopLog, ecPauseLog, ecReadDtcs, ecClearDtcs, ecTestPids, ecSendRaw,
+    ecMarkLog,                   // the next log row gets the next mark number
     ecWriteVin,
     ecDiscoverPids,              // Text = PID ranges, e.g. '0000-00FF,1000-1FFF'
     ecControl,                   // Text = name, Data = message, Release = message that undoes it,
@@ -192,6 +195,9 @@ type
     FLogBase: Double;   // seconds the log's time starts from (a log carried on goes on from its last row)
     FLogFile: string;
     FLogStart: Int64;   // the file's size before this log: 0 for a new file
+    FLogMarks: Integer; // marks in FMarkFile so far
+    FMarkFile: string;
+    FPendingMark: Integer; // the next row's mark, 0 = none
 
     // Snapshot shared with the UI
     FLock: TCriticalSection;
@@ -238,6 +244,7 @@ type
     procedure DoStartLog(const FileName, AppendTo: string);
     function LogTime: Double;
     procedure DoStopLog;
+    procedure DoMarkLog;
     procedure DoReadDtcs;
     procedure DoClearDtcs;
     procedure DoTestPids(const Ids: TArray<Integer>);
@@ -809,6 +816,7 @@ begin
     ecStopScan: DoStopScan;
     ecStartLog: DoStartLog(Cmd.Text, Cmd.AppendTo);
     ecStopLog: DoStopLog;
+    ecMarkLog: DoMarkLog;
     ecPauseLog:
       begin
         FLogPaused := Cmd.Flag;
@@ -1564,6 +1572,7 @@ begin
       Header := Header + ',' + CsvField(P.DisplayName + ' (' + P.Units + ')')
     else
       Header := Header + ',' + CsvField(P.DisplayName);
+  Header := Header + ',Mark'; // empty, or the mark's number on the row it was made
   Appending := False;
   FLogBase := 0;
   if AppendTo <> '' then
@@ -1591,6 +1600,11 @@ begin
   FLogFile := Name;
   FLogRows := 0;
   FLogPaused := False;
+  // the marks are numbered on through a log carried on (the one written last)
+  if not (Appending and SameText(Name, FMarkFile)) then
+    FLogMarks := 0;
+  FMarkFile := Name;
+  FPendingMark := 0;
   FLogClock := TStopwatch.StartNew;
   if Appending then
     Log('Logging to ' + Name + ' again, from ' + FormatFloat('0.0', FLogBase, TFormatSettings.Invariant) + ' s')
@@ -1622,6 +1636,10 @@ begin
       SB.Append(',');
       SB.Append(CsvField(FScanPids[I].FormatValue(FWork[I])));
     end;
+    SB.Append(',');
+    if FPendingMark > 0 then
+      SB.Append(FPendingMark);
+    FPendingMark := 0;
     FLog.WriteLine(SB.ToString);
     Inc(FLogRows);
   finally
@@ -1650,6 +1668,24 @@ begin
   FLogRows := 0; // the snapshot counts the open log's rows only
   Emit(Ev);
   PublishSnapshot;
+end;
+
+{ The next row gets the next mark number (not while paused: no row comes). }
+procedure TScanEngine.DoMarkLog;
+var
+  Ev: TEngineEvent;
+begin
+  if (FLog = nil) or FLogPaused then
+    Exit;
+  Inc(FLogMarks);
+  FPendingMark := FLogMarks;
+  Log('Mark %d at %s s', [FLogMarks, FormatFloat('0.0', LogTime, TFormatSettings.Invariant)]);
+  Ev := Default(TEngineEvent);
+  Ev.Kind := eeLogMark;
+  Ev.Text := FLogFile;
+  Ev.Progress := FLogMarks;
+  Ev.LogTime := LogTime;
+  Emit(Ev);
 end;
 
 { Diagnostics }

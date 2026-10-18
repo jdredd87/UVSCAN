@@ -7,7 +7,7 @@ interface
 uses
   System.SysUtils, System.Classes, System.Math, System.JSON, System.IOUtils, System.UITypes,
   DUnitX.TestFramework, UVScan.LogData, UVScan.LogViews, UVScan.Display, UVScan.JsonFile, UVScan.Defaults,
-  UVScan.LogChart, UVScan.Pids, UVScan.PidLists;
+  UVScan.LogChart, UVScan.Pids, UVScan.PidLists, UVScan.Hotkeys;
 
 type
   [TestFixture]
@@ -24,6 +24,16 @@ type
     [Test] procedure LiveAppendKeepsTheLastMinutes;
     [Test] procedure PausedLiveChartKeepsItsSpan;
     [Test] procedure DecimalsForSteadyText;
+    [Test] procedure ReadsMarks;
+  end;
+
+  [TestFixture]
+  THotkeyTests = class
+  public
+    [Test] procedure TextRoundTrip;
+    [Test] procedure OnlyKeysThatDoNotType;
+    [Test] procedure DefaultsAreUsableAndDifferent;
+    [Test] procedure FindsTheAction;
   end;
 
   [TestFixture]
@@ -230,11 +240,128 @@ begin
     Assert.AreEqual(0, B.Skipped);
     Assert.AreEqual(A.Channels[0].Values[1234], B.Channels[0].Values[1234], 1E-3);
     Assert.AreEqual(A.Channels[0].Caption, B.Channels[0].Caption);
+    // the demo's marks, on the rows they were made
+    Assert.AreEqual(2, Integer(Length(B.Marks)));
+    Assert.AreEqual(A.Marks[1].Number, B.Marks[1].Number);
+    Assert.AreEqual(A.Marks[1].Time, B.Marks[1].Time, 1E-3);
   finally
     System.SysUtils.DeleteFile(F);
     A.Free;
     B.Free;
   end;
+end;
+
+{ A last "Mark" column is not a channel: its numbers are marks. }
+procedure TLogDataTests.ReadsMarks;
+var
+  D: TLogData;
+  L: TStringList;
+  M: TLogMark;
+begin
+  D := TLogData.Create;
+  L := Lines(['Time (s),RPM (RPM),Mark', '0.1,800,', '0.2,810,1', '0.3,820,', '0.4,830,2', '0.5,840']);
+  try
+    D.LoadFromStrings(L, 'test');
+    Assert.AreEqual(1, D.ChannelCount);
+    Assert.AreEqual(5, D.Count);
+    Assert.AreEqual(0, D.Skipped);
+    Assert.AreEqual(2, Integer(Length(D.Marks)));
+    Assert.AreEqual(0.2, D.Marks[0].Time, 1E-9);
+    Assert.AreEqual(2, D.Marks[1].Number);
+    Assert.IsTrue(D.FindMark(0.2, True, M), 'after the first');
+    Assert.AreEqual(2, M.Number);
+    Assert.IsFalse(D.FindMark(0.2, False, M), 'none before the first');
+    Assert.IsTrue(D.FindMark(0.35, False, M));
+    Assert.AreEqual(1, M.Number);
+    Assert.IsFalse(D.FindMark(0.4, True, M), 'none after the last');
+    // a log from before marks: every column is a channel
+    L.Free;
+    L := Lines(['Time (s),RPM (RPM),Marker (count)', '0.1,800,3']);
+    D.LoadFromStrings(L, 'old');
+    Assert.AreEqual(2, D.ChannelCount);
+    Assert.AreEqual(0, Integer(Length(D.Marks)));
+  finally
+    L.Free;
+    D.Free;
+  end;
+end;
+
+{ THotkeyTests }
+
+procedure THotkeyTests.TextRoundTrip;
+var
+  S: string;
+  K: THotkey;
+begin
+  for S in ['F5', 'F12', 'Ctrl+G', 'Alt+5', 'Ctrl+Shift+F2', 'Alt+Shift+F9', 'Play/Pause', 'Pause', 'F24'] do
+  begin
+    K := THotkey.Parse(S);
+    Assert.IsFalse(K.IsEmpty, S);
+    Assert.AreEqual(S, K.Text);
+  end;
+  Assert.AreEqual('Ctrl+Shift+F2', THotkey.Parse('shift+ctrl+f2').Text, 'any order and case');
+  Assert.IsTrue(THotkey.Parse('').IsEmpty);
+  Assert.IsTrue(THotkey.Parse('Banana').IsEmpty);
+  Assert.IsTrue(THotkey.Parse('Hyper+F5').IsEmpty);
+  Assert.IsTrue(THotkey.Parse('G').IsEmpty, 'a letter on its own is not allowed');
+end;
+
+procedure THotkeyTests.OnlyKeysThatDoNotType;
+begin
+  Assert.AreEqual('', HotkeyProblem(vkF5, []));
+  Assert.AreEqual('', HotkeyProblem(vkF5, [ssCtrl, ssShift]));
+  Assert.AreEqual('', HotkeyProblem(vkG, [ssCtrl]));
+  Assert.AreEqual('', HotkeyProblem(vk7, [ssAlt]));
+  Assert.AreEqual('', HotkeyProblem($B3, []), 'Play/Pause');
+  Assert.AreNotEqual('', HotkeyProblem(vkG, []), 'types');
+  Assert.AreNotEqual('', HotkeyProblem(vkG, [ssShift]), 'types');
+  Assert.AreNotEqual('', HotkeyProblem(vkG, [ssCtrl, ssAlt]), 'AltGr');
+  Assert.AreNotEqual('', HotkeyProblem(vkC, [ssCtrl]), 'copy');
+  Assert.AreNotEqual('', HotkeyProblem(vkV, [ssCtrl, ssShift]), 'paste');
+  Assert.AreNotEqual('', HotkeyProblem(vkL, [ssCtrl]), 'the PID list');
+  Assert.AreNotEqual('', HotkeyProblem(vk0, [ssCtrl]), 'zoom');
+  Assert.AreNotEqual('', HotkeyProblem(vkF4, [ssAlt]), 'closes');
+  Assert.AreNotEqual('', HotkeyProblem(vkSpace, []));
+  Assert.AreNotEqual('', HotkeyProblem(vkReturn, []));
+  Assert.AreNotEqual('', HotkeyProblem(vkNumpad5, [ssCtrl]), 'the keypad types digits');
+  Assert.AreNotEqual('', HotkeyProblem(vkLeft, [ssAlt]));
+  Assert.IsTrue(IsModifierKey(vkControl));
+  Assert.IsFalse(IsModifierKey(vkF1));
+end;
+
+procedure THotkeyTests.DefaultsAreUsableAndDifferent;
+var
+  Keys: THotkeys;
+  A, B: THotkeyAction;
+begin
+  Keys := DefaultHotkeys;
+  for A := Low(THotkeyAction) to High(THotkeyAction) do
+  begin
+    Assert.IsFalse(Keys[A].IsEmpty, HotkeyNames[A]);
+    Assert.AreEqual('', HotkeyProblem(Keys[A].Key, Keys[A].Shift), HotkeyNames[A]);
+    for B := Low(THotkeyAction) to High(THotkeyAction) do
+      if B > A then
+        Assert.AreNotEqual(Keys[A].Text, Keys[B].Text, HotkeyNames[A] + ' / ' + HotkeyNames[B]);
+  end;
+  Assert.AreEqual('F5', Keys[haConnect].Text);
+  Assert.AreEqual('F12', Keys[haMark].Text);
+end;
+
+procedure THotkeyTests.FindsTheAction;
+var
+  Keys: THotkeys;
+  A: THotkeyAction;
+begin
+  Keys := DefaultHotkeys;
+  Assert.IsTrue(FindHotkey(Keys, vkF6, [], A));
+  Assert.IsTrue(A = haScan);
+  Assert.IsTrue(FindHotkey(Keys, vkG, [ssCtrl], A));
+  Assert.IsTrue(A = haLiveChart);
+  Assert.IsFalse(FindHotkey(Keys, vkF6, [ssShift], A), 'Shift+F6 is another key');
+  Assert.IsFalse(FindHotkey(Keys, vkG, [], A));
+  Keys[haScan] := THotkey.Make(0, []);
+  Assert.IsFalse(FindHotkey(Keys, vkF6, [], A), 'cleared');
+  Assert.IsFalse(FindHotkey(Keys, 0, [], A), 'no key');
 end;
 
 { The live chart paused (zoom, pan, cursor) while the scan is shorter than
@@ -558,5 +685,6 @@ end;
 initialization
   TDUnitX.RegisterTestFixture(TLogDataTests);
   TDUnitX.RegisterTestFixture(TLogViewTests);
+  TDUnitX.RegisterTestFixture(THotkeyTests);
 
 end.

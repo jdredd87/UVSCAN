@@ -16,6 +16,7 @@ uses
   UVScan.Pids in '..\src\UVScan.Pids.pas',
   UVScan.Paths in '..\src\UVScan.Paths.pas',
   UVScan.Dtc in '..\src\UVScan.Dtc.pas',
+  UVScan.Hotkeys in '..\src\UVScan.Hotkeys.pas',
   UVScan.Settings in '..\src\UVScan.Settings.pas',
   UVScan.Dpid in '..\src\UVScan.Dpid.pas',
   UVScan.Serial in '..\src\UVScan.Serial.pas',

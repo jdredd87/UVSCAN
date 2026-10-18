@@ -10,6 +10,7 @@ unit UVScan.Settings;
     "liveGrid":   { "zoom": 100, "showMinMax": true },
     "appearance": { "theme": "system", "keepScreenOn": true },
     "updates":    { "check": true, "lastCheck": "2026-10-12T09:30:00.000Z" },
+    "hotkeys":    { "connect": "F5", "scan": "F6", "mark": "F12", "liveChart": "Ctrl+G", "global": false },
     "window":     { "left": 100, "top": 80, "width": 1180, "height": 720,
                     "maximized": false, "pidPanelWidth": 400 } }
 
@@ -18,7 +19,7 @@ unit UVScan.Settings;
 interface
 
 uses
-  System.SysUtils, System.JSON, UVScan.QuickStart;
+  System.SysUtils, System.JSON, UVScan.QuickStart, UVScan.Hotkeys;
 
 type
   TStreamSpeed = (ssFast, ssMedium, ssSlow);
@@ -56,9 +57,12 @@ type
     KeepScreenOn: Boolean;  // no sleep / screen saver while UVScan is open
     RoundReadings: Boolean; // gauges and live data: tidy decimals per PID (logs keep every digit)
     LockRotation: Boolean;  // phone / tablet: the screen keeps the way it faces (bumps in a car)
+    ScanView: string;       // the Live page when a scan starts: 'keep' (as it was), 'grid' or 'chart'
     QuickStarts: TQuickStarts; // named ways to start in a hurry (Quick start menu, shortcuts)
     CheckUpdates: Boolean;  // ask GitHub for a newer UVScan when it starts (once a day)
     UpdateChecked: TDateTime; // when it last asked, 0: never
+    Hotkeys: THotkeys;      // keys for the main actions (none: Key 0)
+    GlobalHotkeys: Boolean; // Windows: they work when another program is in front too
     Window: TWindowSettings;
     constructor Create;
     procedure ResetToDefaults;
@@ -85,7 +89,7 @@ implementation
 
 uses
   {$IFDEF MSWINDOWS}Winapi.Windows,{$ELSE}Posix.Stdio, Posix.Unistd,{$ENDIF} System.IOUtils, System.Generics.Collections, System.Math,
-  System.DateUtils, UVScan.JsonFile, UVScan.Class2;
+  System.DateUtils, System.StrUtils, UVScan.JsonFile, UVScan.Class2;
 
 function StreamSpeedNibble(Speed: TStreamSpeed): Byte;
 begin
@@ -137,9 +141,12 @@ begin
   Theme := 'system';
   KeepScreenOn := True;
   RoundReadings := True;
+  ScanView := 'keep';
   QuickStarts := DefaultQuickStarts;
   CheckUpdates := True;
   UpdateChecked := 0;
+  Hotkeys := DefaultHotkeys;
+  GlobalHotkeys := False;
   Window := Default(TWindowSettings);
 end;
 
@@ -198,6 +205,7 @@ begin
   Sec.AddPair('keepScreenOn', TJSONBool.Create(KeepScreenOn));
   Sec.AddPair('roundReadings', TJSONBool.Create(RoundReadings));
   Sec.AddPair('lockRotation', TJSONBool.Create(LockRotation));
+  Sec.AddPair('scanView', ScanView);
   Result.AddPair('appearance', Sec);
 
   Result.AddPair('quickStarts', QuickStartsToJson(QuickStarts));
@@ -207,6 +215,12 @@ begin
   if UpdateChecked > 0 then
     Sec.AddPair('lastCheck', DateToISO8601(UpdateChecked, False));
   Result.AddPair('updates', Sec);
+
+  Sec := TJSONObject.Create;
+  for var A := Low(THotkeyAction) to High(THotkeyAction) do
+    Sec.AddPair(HotkeyIds[A], Hotkeys[A].Text);
+  Sec.AddPair('global', TJSONBool.Create(GlobalHotkeys));
+  Result.AddPair('hotkeys', Sec);
 
   if Window.Saved then
   begin
@@ -293,6 +307,9 @@ begin
     KeepScreenOn := JBool(Sec, 'keepScreenOn', KeepScreenOn);
     RoundReadings := JBool(Sec, 'roundReadings', RoundReadings);
     LockRotation := JBool(Sec, 'lockRotation', LockRotation);
+    ScanView := LowerCase(JStr(Sec, 'scanView', ScanView));
+    if not MatchText(ScanView, ['keep', 'grid', 'chart']) then
+      ScanView := 'keep';
   end;
 
   // Missing (an older file): the defaults stay; there but empty: none.
@@ -305,6 +322,16 @@ begin
     CheckUpdates := JBool(Sec, 'check', CheckUpdates);
     if not TryISO8601ToDate(JStr(Sec, 'lastCheck'), UpdateChecked, False) then
       UpdateChecked := 0;
+  end;
+
+  // A key missing (an older file): its default; there but empty: none.
+  Sec := JObj(Root, 'hotkeys');
+  if Sec <> nil then
+  begin
+    for var A := Low(THotkeyAction) to High(THotkeyAction) do
+      if Sec.GetValue(HotkeyIds[A]) <> nil then
+        Hotkeys[A] := THotkey.Parse(JStr(Sec, HotkeyIds[A]));
+    GlobalHotkeys := JBool(Sec, 'global', GlobalHotkeys);
   end;
 
   Sec := JObj(Root, 'window');

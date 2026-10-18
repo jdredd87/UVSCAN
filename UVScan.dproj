@@ -332,6 +332,7 @@
         <DCCReference Include="src\UVScan.Paths.pas"/>
         <DCCReference Include="src\UVScan.JsonFile.pas"/>
         <DCCReference Include="src\UVScan.Update.pas"/>
+        <DCCReference Include="src\UVScan.Hotkeys.pas"/>
         <DCCReference Include="src\UVScan.Settings.pas"/>
         <DCCReference Include="src\UVScan.Defaults.pas"/>
         <DCCReference Include="src\UVScan.PidLists.pas"/>

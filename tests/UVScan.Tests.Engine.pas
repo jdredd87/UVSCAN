@@ -7,7 +7,7 @@ interface
 uses
   System.SysUtils, System.Classes, System.Math, System.Diagnostics, System.IOUtils,
   System.Generics.Collections, System.Net.Socket, DUnitX.TestFramework,
-  UVScan.Serial, UVScan.Pids, UVScan.Engine, UVScan.Simulator, UVScan.Class2, UVScan.Hex;
+  UVScan.Serial, UVScan.Pids, UVScan.Engine, UVScan.Simulator, UVScan.Class2, UVScan.Hex, UVScan.LogData;
 
 type
   [TestFixture]
@@ -37,6 +37,7 @@ type
     [Test] procedure LogWriterKeepsEveryLine;
     [Test] procedure LogCarriesOnInOneFile;
     [Test] procedure ReadsLogEnds;
+    [Test] procedure MarksTheLog;
     [Test] procedure TestsPids;
     [Test] procedure ReadsDtcs;
     [Test] procedure RejectsScanWithNothingSelected;
@@ -541,9 +542,9 @@ begin
   Lines := TStringList.Create;
   try
     Lines.LoadFromFile(FileName);
-    Assert.AreEqual('Time (s),RPM (RPM),ECT (C)', Lines[0]);
+    Assert.AreEqual('Time (s),RPM (RPM),ECT (C),Mark', Lines[0]);
     Assert.IsTrue(Lines.Count >= 6);
-    Assert.AreEqual(3, Integer(Length(Lines[1].Split([',']))));
+    Assert.AreEqual(4, Integer(Length(Lines[1].Split([',']))), 'time, 2 PIDs, mark: ' + Lines[1]);
   finally
     Lines.Free;
     TFile.Delete(FileName);
@@ -600,11 +601,11 @@ begin
     Assert.AreEqual(SizeBefore, Ev.LogStart, 'this part starts where the file ended');
     Assert.IsFalse(FileExists(Other), 'no new file');
     Lines := TFile.ReadAllLines(FileName, TEncoding.UTF8);
-    Assert.AreEqual('Time (s),RPM (RPM),ECT (C)', Lines[0]);
+    Assert.AreEqual('Time (s),RPM (RPM),ECT (C),Mark', Lines[0]);
     Prev := -1;
     for I := 1 to High(Lines) do
     begin
-      Assert.AreNotEqual('Time (s),RPM (RPM),ECT (C)', Lines[I], 'one header');
+      Assert.AreNotEqual('Time (s),RPM (RPM),ECT (C),Mark', Lines[I], 'one header');
       T := StrToFloat(Lines[I].Split([','])[0], TFormatSettings.Invariant);
       Assert.IsTrue(T > Prev, 'time goes on: ' + Lines[I]);
       if Prev = BeforeGap then
@@ -619,11 +620,76 @@ begin
     Assert.IsFalse(Ev.Flag);
     Assert.IsTrue(FindEvent(eeWarning, Ev), 'warning');
     Assert.Contains(Ev.Text, 'other PIDs');
-    Assert.AreEqual('Time (s),RPM (RPM)', TFile.ReadAllLines(Other, TEncoding.UTF8)[0]);
+    Assert.AreEqual('Time (s),RPM (RPM),Mark', TFile.ReadAllLines(Other, TEncoding.UTF8)[0]);
   finally
     TFile.Delete(FileName);
     if FileExists(Other) then
       TFile.Delete(Other);
+  end;
+end;
+
+{ Mark (the hotkey): the next row gets the mark's number in the last column;
+  nothing while not logging. The log viewer reads them back as marks. }
+procedure TEngineTests.MarksTheLog;
+var
+  Cmd: TEngineCommand;
+  FileName, Found: string;
+  Lines, Fields: TArray<string>;
+  Ev: TEngineEvent;
+  Rows: Int64;
+  I: Integer;
+  D: TLogData;
+begin
+  FileName := TPath.Combine(TPath.GetTempPath, 'uvscan_test_mark.csv');
+  Connect;
+  try
+    Cmd := Command(ecStartScan);
+    Cmd.PidIds := [IdRpm];
+    FEngine.Post(Cmd);
+    Assert.IsTrue(WaitUntil(function: Boolean begin Result := FState = esScanning end), 'not scanning');
+    FEngine.Post(Command(ecMarkLog)); // not logging: nothing to mark
+    Cmd := Command(ecStartLog);
+    Cmd.Text := FileName;
+    FEngine.Post(Cmd);
+    Assert.IsTrue(WaitUntil(function: Boolean begin Result := FEngine.GetSnapshot.LogRows >= 2 end), 'no log rows');
+    Assert.IsFalse(HasEvent(eeLogMark), 'a mark before the log');
+    FEngine.Post(Command(ecMarkLog));
+    Assert.IsTrue(WaitUntil(function: Boolean begin Result := HasEvent(eeLogMark) end), 'no mark');
+    Assert.IsTrue(FindEvent(eeLogMark, Ev));
+    Assert.AreEqual(1, Ev.Progress);
+    Assert.AreEqual(FileName, Ev.Text);
+    Assert.IsTrue(Ev.LogTime > 0, 'its time');
+    Rows := FEngine.GetSnapshot.LogRows;
+    Assert.IsTrue(WaitUntil(function: Boolean begin Result := FEngine.GetSnapshot.LogRows >= Rows + 2 end), 'rows');
+    FEngine.Post(Command(ecMarkLog));
+    Rows := FEngine.GetSnapshot.LogRows;
+    Assert.IsTrue(WaitUntil(function: Boolean begin Result := FEngine.GetSnapshot.LogRows >= Rows + 2 end), 'rows');
+    FEngine.Post(Command(ecStopScan));
+    Assert.IsTrue(WaitUntil(function: Boolean begin Result := HasEvent(eeLogStopped) end), 'not stopped');
+    Lines := TFile.ReadAllLines(FileName, TEncoding.UTF8);
+    Assert.AreEqual('Time (s),RPM (RPM),Mark', Lines[0]);
+    Found := '';
+    for I := 1 to High(Lines) do
+    begin
+      Fields := Lines[I].Split([',']);
+      Assert.AreEqual(3, Integer(Length(Fields)), Lines[I]);
+      if Fields[2] <> '' then
+        Found := Found + Fields[2] + ' ';
+    end;
+    Assert.AreEqual('1 2 ', Found, 'each mark on one row');
+    D := TLogData.Create;
+    try
+      D.LoadFromFile(FileName);
+      Assert.AreEqual(1, D.ChannelCount, 'Mark is not a channel');
+      Assert.AreEqual(2, Integer(Length(D.Marks)));
+      Assert.AreEqual(1, D.Marks[0].Number);
+      Assert.AreEqual(Ev.LogTime, D.Marks[0].Time, 0.5);
+    finally
+      D.Free;
+    end;
+  finally
+    if FileExists(FileName) then
+      TFile.Delete(FileName);
   end;
 end;
 

@@ -10,6 +10,7 @@
 interface
 
 uses
+  {$IFDEF MSWINDOWS}Winapi.Windows, Winapi.Messages,{$ENDIF}
   System.SysUtils, System.Types, System.UITypes, System.Classes, System.Variants, System.Math,
   System.StrUtils, System.IOUtils, System.Generics.Collections, System.Diagnostics,
   FMX.Types, FMX.Controls, FMX.Forms, FMX.Graphics, FMX.Dialogs, FMX.StdCtrls, FMX.Edit,
@@ -18,7 +19,7 @@ uses
   UVScan.Serial, UVScan.Simulator, UVScan.Simulator.Elm, UVScan.Adapter, UVScan.Pids, UVScan.Dpid, UVScan.Dtc, UVScan.Engine,
   UVScan.Class2, UVScan.Paths, UVScan.Settings, UVScan.PidLists, UVScan.Defaults,
   UVScan.Display, UVScan.Alerts, UVScan.Controls, UVScan.Gauge, UVScan.UI.DataGrid, UVScan.LogData,
-  UVScan.QuickStart, UVScan.Update;
+  UVScan.QuickStart, UVScan.Update, UVScan.Hotkeys;
 
 type
   { Parts of the one-line status strip. }
@@ -65,11 +66,18 @@ type
     chkKeepAwake: TCheckBox;
     chkRound: TCheckBox;
     chkLockRotate: TCheckBox;
+    lblScanView: TLabel;
+    cbScanView: TComboBox;
     chkAlwaysLog: TCheckBox;
     chkOneLog: TCheckBox;
     chkAskKeep: TCheckBox;
     lblKeepDefault: TLabel;
     cbKeepDefault: TComboBox;
+    gbHotkeys: TGroupBox;
+    lblHotkeyHelp: TLabel;
+    chkGlobalHotkeys: TCheckBox;
+    lblHotkeyTaken: TLabel;
+    btnHotkeyDefaults: TButton;
     gbAlerts: TGroupBox;
     chkSound: TCheckBox;
     gbStream: TGroupBox;
@@ -197,10 +205,29 @@ type
     procedure chkKeepAwakeChange(Sender: TObject);
     procedure chkRoundChange(Sender: TObject);
     procedure chkLockRotateChange(Sender: TObject);
+    procedure cbScanViewChange(Sender: TObject);
     procedure chkAlwaysLogChange(Sender: TObject);
     procedure chkOneLogChange(Sender: TObject);
     procedure KeepLogOptionChange(Sender: TObject);
     procedure AskKeepLog(const Ev: TEngineEvent);
+    function LogSavedText(const FileName: string): string;
+    // Hotkeys
+    procedure BuildHotkeys;
+    procedure ShowHotkeys;
+    procedure HotkeyEditEnter(Sender: TObject);
+    procedure HotkeyEditExit(Sender: TObject);
+    procedure HotkeyClearClick(Sender: TObject);
+    procedure HotkeyDefaultsClick(Sender: TObject);
+    procedure chkGlobalHotkeysChange(Sender: TObject);
+    procedure SetHotkey(A: THotkeyAction; const K: THotkey);
+    function HotkeyDown(Key: Word; Shift: TShiftState): Boolean;
+    procedure RunHotkey(A: THotkeyAction);
+    function KeyHint(A: THotkeyAction): string;
+    procedure RegisterGlobalHotkeys;
+    {$IFDEF MSWINDOWS}
+    procedure HotkeyWndProc(var Msg: Winapi.Messages.TMessage);
+    {$ENDIF}
+    procedure MarkLog;
     procedure ToggleLockRotateClick(Sender: TObject);
     procedure btnRefreshPortsClick(Sender: TObject);
     procedure btnConnectClick(Sender: TObject);
@@ -339,6 +366,15 @@ type
     FLastLogFile: string;            // the log recorded most recently
     FSessionLog: string;             // One log: the log later starts carry on until UVScan closes
     FUserStop: Boolean;              // the user stopped the scan, log or connection: may ask to keep the log
+    FHotkeyLabels: array[THotkeyAction] of TLabel;
+    FHotkeyEdits: array[THotkeyAction] of TEdit;
+    FHotkeyClears: array[THotkeyAction] of TButton;
+    FCapturing: Boolean;             // a Hotkeys box has the focus: the next key is for it
+    FLastHotkey: THotkeyAction;
+    FLastHotkeyAt: UInt64;           // a key held down repeats: one press, one action
+    {$IFDEF MSWINDOWS}
+    FHotkeyWnd: HWND;                // gets the keys registered for all of Windows
+    {$ENDIF}
     FViewerLog: string;              // the log last handed to the viewer
     FZoom: Integer;                  // live grid zoom, percent
     FNormalBounds: TRect;            // window bounds when not maximized
@@ -676,6 +712,12 @@ begin
   FGaugeViews := TList<TGaugeView>.Create;
   FLiveLog := TLogData.Create;
   TLogViewerForm.SetLiveSource(FLiveLog);
+  // the hotkeys work in the log viewer's window too
+  TLogViewerForm.OnHotkey :=
+    function(Key: Word; Shift: TShiftState): Boolean
+    begin
+      Result := not FCapturing and HotkeyDown(Key, Shift);
+    end;
   if IsMobile then
   begin
     FNotes := TNotificationCenter.Create(Self);
@@ -1226,7 +1268,7 @@ begin
 
   AddMore('Real-time controls', 'Switch outputs, hold values, reset learned values', tiControls);
   AddMore('Tools', 'Write VIN, raw AVT frames, PID discovery', tiTools);
-  AddMore('Settings', 'Theme, rounding, alert sounds, log folder, stream speed', tiSettings);
+  AddMore('Settings', 'Theme, rounding, alert sounds, log folder, stream speed, hotkeys', tiSettings);
   AddMore('Messages', 'Connection log and raw traffic', tiMessages);
   BuildAbout;
   AddMore('About', 'Version ' + VersionText + ', who wrote it, source code', tiAbout);
@@ -1240,6 +1282,20 @@ begin
   chkLockRotate.Text := 'Lock screen rotation (it stays the way it faces now)';
   chkLockRotate.Visible := IsMobile;
   chkLockRotate.OnChange := chkLockRotateChange;
+  // Settings: the Live page's view when a scan starts.
+  lblScanView := TLabel.Create(Self);
+  lblScanView.Stored := False;
+  lblScanView.Parent := gbAppearance;
+  lblScanView.Text := 'When a scan starts, Live shows';
+  cbScanView := TComboBox.Create(Self);
+  cbScanView.Stored := False;
+  cbScanView.Parent := gbAppearance;
+  cbScanView.Height := cbTheme.Height;
+  cbScanView.Items.Add('What it showed last');
+  cbScanView.Items.Add('The PID grid');
+  cbScanView.Items.Add('The chart');
+  cbScanView.ItemIndex := 0;
+  cbScanView.OnChange := cbScanViewChange;
   // Gauges page: the dashboard's own background behind the gauges.
   FDashBack := TRectangle.Create(Self);
   FDashBack.Parent := sbDash.Parent;
@@ -1352,6 +1408,7 @@ begin
   cbKeepDefault.Items.Add('No, delete it');
   cbKeepDefault.Hint := 'The button Enter presses in the question';
   cbKeepDefault.OnChange := KeepLogOptionChange;
+  BuildHotkeys;
   tiConnect.Text := 'Connection';
 
   // Connection: what is on the port, first in the row.
@@ -2599,6 +2656,16 @@ begin
   SaveSettings;
 end;
 
+procedure TMainForm.cbScanViewChange(Sender: TObject);
+const
+  Keys: array[0..2] of string = ('keep', 'grid', 'chart');
+begin
+  if not FChromeReady then
+    Exit;
+  FSettings.ScanView := Keys[EnsureRange(cbScanView.ItemIndex, 0, 2)];
+  SaveSettings;
+end;
+
 procedure TMainForm.chkLockRotateChange(Sender: TObject);
 begin
   if not FChromeReady then
@@ -2656,7 +2723,7 @@ begin
   Confirm(Msg,
     procedure
     begin
-      AddMessage('Log saved: ' + FileName + IfThen(IsMobile, '', '  (F7 opens it in the log viewer)'));
+      AddMessage(LogSavedText(FileName));
     end,
     procedure
     var
@@ -2669,6 +2736,8 @@ begin
             RaiseLastOSError;
           if SameText(FSessionLog, FileName) then
             FSessionLog := '';
+          if SameText(FLastLogFile, FileName) then
+            FLastLogFile := '';
           AddMessage('Log deleted: ' + FileName);
           ShowNotice('Log deleted', False);
         end
@@ -2692,6 +2761,342 @@ begin
       end;
     end,
     FSettings.KeepByDefault);
+end;
+
+function TMainForm.LogSavedText(const FileName: string): string;
+begin
+  Result := 'Log saved: ' + FileName;
+  if not IsMobile and not FSettings.Hotkeys[haLogViewer].IsEmpty then
+    Result := Result + '  (' + FSettings.Hotkeys[haLogViewer].Text + ' opens it in the log viewer)';
+end;
+
+{ Hotkeys }
+
+{ Settings > Hotkeys: a box per action - click it and press the key. }
+procedure TMainForm.BuildHotkeys;
+begin
+  gbHotkeys := TGroupBox.Create(Self);
+  gbHotkeys.Stored := False;
+  gbHotkeys.Parent := sbSettings;
+  gbHotkeys.Align := TAlignLayout.Top;
+  gbHotkeys.Margins.Rect := gbStream.Margins.Rect;
+  gbHotkeys.Position.Y := gbStream.Position.Y + gbStream.Height + 20; // the last box
+  gbHotkeys.SetBounds(0, gbHotkeys.Position.Y, gbStream.Width, 420);
+  gbHotkeys.Text := 'Hotkeys';
+  gbHotkeys.OnResized := FlowBoxResized; // its rows fit the width it gets
+  lblHotkeyHelp := TLabel.Create(Self);
+  lblHotkeyHelp.Stored := False;
+  lblHotkeyHelp.Parent := gbHotkeys;
+  lblHotkeyHelp.Position.X := 12;
+  lblHotkeyHelp.Text := 'Click a box and press the key for it: an F key (Ctrl, Alt or Shift with it if you like), ' +
+    'or Ctrl or Alt with a letter or digit. Backspace clears the box. A key another action has moves here, ' +
+    'and that action gets this one''s key.';
+  for var A := Low(THotkeyAction) to High(THotkeyAction) do
+  begin
+    FHotkeyLabels[A] := TLabel.Create(Self);
+    FHotkeyLabels[A].Stored := False;
+    FHotkeyLabels[A].Parent := gbHotkeys;
+    FHotkeyLabels[A].Text := HotkeyNames[A];
+    FHotkeyEdits[A] := TEdit.Create(Self);
+    FHotkeyEdits[A].Stored := False;
+    FHotkeyEdits[A].Parent := gbHotkeys;
+    FHotkeyEdits[A].ReadOnly := True;
+    FHotkeyEdits[A].Tag := Ord(A);
+    FHotkeyEdits[A].Height := edtLogFolder.Height;
+    FHotkeyEdits[A].TextPrompt := 'None';
+    FHotkeyEdits[A].Hint := 'Click, then press the key';
+    FHotkeyEdits[A].ShowHint := True;
+    FHotkeyEdits[A].OnEnter := HotkeyEditEnter;
+    FHotkeyEdits[A].OnExit := HotkeyEditExit;
+    FHotkeyClears[A] := TButton.Create(Self);
+    FHotkeyClears[A].Stored := False;
+    FHotkeyClears[A].Parent := gbHotkeys;
+    FHotkeyClears[A].Text := 'Clear';
+    FHotkeyClears[A].Tag := Ord(A);
+    FHotkeyClears[A].OnClick := HotkeyClearClick;
+  end;
+  chkGlobalHotkeys := TCheckBox.Create(Self);
+  chkGlobalHotkeys.Stored := False;
+  chkGlobalHotkeys.Parent := gbHotkeys;
+  chkGlobalHotkeys.Position.X := 12;
+  chkGlobalHotkeys.Height := 30;
+  chkGlobalHotkeys.Text := 'Work even when UVScan is not the window in front (other programs cannot use ' +
+    'these keys while UVScan is open)';
+  chkGlobalHotkeys.Visible := {$IFDEF MSWINDOWS}True{$ELSE}False{$ENDIF};
+  chkGlobalHotkeys.OnChange := chkGlobalHotkeysChange;
+  lblHotkeyTaken := TLabel.Create(Self);
+  lblHotkeyTaken.Stored := False;
+  lblHotkeyTaken.Parent := gbHotkeys;
+  lblHotkeyTaken.Position.X := 12;
+  lblHotkeyTaken.Visible := False;
+  btnHotkeyDefaults := TButton.Create(Self);
+  btnHotkeyDefaults.Stored := False;
+  btnHotkeyDefaults.Parent := gbHotkeys;
+  btnHotkeyDefaults.Position.X := 12;
+  btnHotkeyDefaults.Height := edtLogFolder.Height;
+  btnHotkeyDefaults.Text := 'Reset to defaults';
+  btnHotkeyDefaults.OnClick := HotkeyDefaultsClick;
+end;
+
+{ The boxes, and the keys in button captions and hints. }
+procedure TMainForm.ShowHotkeys;
+var
+  K: string;
+begin
+  for var A := Low(THotkeyAction) to High(THotkeyAction) do
+    FHotkeyEdits[A].Text := FSettings.Hotkeys[A].Text;
+  btnLogViewer.Hint := 'Open logs as a chart and grid, with playback' + KeyHint(haLogViewer);
+  K := FSettings.Hotkeys[haFullScreen].Text;
+  btnFullScreen.Hint := 'Full screen (' + IfThen(K <> '', K + '; ') + 'Esc to come back)';
+  if FChromeReady then
+    UpdateControls; // Start log (F8), Pause (F9)
+end;
+
+{ ' (F8)' after a button's caption; nothing on a phone or without a key. }
+function TMainForm.KeyHint(A: THotkeyAction): string;
+begin
+  if IsMobile or FSettings.Hotkeys[A].IsEmpty then
+    Result := ''
+  else
+    Result := ' (' + FSettings.Hotkeys[A].Text + ')';
+end;
+
+procedure TMainForm.HotkeyEditEnter(Sender: TObject);
+begin
+  FCapturing := True;
+  TEdit(Sender).Text := '';
+  TEdit(Sender).TextPrompt := 'Press the key';
+  RegisterGlobalHotkeys; // off while a key is chosen: Windows would take it first
+end;
+
+procedure TMainForm.HotkeyEditExit(Sender: TObject);
+begin
+  FCapturing := False;
+  TEdit(Sender).TextPrompt := 'None';
+  ShowHotkeys;
+  RegisterGlobalHotkeys;
+end;
+
+procedure TMainForm.HotkeyClearClick(Sender: TObject);
+begin
+  SetHotkey(THotkeyAction(TComponent(Sender).Tag), THotkey.Make(0, []));
+end;
+
+procedure TMainForm.HotkeyDefaultsClick(Sender: TObject);
+begin
+  FSettings.Hotkeys := DefaultHotkeys;
+  SaveSettings;
+  ShowHotkeys;
+  RegisterGlobalHotkeys;
+end;
+
+procedure TMainForm.chkGlobalHotkeysChange(Sender: TObject);
+begin
+  if not FChromeReady then
+    Exit;
+  FSettings.GlobalHotkeys := chkGlobalHotkeys.IsChecked;
+  SaveSettings;
+  RegisterGlobalHotkeys;
+end;
+
+{ A's key is K now; the action that had K gets A's old one (they swap). }
+procedure TMainForm.SetHotkey(A: THotkeyAction; const K: THotkey);
+var
+  Other: THotkeyAction;
+  Old: THotkey;
+begin
+  Old := FSettings.Hotkeys[A];
+  if not K.IsEmpty and FindHotkey(FSettings.Hotkeys, K.Key, K.Shift, Other) and (Other <> A) then
+  begin
+    FSettings.Hotkeys[Other] := Old;
+    ShowNotice(Format('%s was the key for %s: that has %s now', [K.Text, HotkeyNames[Other],
+      IfThen(Old.IsEmpty, 'none', Old.Text)]), False);
+  end;
+  FSettings.Hotkeys[A] := K;
+  SaveSettings;
+  ShowHotkeys;
+  RegisterGlobalHotkeys;
+end;
+
+{ A key pressed in a UVScan window: a Hotkeys box being set takes it, else
+  its action if it has one. True when it was used. }
+function TMainForm.HotkeyDown(Key: Word; Shift: TShiftState): Boolean;
+var
+  A: THotkeyAction;
+  Problem: string;
+begin
+  Result := False;
+  if (Key = 0) or FClosing then
+    Exit;
+  if FCapturing then
+  begin
+    for A := Low(THotkeyAction) to High(THotkeyAction) do
+      if FHotkeyEdits[A].IsFocused then
+      begin
+        if (Key = vkTab) or (Key = vkEscape) then
+          Exit; // moving on
+        Result := True;
+        if IsModifierKey(Key) then
+          Exit; // Ctrl, Alt or Shift on its own: the key comes next
+        if ((Key = vkBack) or (Key = vkDelete)) and (Shift = []) then
+        begin
+          SetHotkey(A, THotkey.Make(0, []));
+          Exit;
+        end;
+        Problem := HotkeyProblem(Key, Shift);
+        if Problem <> '' then
+          ShowNotice(Problem, True)
+        else
+          SetHotkey(A, THotkey.Make(Key, Shift));
+        Exit;
+      end;
+    Exit;
+  end;
+  if FindHotkey(FSettings.Hotkeys, Key, Shift, A) then
+  begin
+    RunHotkey(A);
+    Result := True;
+  end;
+end;
+
+procedure TMainForm.RunHotkey(A: THotkeyAction);
+var
+  Now_: UInt64;
+begin
+  Now_ := TThread.GetTickCount64;
+  // a key held down repeats: only the first press counts (and a double tap)
+  if (A = FLastHotkey) and (Now_ - FLastHotkeyAt < 600) then
+  begin
+    FLastHotkeyAt := Now_;
+    Exit;
+  end;
+  FLastHotkey := A;
+  FLastHotkeyAt := Now_;
+  case A of
+    haConnect:
+      if FState <> esDisconnected then
+        btnDisconnectClick(nil)
+      else if FQuickActive and FQuick.Retry then
+        btnActionClick(nil) // stop trying
+      else
+        btnConnectClick(nil);
+    haScan:
+      case FState of
+        esDisconnected:
+          ShowNotice('Not connected' + IfThen(not FSettings.Hotkeys[haConnect].IsEmpty,
+            ': ' + FSettings.Hotkeys[haConnect].Text + ' connects'), True);
+        esConnected:
+          if btnStartScan.Enabled then
+            btnStartScanClick(nil);
+      else
+        btnStopScanClick(nil);
+      end;
+    haLogViewer: btnLogViewerClick(nil);
+    haLog:
+      if btnLog.Enabled then
+        btnLogClick(nil)
+      else
+        ShowNotice('Start a scan to log', True);
+    haPause:
+      if btnPause.Enabled then
+        btnPauseClick(nil)
+      else
+        ShowNotice('Not logging, so there is nothing to pause', True);
+    haMark: MarkLog;
+    haFullScreen: SetFullScreen(not FFullScreen);
+    haLiveChart:
+      if (CurrentPage = tiLive) and FLiveChart then
+        SetLiveChart(False)
+      else
+        LiveChartClick(nil);
+  end;
+end;
+
+{ The hotkeys for all of Windows (Settings: work when UVScan is not in
+  front), or none: while a key is being chosen, or closing. A key another
+  program has already works only in UVScan's windows; the box says which. }
+procedure TMainForm.RegisterGlobalHotkeys;
+{$IFDEF MSWINDOWS}
+const
+  MOD_NOREPEAT = $4000;
+var
+  K: THotkey;
+  Mods: UINT;
+  Taken: string;
+{$ENDIF}
+begin
+  {$IFDEF MSWINDOWS}
+  if FHotkeyWnd <> 0 then
+    for var A := Low(THotkeyAction) to High(THotkeyAction) do
+      UnregisterHotKey(FHotkeyWnd, Ord(A) + 1);
+  Taken := '';
+  if FSettings.GlobalHotkeys and not FCapturing and not FClosing then
+  begin
+    if FHotkeyWnd = 0 then
+      FHotkeyWnd := AllocateHWnd(HotkeyWndProc);
+    for var A := Low(THotkeyAction) to High(THotkeyAction) do
+    begin
+      K := FSettings.Hotkeys[A];
+      if K.IsEmpty then
+        Continue;
+      Mods := MOD_NOREPEAT;
+      if ssCtrl in K.Shift then
+        Mods := Mods or MOD_CONTROL;
+      if ssAlt in K.Shift then
+        Mods := Mods or MOD_ALT;
+      if ssShift in K.Shift then
+        Mods := Mods or MOD_SHIFT;
+      if not RegisterHotKey(FHotkeyWnd, Ord(A) + 1, Mods, K.Key) then
+        Taken := Taken + IfThen(Taken <> '', ', ') + K.Text;
+    end;
+  end;
+  if FClosing then
+    Exit;
+  lblHotkeyTaken.Text := 'Another program already has ' + Taken +
+    ': in UVScan it works only while UVScan is in front';
+  if lblHotkeyTaken.Visible <> (Taken <> '') then
+  begin
+    lblHotkeyTaken.Visible := Taken <> '';
+    if FChromeReady then
+      FitFormRows;
+  end;
+  {$ENDIF}
+end;
+
+{$IFDEF MSWINDOWS}
+procedure TMainForm.HotkeyWndProc(var Msg: Winapi.Messages.TMessage);
+var
+  A: THotkeyAction;
+begin
+  if Msg.Msg <> WM_HOTKEY then
+  begin
+    Msg.Result := DefWindowProc(FHotkeyWnd, Msg.Msg, Msg.WParam, Msg.LParam);
+    Exit;
+  end;
+  Msg.Result := 0;
+  if (Msg.WParam < 1) or (Msg.WParam > Ord(High(THotkeyAction)) + 1) or FClosing then
+    Exit;
+  A := THotkeyAction(Msg.WParam - 1);
+  TThread.ForceQueue(nil,
+    procedure
+    begin
+      if not FClosing then
+        RunHotkey(A);
+    end);
+end;
+{$ENDIF}
+
+{ The Mark hotkey: the log's next row gets the next mark number (the log
+  viewer shows them on the chart). }
+procedure TMainForm.MarkLog;
+begin
+  if not FLogging then
+    ShowNotice('Not logging, so there is nothing to mark' + IfThen(btnLog.Enabled and
+      not FSettings.Hotkeys[haLog].IsEmpty, ': ' + FSettings.Hotkeys[haLog].Text + ' starts the log'), True)
+  else if FLogPaused then
+    ShowNotice('The log is paused: resume it to mark it', True)
+  else
+    Post(ecMarkLog);
 end;
 
 procedure TMainForm.chkOneLogChange(Sender: TObject);
@@ -2944,7 +3349,12 @@ begin
       chkLockRotate.Position.Y := Y;
       Y := Y + chkLockRotate.Height + 4;
     end;
-    gbAppearance.Height := Y + 6;
+  end;
+  Y := Row(lblScanView, cbScanView, nil, gbAppearance, Y + 2);
+  if gbAppearance.Width >= 50 then
+  begin
+    cbScanView.Width := Min(cbScanView.Width, 260);
+    gbAppearance.Height := Y + 4;
   end;
   Y := Row(lblLogFolderCaption, edtLogFolder, btnBrowseLogFolder, gbLogging);
   if cbAway.Visible then
@@ -2976,6 +3386,67 @@ begin
   Y := Row(lblRate, cbRate, nil, gbStream);
   if gbStream.Width >= 50 then
     gbStream.Height := Y + 4;
+  // Hotkeys: help, then a row per action (the boxes lined up), the options
+  if gbHotkeys.Width >= 50 then
+  begin
+    Y := 30;
+    lblHotkeyHelp.Position.Y := Y;
+    Wide(lblHotkeyHelp, gbHotkeys);
+    lblHotkeyHelp.WordWrap := True;
+    lblHotkeyHelp.Height := WrappedTextHeight(lblHotkeyHelp, lblHotkeyHelp.Width) + 4;
+    Y := Y + lblHotkeyHelp.Height + 8;
+    var CapW: Single := 0;
+    for var A := Low(THotkeyAction) to High(THotkeyAction) do
+    begin
+      FHotkeyLabels[A].WordWrap := False;
+      FitTextWidth(FHotkeyLabels[A]);
+      CapW := Max(CapW, FHotkeyLabels[A].Width);
+    end;
+    for var A := Low(THotkeyAction) to High(THotkeyAction) do
+    begin
+      var E := FHotkeyEdits[A];
+      FHotkeyLabels[A].Position.X := 12;
+      FHotkeyLabels[A].Height := 22;
+      if gbHotkeys.Width < 480 then
+      begin
+        // a phone: the name above the box
+        FHotkeyLabels[A].Position.Y := Y;
+        Y := Y + 24;
+        E.Position.X := 12;
+      end
+      else
+      begin
+        FHotkeyLabels[A].Position.Y := Y + (E.Height - 22) / 2;
+        E.Position.X := 12 + CapW + 12;
+      end;
+      E.Position.Y := Y;
+      E.Width := 170;
+      FitTextWidth(FHotkeyClears[A], 70);
+      FHotkeyClears[A].SetBounds(E.Position.X + E.Width + 8, Y, FHotkeyClears[A].Width, E.Height);
+      Y := Y + E.Height + 6;
+    end;
+    Y := Y + 4;
+    if chkGlobalHotkeys.Visible then
+    begin
+      Wide(chkGlobalHotkeys, gbHotkeys);
+      chkGlobalHotkeys.TextSettings.WordWrap := True;
+      chkGlobalHotkeys.Height := Max(30, WrappedTextHeight(chkGlobalHotkeys, chkGlobalHotkeys.Width - 40) + 8);
+      chkGlobalHotkeys.Position.Y := Y;
+      Y := Y + chkGlobalHotkeys.Height + 4;
+    end;
+    if lblHotkeyTaken.Visible then
+    begin
+      Wide(lblHotkeyTaken, gbHotkeys);
+      lblHotkeyTaken.WordWrap := True;
+      lblHotkeyTaken.Height := WrappedTextHeight(lblHotkeyTaken, lblHotkeyTaken.Width) + 4;
+      lblHotkeyTaken.Position.Y := Y;
+      Y := Y + lblHotkeyTaken.Height + 6;
+    end;
+    FitTextWidth(btnHotkeyDefaults, 140);
+    btnHotkeyDefaults.Position.Y := Y;
+    Y := Y + btnHotkeyDefaults.Height + 12;
+    gbHotkeys.Height := Y;
+  end;
   Row(nil, edtNewVin, btnWriteVin, gbWriteVin);
   Row(nil, edtRaw, btnSendRaw, gbAdvanced);
   Wide(lblRaw, gbAdvanced);
@@ -3457,6 +3928,12 @@ end;
 procedure TMainForm.FormDestroy(Sender: TObject);
 begin
   FClosing := True;
+  TLogViewerForm.OnHotkey := nil;
+  RegisterGlobalHotkeys; // closing: lets them go
+  {$IFDEF MSWINDOWS}
+  if FHotkeyWnd <> 0 then
+    DeallocateHWnd(FHotkeyWnd);
+  {$ENDIF}
   TMessageManager.DefaultManager.Unsubscribe(TThemeChangedMessage, FThemeSub);
   KeepAwake(False);
   tmrRefresh.Enabled := False;
@@ -3505,6 +3982,13 @@ end;
   (Stop, say). }
 procedure TMainForm.KeyDown(var Key: Word; var KeyChar: System.WideChar; Shift: TShiftState);
 begin
+  // the hotkeys first, wherever the focus is (they never type)
+  if HotkeyDown(Key, Shift) then
+  begin
+    Key := 0;
+    KeyChar := #0;
+    Exit;
+  end;
   if FLiveChart and (tcMain.ActiveTab = tiLive) and TLogViewerForm.LiveKey(Key, KeyChar, Shift) then
     Exit;
   inherited;
@@ -3512,31 +3996,11 @@ end;
 
 procedure TMainForm.FormKeyDown(Sender: TObject; var Key: Word; var KeyChar: WideChar; Shift: TShiftState);
 begin
-  if (Key = vkF11) and (Shift = []) then
-  begin
-    SetFullScreen(not FFullScreen);
-    Key := 0;
-  end
-  else if (Shift = [ssCtrl]) and ((Key = vkL) or (KeyChar = 'l') or (KeyChar = 'L')) and FWide then
+  if (Shift = [ssCtrl]) and ((Key = vkL) or (KeyChar = 'l') or (KeyChar = 'L')) and FWide then
   begin
     TogglePidPanelClick(nil);
     Key := 0;
     KeyChar := #0;
-  end
-  else if (Key = vkF7) and (Shift = []) then
-  begin
-    btnLogViewerClick(nil);
-    Key := 0;
-  end
-  else if (Key = vkF8) and btnLog.Enabled then
-  begin
-    btnLogClick(nil);
-    Key := 0;
-  end
-  else if (Key = vkF9) and btnPause.Enabled then
-  begin
-    btnPauseClick(nil);
-    Key := 0;
   end
   else if (ssCtrl in Shift) and (tcMain.ActiveTab = tiLive) then
   begin
@@ -3667,6 +4131,7 @@ begin
   KeepAwake(FSettings.KeepScreenOn);
   chkRound.IsChecked := FSettings.RoundReadings;
   chkLockRotate.IsChecked := FSettings.LockRotation;
+  cbScanView.ItemIndex := IndexText(FSettings.ScanView, ['keep', 'grid', 'chart']);
   chkAlwaysLog.IsChecked := FSettings.AlwaysLog;
   chkOneLog.IsChecked := FSettings.OneLog;
   chkAskKeep.IsChecked := FSettings.AskKeep;
@@ -3676,6 +4141,9 @@ begin
     cbKeepDefault.ItemIndex := 1;
   cbKeepDefault.Enabled := FSettings.AskKeep;
   lblKeepDefault.Enabled := FSettings.AskKeep;
+  chkGlobalHotkeys.IsChecked := FSettings.GlobalHotkeys;
+  ShowHotkeys;
+  RegisterGlobalHotkeys;
   LockRotation(FSettings.LockRotation);
   FUpdateCheck.IsChecked := FSettings.CheckUpdates;
   ShowUpdateStatus;
@@ -4554,6 +5022,14 @@ begin
         begin
           FAutoChart := False;
           LiveChartClick(nil);
+        end
+        // Settings: the grid or the chart (not when the Gauges page is showing)
+        else if CurrentPage = tiLive then
+        begin
+          if FSettings.ScanView = 'grid' then
+            SetLiveChart(False)
+          else if FSettings.ScanView = 'chart' then
+            SetLiveChart(True);
         end;
       end;
     eePidRejected:
@@ -4608,6 +5084,19 @@ begin
           ShowNotice(Ev.Text + ': ' + Ev.Raw, True);
         FillControls('');
       end;
+    eeLogMark:
+      begin
+        AddMessage(Format('Mark %d at %s in %s', [Ev.Progress, FormatLogTime(Ev.LogTime), ExtractFileName(Ev.Text)]));
+        ShowNotice(Format('Mark %d at %s', [Ev.Progress, FormatLogTime(Ev.LogTime)]), False);
+        if FSettings.AlertSounds then
+          PlayAlertSound(asBeep, ''); // heard without looking
+        // the live chart: at its newest sample
+        if FLiveLog.Count > 0 then
+        begin
+          FLiveLog.AddMark(FLiveLog.Times[FLiveLog.Count - 1], Ev.Progress);
+          TLogViewerForm.LiveChanged(False);
+        end;
+      end;
     eeLogStopped:
       begin
         FLogging := False;
@@ -4619,7 +5108,7 @@ begin
         if FUserStop and FSettings.AskKeep and (Ev.Text <> '') then
           AskKeepLog(Ev)
         else if Ev.Text <> '' then
-          AddMessage('Log saved: ' + Ev.Text + IfThen(IsMobile, '', '  (F7 opens it in the log viewer)'));
+          AddMessage(LogSavedText(Ev.Text));
         FUserStop := False;
       end;
   end;
@@ -4643,7 +5132,7 @@ begin
   btnStopScan.Enabled := FState in [esScanning, esBusy];
   btnStopScan.Text := IfThen(FState = esBusy, 'Cancel', 'Stop scan');
   btnLog.Enabled := FState = esScanning;
-  btnLog.Text := IfThen(FLogging, 'Stop log', 'Start log') + IfThen(IsMobile, '', ' (F8)');
+  btnLog.Text := IfThen(FLogging, 'Stop log', 'Start log') + KeyHint(haLog);
   if btnLiveLog <> nil then
   begin
     btnLiveLog.Enabled := btnLog.Enabled;
@@ -4652,7 +5141,7 @@ begin
     btnDashLog.Text := btnLog.Text;
   end;
   btnPause.Enabled := FLogging;
-  btnPause.Text := IfThen(FLogPaused, 'Resume', 'Pause') + IfThen(IsMobile, '', ' (F9)');
+  btnPause.Text := IfThen(FLogPaused, 'Resume', 'Pause') + KeyHint(haPause);
   btnTestPids.Enabled := Idle;
   btnEditPids.Enabled := FState in [esDisconnected, esConnected];
   // Stop the scan to change what it scans.
@@ -6565,6 +7054,8 @@ var
   F: string;
 begin
   Last := FLastLogFile;
+  if (Last <> '') and not FileExists(Last) then
+    Last := ''; // deleted since (No to keeping it, say): the newest one there is
   if (Last = '') and TDirectory.Exists(LogFolder) then
   begin
     Files := TDirectory.GetFiles(LogFolder, '*.csv');

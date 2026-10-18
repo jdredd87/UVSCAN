@@ -214,6 +214,7 @@ type
     procedure RangeStats(Ch: Integer; out Lo, Avg, Hi: Double);
     procedure OpenFile(const FileName: string);
     procedure MoveCursorToRow(Row: Integer);
+    procedure JumpToMark(Forward: Boolean);
     // channel list
     procedure ChannelsGetText(Sender: TObject; Col, Row: Integer; var Text: string);
     procedure ChannelsGetStyle(Sender: TObject; Col, Row: Integer; var Style: TCellStyle);
@@ -258,6 +259,9 @@ type
     class function LiveKey(var Key: Word; var KeyChar: WideChar; Shift: TShiftState): Boolean;
     class function LiveBack: Boolean;
     class procedure LiveThemeChanged;
+    { The main window's hotkeys, for keys pressed in the viewer's window:
+      True when the key was one. }
+    class var OnHotkey: TFunc<Word, TShiftState, Boolean>;
   end;
 
 implementation
@@ -2211,8 +2215,13 @@ begin
     Rate := (FData.Count - 1) / FData.Duration;
   lblStatus1.Text := Format('%s long, %d samples, %.1f /s, %d channels',
     [FormatLogTime(FData.Duration), FData.Count, Rate, FData.ChannelCount]);
+  if Length(FData.Marks) > 0 then
+    lblStatus1.Text := lblStatus1.Text + Format(', %d mark%s', [Length(FData.Marks),
+      IfThen(Length(FData.Marks) > 1, 's', '')]);
   if FData.Skipped > 0 then
     lblStatus2.Text := Format('%d unreadable rows skipped', [FData.Skipped])
+  else if (Length(FData.Marks) > 0) and not IsMobile then
+    lblStatus2.Text := 'M: the next mark, Shift+M: the one before; Shift+drag in the chart to select a range'
   else if IsMobile then
     lblStatus2.Text := 'Long-press (or Select range) and drag in the chart to select a range'
   else
@@ -2848,6 +2857,15 @@ begin
   SyncToCursor(False);
 end;
 
+{ The cursor to the next mark after it, or the one before. }
+procedure TLogViewerForm.JumpToMark(Forward: Boolean);
+var
+  Mark: TLogMark;
+begin
+  if (FData.Count > 0) and FData.FindMark(FChart.CursorTime, Forward, Mark) then
+    MoveCursorToRow(FData.IndexAt(Mark.Time));
+end;
+
 procedure TLogViewerForm.btnStartClick(Sender: TObject);
 begin
   if FData.Count > 0 then
@@ -2886,6 +2904,12 @@ var
   OnChart: Boolean;
   Focus: IControl;
 begin
+  if not FEmbedded and (Key <> 0) and Assigned(OnHotkey) and OnHotkey(Key, Shift) then
+  begin
+    Key := 0;
+    KeyChar := #0;
+    Exit;
+  end;
   if FEmbedded and (FRoot.Root <> nil) then
     Focus := TCommonCustomForm(FRoot.Root.GetObject).Focused
   else
@@ -2896,6 +2920,12 @@ begin
   if KeyChar = ' ' then
   begin
     TogglePlay;
+    Key := 0;
+    KeyChar := #0;
+  end
+  else if ((KeyChar = 'm') or (KeyChar = 'M')) and (Shift * [ssCtrl, ssAlt] = []) then
+  begin
+    JumpToMark(not (ssShift in Shift));
     Key := 0;
     KeyChar := #0;
   end

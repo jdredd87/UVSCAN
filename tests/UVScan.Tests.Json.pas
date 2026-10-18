@@ -4,7 +4,7 @@ interface
 
 uses
   System.SysUtils, System.Classes, System.IOUtils, System.JSON, DUnitX.TestFramework,
-  UVScan.Pids, UVScan.Dtc, UVScan.Settings, UVScan.JsonFile, UVScan.Update;
+  UVScan.Pids, UVScan.Dtc, UVScan.Settings, UVScan.JsonFile, UVScan.Update, UVScan.Hotkeys;
 
 type
   [TestFixture]
@@ -242,6 +242,10 @@ begin
     A.Window.Saved := True;
     A.CheckUpdates := False;
     A.UpdateChecked := EncodeDate(2026, 10, 12) + EncodeTime(9, 30, 0, 0);
+    A.Hotkeys[haMark] := THotkey.Parse('Ctrl+Shift+F2');
+    A.Hotkeys[haScan] := THotkey.Make(0, []); // none
+    A.GlobalHotkeys := True;
+    A.ScanView := 'chart';
     A.SaveToFile(TempFile('settings.json'));
     Assert.IsFalse(FileExists(TempFile('settings.json.tmp')));
 
@@ -260,6 +264,11 @@ begin
     Assert.AreEqual(380, B.Window.PidPanelWidth);
     Assert.IsFalse(B.CheckUpdates);
     Assert.AreEqual(A.UpdateChecked, B.UpdateChecked, 1 / 86400);
+    Assert.AreEqual('Ctrl+Shift+F2', B.Hotkeys[haMark].Text);
+    Assert.IsTrue(B.Hotkeys[haScan].IsEmpty, 'cleared stays cleared');
+    Assert.AreEqual('F5', B.Hotkeys[haConnect].Text);
+    Assert.IsTrue(B.GlobalHotkeys);
+    Assert.AreEqual('chart', B.ScanView);
   finally
     A.Free;
     B.Free;
