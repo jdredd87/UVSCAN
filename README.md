@@ -10,13 +10,14 @@ It is a rewrite of the 2008 UVSCAN (Delphi 2007) for **Delphi 13 FireMonkey (FMX
 
 ## What it does
 
-- **Live data** — streams up to 48 bytes of PIDs from the PCM (about 10 updates a second for small selections), with min / max, calculated PIDs and AVT analog inputs. Rows go in the order you put them (also while scanning), readings are rounded to steady, readable decimals, and the grid zooms from 75 % to 250 %.
+- **Live data** — streams up to 48 bytes of PIDs from the PCM (about 10 updates a second for small selections), with min / max, calculated PIDs and AVT analog inputs. Rows go in the order you put them (also while scanning), readings are rounded to steady, readable decimals, the grid zooms from 75 % to 250 %, and the PID list folds by group and shows the update rate to expect.
 - **Alerts** — per PID colours and green / yellow / red style alert levels that recolour the row, flash and sound an alarm (knock retard, coolant temperature, voltage, …).
 - **Dashboard** — dial, bar and big‑number gauges using the same alert levels; several dashboards (one for each built‑in scan list), **full screen** as a virtual dash, one gauge filling the screen, and quick buttons on a tapped gauge to move or edit it.
 - **Quick start** — one tap (or a desktop shortcut) to pick a scan list and dashboard, connect, scan, log and go full screen, retrying until the car answers.
 - **Test display** — made‑up values sweep every PID through its range so colours, alerts and gauges can be tried without a car.
-- **CSV logging** — F8 start / stop (also on the *Live* and *Gauges* bars), F9 pause, the rows written counted in the status strip.
-- **Log viewer** — logs as a chart (lanes, or overlaid with each channel on its own scale) and a grid on one cursor, with real‑time playback at 0.25×‑20×, zoom and pan, alert colours on the line and in the grid, and saved views (e.g. *MPH vs RPM vs IAT*).
+- **CSV logging** — F8 start / stop (also on the *Live* and *Gauges* bars), F9 pause, F12 to mark a moment in the log, the rows written counted in the status strip.
+- **Hotkeys** — connect, scan, log, pause, mark, full screen, live chart and the log viewer on keys you choose (F keys, media keys, Ctrl / Alt + letter), optionally working while another program has the focus.
+- **Log viewer** — logs as a chart (lanes, or overlaid with each channel on its own scale) and a grid on one cursor, with real‑time playback at 0.25×‑20×, zoom and pan (also with − / + / All buttons), marks to jump between, alert colours on the line and in the grid, saved views (e.g. *MPH vs RPM vs IAT*), and *Save selection* to trim a long log to the minute you need.
 - **Vehicle & codes** — VIN, PCM OS ID, AVT firmware; trouble codes from every module, clear codes.
 - **Real‑time controls** — GM device control (mode $AE): lamps, cooling fan, EVAP vent and fuel trim reset found and checked on a bench PCM, plus your own commands (on / off, hold to run, value, one‑shot).
 - **PID tools** — PID editor with live formula check, import of old `PIDS.csv`, named scan lists, PID support test, and a search of the PCM for every PID it answers.
