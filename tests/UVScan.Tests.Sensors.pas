@@ -33,6 +33,7 @@ type
     [Test] procedure ScansASimulatedWideband;
     [Test] procedure ScansSensorsOnly;
     [Test] procedure WarnsAboutAMissingSensor;
+    [Test] procedure ScansOnWithoutTheSensorPluggedIn;
   end;
 
 implementation
@@ -588,6 +589,37 @@ begin
       end), 'the scan did not run');
     Assert.IsTrue(IsNan(T.ValueOf(S, 54)));
     Assert.Contains(T.Messages, 'Nowhere reads the sensor "Missing box", which is not set up');
+  finally
+    T.Free;
+  end;
+end;
+
+{ The sensor's port is not there (its USB cable unplugged): the car's PIDs
+  scan as ever, the sensor's stay empty, Messages says why. }
+procedure TSensorTests.ScansOnWithoutTheSensorPluggedIn;
+var
+  T: TSensorScan;
+  Cmd: TEngineCommand;
+  S: TLiveSnapshot;
+begin
+  T := TSensorScan.Create(ScanPids);
+  try
+    T.Sensors.Find('LC-1').Port := 'COM250';
+    T.Connect;
+    Cmd := Command(ecStartScan);
+    Cmd.PidIds := [1, 50];
+    T.Engine.Post(Cmd);
+    Assert.IsTrue(T.WaitUntil(
+      function: Boolean
+      begin
+        S := T.Engine.GetSnapshot;
+        Result := (S.Cycles > 20) and T.Messages.Contains('Trying again');
+      end), 'the scan did not run on: ' + T.Messages);
+    Assert.IsTrue(InRange(T.ValueOf(S, 1), 600, 6000), 'rpm still read');
+    Assert.IsTrue(IsNan(T.ValueOf(S, 50)), 'no AFR without the sensor');
+    Assert.Contains(T.Messages, 'Sensor LC-1: COM250');
+    T.Engine.Post(Command(ecStopScan));
+    Assert.IsTrue(T.WaitUntil(function: Boolean begin Result := T.State = esConnected end), 'stop took too long');
   finally
     T.Free;
   end;

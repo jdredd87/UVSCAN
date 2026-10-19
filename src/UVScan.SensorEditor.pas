@@ -45,6 +45,7 @@ type
     FReader: TSensorReader;   // the running test
     FTimer: TTimer;
     FNarrow: Boolean;
+    FButtonsWidth: Single;    // the width the button row was flowed for
     FDetail: TArray<TControl>; // shown while a sensor is selected
     FRows: TArray<TControl>;
     FCaps: TArray<TLabel>;
@@ -75,6 +76,7 @@ type
     procedure Build;
     procedure Relayout;
     procedure FormResized(Sender: TObject);
+    procedure ButtonsResized(Sender: TObject);
     procedure FormCloseQuery(Sender: TObject; var CanClose: Boolean);
     procedure CloseDiscarding;
     procedure FillList;
@@ -96,6 +98,7 @@ type
     procedure StopTest;
     procedure TimerTick(Sender: TObject);
     procedure AddPidClick(Sender: TObject);
+    function FreeMci(const Name: string): string;
     procedure SaveClick(Sender: TObject);
     function CurrentDef: TSensorDef;
     function PidsOf(const SensorName: string): TArray<TPidDef>;
@@ -205,6 +208,7 @@ begin
   pnlButtons := TLayout.Create(FForm);
   pnlButtons.Margins.Top := 8;
   Add(pnlButtons, 48, False);
+  pnlButtons.OnResized := ButtonsResized;
   btnAdd := TButton.Create(FForm);
   btnAdd.Parent := pnlButtons;
   btnAdd.Text := 'Add...';
@@ -292,6 +296,16 @@ begin
   Relayout;
 end;
 
+{ The buttons wrap by the row's width, which is only known once the page
+  has been laid out (flowed at the first, made-up width, each had a line). }
+procedure TSensorPage.ButtonsResized(Sender: TObject);
+begin
+  if (btnDelete = nil) or SameValue(pnlButtons.Width, FButtonsWidth, 0.5) then
+    Exit;
+  FButtonsWidth := pnlButtons.Width;
+  FlowControls(pnlButtons, [btnAdd, btnImport, btnShare, btnDelete]);
+end;
+
 procedure TSensorPage.Relayout;
 var
   W: Single;
@@ -311,6 +325,7 @@ begin
       L := TLabel(C);
       L.Height := Max(20, WrappedTextHeight(L, W) + 4);
     end;
+  FButtonsWidth := pnlButtons.Width;
   FlowControls(pnlButtons, [btnAdd, btnImport, btnShare, btnDelete]);
   FitTextWidth(btnTest, 140);
   N := Max(1, lbSensors.Count);
@@ -857,6 +872,7 @@ begin
       P.SensorName := D.Name;
       P.SensorField := Field;
       P.PidCode := SensorPidCode;
+      P.Mci := FreeMci(Name);
       if Field.StartsWith('afr') then
         P.Units := 'AFR'
       else if Field.StartsWith('lambda') then
@@ -869,9 +885,32 @@ begin
       FPids.Add(P);
       FPidsChanged := True;
       UpdatePids;
-      ShowInfo(Format('Added the PID "%s". After Save, tick it in the PID list to scan it; ' +
-        'its formula and units are in Edit PIDs.', [Name]));
+      ShowInfo(Format('Added the PID "%s" (in formulas: %%%s%%). After Save, tick it in the PID list ' +
+        'to scan it; its formula and units are in Edit PIDs.', [Name, P.Mci]));
     end);
+end;
+
+{ An MCI for a new PID, so formulas can use it as %NAME%: its name in
+  capitals, letters and digits only, with a number when that is taken. }
+function TSensorPage.FreeMci(const Name: string): string;
+var
+  Base: string;
+  C: Char;
+  N: Integer;
+begin
+  Base := '';
+  for C in UpperCase(Name) do
+    if CharInSet(C, ['A'..'Z', '0'..'9', '_']) then
+      Base := Base + C;
+  if Base = '' then
+    Base := 'SENSOR';
+  Result := Base;
+  N := 1;
+  while FPids.FindByMci(Result) <> nil do
+  begin
+    Inc(N);
+    Result := Base + IntToStr(N);
+  end;
 end;
 
 { Save }
