@@ -1593,9 +1593,40 @@ begin
   Result.AddPair('pids', Arr);
 end;
 
+{ Formula with each %NAME% that Renamed has given its new name. }
+function RenameMcis(const Formula: string; Renamed: TDictionary<string, string>): string;
+var
+  I, J: Integer;
+  Name, NewName: string;
+begin
+  Result := '';
+  I := 1;
+  while I <= Length(Formula) do
+  begin
+    J := 0;
+    if Formula[I] = '%' then
+      J := PosEx('%', Formula, I + 1);
+    if J > 0 then
+    begin
+      Name := Copy(Formula, I + 1, J - I - 1);
+      if not Renamed.TryGetValue(UpperCase(Name), NewName) then
+        NewName := Name;
+      Result := Result + '%' + NewName + '%';
+      I := J + 1;
+    end
+    else
+    begin
+      Result := Result + Formula[I];
+      Inc(I);
+    end;
+  end;
+end;
+
 function ImportSensorPackage(Root: TJSONObject; Sensors: TSensorCatalog; Catalog: TPidCatalog;
   out AddedPids: TArray<Integer>): string;
 var
+  Renamed: TDictionary<string, string>; // an MCI that was taken -> the one it got
+  Added: TList<TPidDef>;
   SJ, Copy_: TJSONObject;
   Arr, Fixed: TJSONArray;
   Def: TSensorDef;
@@ -1618,6 +1649,8 @@ begin
     Fixed := TJSONArray.Create;
     Wrapper := TJSONObject.Create;
     Tmp := TPidCatalog.Create;
+    Renamed := TDictionary<string, string>.Create;
+    Added := TList<TPidDef>.Create;
     try
       Wrapper.AddPair('pids', Fixed);
       Arr := JArr(Root, 'pids');
@@ -1654,12 +1687,22 @@ begin
             Inc(N);
             Mci := P.Mci + IntToStr(N);
           end;
+          if Mci <> P.Mci then
+            Renamed.AddOrSetValue(P.Mci, Mci);
           P.Mci := Mci;
         end;
         Catalog.Add(P);
+        Added.Add(P);
         AddedPids := AddedPids + [P.Id];
       end;
+      // the file's own formulas use the names as they were
+      if Renamed.Count > 0 then
+        for P in Added do
+          if Pos('%', P.FormulaText) > 0 then
+            P.FormulaText := RenameMcis(P.FormulaText, Renamed);
     finally
+      Added.Free;
+      Renamed.Free;
       Tmp.Free;
       Wrapper.Free;
     end;

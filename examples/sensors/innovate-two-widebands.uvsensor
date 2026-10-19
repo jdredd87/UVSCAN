@@ -1,0 +1,17 @@
+{
+  "uvscanSensor": 1,
+  "sensor": {
+    "name": "Innovate chain",
+    "description": "Two LC-1s in an MTS chain (or an LM-2 with two sensors): one wideband per bank",
+    "protocol": "mts",
+    "baud": 19200
+  },
+  "pids": [
+    { "name": "Wideband AFR bank 1", "shortName": "WB AFR B1", "kind": "sensor", "category": "sensors",
+      "field": "afr1", "units": "AFR", "mci": "WBAFR1" },
+    { "name": "Wideband AFR bank 2", "shortName": "WB AFR B2", "kind": "sensor", "category": "sensors",
+      "field": "afr2", "units": "AFR", "mci": "WBAFR2" },
+    { "name": "Wideband AFR bank difference", "shortName": "WB AFR diff", "kind": "calculated",
+      "category": "calculated", "formula": "%WBAFR1% - %WBAFR2%", "units": "AFR" }
+  ]
+}

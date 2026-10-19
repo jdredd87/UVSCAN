@@ -6,9 +6,9 @@ unit UVScan.Tests.Sensors;
 interface
 
 uses
-  System.SysUtils, System.Classes, System.Math, System.Diagnostics, System.JSON,
+  System.SysUtils, System.Classes, System.Math, System.Diagnostics, System.JSON, System.IOUtils,
   System.Generics.Collections, DUnitX.TestFramework,
-  UVScan.Serial, UVScan.Pids, UVScan.Engine, UVScan.Simulator, UVScan.Sensors;
+  UVScan.Serial, UVScan.Pids, UVScan.Engine, UVScan.Simulator, UVScan.Sensors, UVScan.JsonFile;
 
 type
   [TestFixture]
@@ -39,6 +39,7 @@ type
     [Test] procedure DecodesPackets;
     [Test] procedure SuggestsFormulas;
     [Test] procedure ScansSimulatedPlxAndPackets;
+    [Test] procedure ImportsTheExampleFiles;
   end;
 
 implementation
@@ -754,6 +755,61 @@ begin
     Assert.IsTrue(InRange(T.ValueOf(S, 62), 0, 65535), 'packet value');
   finally
     T.Free;
+  end;
+end;
+
+{ examples\sensors: every file imports, and one imported twice keeps its
+  calculated PID pointing at its own copies (their MCIs got numbers). }
+procedure TSensorTests.ImportsTheExampleFiles;
+var
+  Dir, F, Found: string;
+  I: Integer;
+  S: TSensorCatalog;
+  C: TPidCatalog;
+  Root: TJSONObject;
+  Ids: TArray<Integer>;
+  Files: TArray<string>;
+  Calc: TPidDef;
+begin
+  Dir := ExtractFilePath(ParamStr(0));
+  Found := '';
+  for I := 0 to 5 do
+  begin
+    if DirectoryExists(Dir + 'examples\sensors') then
+      Found := Dir + 'examples\sensors';
+    if Found <> '' then
+      Break;
+    Dir := ExtractFilePath(ExcludeTrailingPathDelimiter(Dir));
+  end;
+  Assert.IsTrue(Found <> '', 'examples\sensors not found');
+  Files := TDirectory.GetFiles(Found, '*.uvsensor');
+  Assert.IsTrue(Length(Files) >= 4, 'example files');
+  S := TSensorCatalog.Create;
+  C := TPidCatalog.Create;
+  try
+    for F in Files do
+    begin
+      Root := ReadJsonObject(F);
+      try
+        ImportSensorPackage(Root, S, C, Ids);
+      finally
+        Root.Free;
+      end;
+      Assert.IsTrue(Length(Ids) >= 1, F);
+    end;
+    Root := ReadJsonObject(TPath.Combine(Found, 'innovate-two-widebands.uvsensor'));
+    try
+      ImportSensorPackage(Root, S, C, Ids);
+    finally
+      Root.Free;
+    end;
+    Calc := C.FindById(Ids[2]);
+    Assert.AreEqual('%WBAFR12% - %WBAFR22%', Calc.FormulaText, 'the copy uses its own PIDs');
+    Assert.IsNotNull(C.FindByMci('WBAFR12'));
+    Assert.AreEqual(0, Length(C.Validate), 'the catalog is still fine');
+  finally
+    S.Free;
+    C.Free;
   end;
 end;
 

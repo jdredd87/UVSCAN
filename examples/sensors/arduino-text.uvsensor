@@ -1,0 +1,17 @@
+{
+  "uvscanSensor": 1,
+  "sensor": {
+    "name": "Arduino gauges",
+    "description": "arduino-text.ino: a line like egt=812 oilp=45.2 boost=7.3 ten times a second",
+    "protocol": "text",
+    "baud": 115200
+  },
+  "pids": [
+    { "name": "Exhaust gas temperature", "shortName": "EGT", "kind": "sensor", "category": "sensors",
+      "field": "egt", "units": "°C", "mci": "EGT" },
+    { "name": "Oil pressure", "shortName": "Oil psi", "kind": "sensor", "category": "sensors",
+      "field": "oilp", "units": "psi", "mci": "OILP" },
+    { "name": "Boost", "kind": "sensor", "category": "sensors",
+      "field": "boost", "units": "psi", "mci": "BOOST_ARD" }
+  ]
+}

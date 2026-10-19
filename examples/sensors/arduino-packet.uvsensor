@@ -1,0 +1,18 @@
+{
+  "uvscanSensor": 1,
+  "sensor": {
+    "name": "Arduino packets",
+    "description": "arduino-packet.ino: 8-byte binary packets starting AA 55",
+    "protocol": "packet",
+    "baud": 115200,
+    "layout": "start AA 55; length 8; egt 2-3; boost 4-5 signed; battery 6; count 7"
+  },
+  "pids": [
+    { "name": "Exhaust gas temperature", "shortName": "EGT", "kind": "sensor", "category": "sensors",
+      "field": "egt", "units": "°C", "mci": "EGT" },
+    { "name": "Boost", "kind": "sensor", "category": "sensors",
+      "field": "boost", "formula": "N0 / 100", "units": "psi", "mci": "BOOST_ARD" },
+    { "name": "Battery", "kind": "sensor", "category": "sensors",
+      "field": "battery", "formula": "N0 / 10", "units": "V", "mci": "BATT_ARD" }
+  ]
+}

@@ -1,0 +1,17 @@
+{
+  "uvscanSensor": 1,
+  "sensor": {
+    "name": "PLX chain",
+    "description": "PLX SM-AFR, SM-EGT and SM-Boost on the iMFD serial / USB adapter",
+    "protocol": "plx",
+    "baud": 19200
+  },
+  "pids": [
+    { "name": "Wideband AFR", "shortName": "WB AFR", "kind": "sensor", "category": "sensors",
+      "field": "wideband1", "formula": "(N0 / 2.55 + 100) / 10", "units": "AFR", "mci": "WBAFR" },
+    { "name": "Exhaust gas temperature", "shortName": "EGT", "kind": "sensor", "category": "sensors",
+      "field": "egt1", "formula": "N0 / 0.555 + 32", "units": "°F", "mci": "EGT" },
+    { "name": "Boost", "kind": "sensor", "category": "sensors",
+      "field": "boost1", "formula": "N0 / 22.73", "units": "psi", "mci": "BOOST_PLX" }
+  ]
+}
