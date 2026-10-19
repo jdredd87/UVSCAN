@@ -1,10 +1,14 @@
 unit UVScan.SensorEditor;
 
 { The Sensors page: the sensors UVScan reads beside the vehicle (see
-  UVScan.Sensors). A sensor comes from a template or a shared sensor file
-  (Import), or is made from nothing; it gets its port here, and Test shows
-  every field it sends as it comes, with a PID for any of them a tap away.
-  Share writes the sensor and its PIDs to a file for someone else. }
+  UVScan.Sensors), and the builder for them, in four steps:
+    1. the device: a template, a shared sensor file (Import) or nothing;
+       what it sends, its port...
+    2. Test: every field it sends as it comes;
+    3. its PIDs: one for any field (name, formula over the raw value N0,
+       units, MCI), and calculated ones over them, each with its live value;
+    4. Save, and Share / Export: the sensor, its PIDs and the calculated
+       PIDs that use them, as a .uvsensor file for someone else. }
 
 interface
 
@@ -21,6 +25,7 @@ implementation
 
 uses
   System.Classes, System.Types, System.UITypes, System.Math, System.StrUtils, System.JSON, System.IOUtils,
+  System.Generics.Collections, UVScan.Formula,
   FMX.Types, FMX.Controls, FMX.Forms, FMX.StdCtrls, FMX.Edit, FMX.ComboEdit, FMX.ListBox, FMX.Layouts,
   FMX.Dialogs, FMX.Graphics,
   UVScan.Serial, UVScan.JsonFile, UVScan.Share, UVScan.UI.Common, UVScan.UI.Theme, UVScan.Paths;
@@ -67,12 +72,18 @@ type
     edtEvery: TEdit;
     edtDescription: TEdit;
     chkEnabled: TCheckBox;
-    lblPids: TLabel;
+    lblPids: TLabel;            // no PIDs yet: how to add one
     pnlTest: TLayout;
     btnTest: TButton;
+    lblPortHint: TLabel;        // no port yet: why Start test is off
     lblStatus, lblLast: TLabel;
     lbFields: TListBox;
     btnAddPid: TButton;
+    lbPidList: TListBox;        // the sensor's PIDs, with live values
+    FPidRows: TArray<TPidDef>;
+    pnlPidButtons: TLayout;
+    btnPidAdd, btnPidCalc, btnPidEdit, btnPidDelete: TButton;
+    FPidButtonsWidth: Single;
     function Add(C: TControl; Height: Single; Detail: Boolean = True): TControl;
     function Caption(const Text: string; Detail: Boolean = True): TLabel;
     function Row(const Text: string; Field: TControl): TLayout;
@@ -94,6 +105,22 @@ type
     procedure UpdateLayoutNote;
     function ListText(D: TSensorDef): string;
     procedure UpdatePids;
+    procedure UpdateTestButton;
+    procedure PortTyping(Sender: TObject);
+    procedure PidButtonsResized(Sender: TObject);
+    function LinkedCalcs(const SensorName: string): TArray<TPidDef>;
+    function SensorPids(const SensorName: string): TArray<TPidDef>;
+    function TestFields: TArray<string>;
+    function LiveRaw(const Field: string): Double;
+    function LiveValue(P: TPidDef; Depth: Integer = 0): Double;
+    function LiveByMci(const Mci: string): Double;
+    function PidRowText(P: TPidDef): string;
+    function SelectedPid: TPidDef;
+    procedure EditPid(P: TPidDef; Kind: TPidKind; const Field: string);
+    procedure PidAddClick(Sender: TObject);
+    procedure PidCalcClick(Sender: TObject);
+    procedure PidEditClick(Sender: TObject);
+    procedure PidDeleteClick(Sender: TObject);
     procedure SensorClick(Sender: TObject);
     procedure AddClick(Sender: TObject);
     procedure TemplateClick(Sender: TObject);
@@ -115,9 +142,48 @@ type
     destructor Destroy; override;
   end;
 
+  { One PID of the sensor: a value it sends (the field) and a formula over
+    it (N0), or a calculated PID over its PIDs; with what it shows now while
+    the test runs, or for a value typed in. }
+  TSensorPidDialog = class(TComponent)
+  private
+    FPage: TSensorPage;
+    FForm: TForm;
+    FPid: TPidDef;            // nil: a new one
+    FKind: TPidKind;
+    FBox: TVertScrollBox;
+    FY: Single;
+    FLoading: Boolean;
+    FMciTyped: Boolean;       // the MCI was typed: a new name leaves it alone
+    edtName, edtShort, edtFormula, edtMci, edtTry: TEdit;
+    cbField, cbUnits: TComboEdit;
+    lblHelp, lblResult: TLabel;
+    FTimer: TTimer;
+    procedure AddRow(const Caption: string; C: TControl);
+    function AddNote: TLabel;
+    procedure Relayout;
+    procedure BoxResized(Sender: TObject);
+    procedure Changed(Sender: TObject);
+    procedure NameTyping(Sender: TObject);
+    procedure MciTyping(Sender: TObject);
+    procedure OkClick(Sender: TObject);
+  public
+    procedure Build(const Field: string);
+  end;
+
+function Num(V: Double): string;
+begin
+  if IsNan(V) then
+    Result := '--'
+  else
+    Result := FormatFloat('0.###', V, TFormatSettings.Invariant);
+end;
+
 destructor TSensorPage.Destroy;
 begin
-  StopTest;
+  // The form's controls are gone by now: only the test's thread is stopped
+  // (StopTest would update them).
+  FreeAndNil(FReader);
   FWork.Free;
   FPids.Free;
   inherited;
@@ -235,9 +301,10 @@ begin
   btnDelete.Text := 'Delete';
   btnDelete.OnClick := DeleteClick;
 
-  Caption('Sensor');
+  Caption('1. The device');
   edtName := TEdit.Create(FForm);
   edtName.OnChange := NameChanged;
+  edtName.OnChangeTracking := NameChanged; // the list and its PIDs follow as it is typed
   Row('Name', edtName);
   cbProtocol := TComboBox.Create(FForm);
   for P := Low(TSensorProtocol) to High(TSensorProtocol) do
@@ -249,6 +316,7 @@ begin
   cbPort.Items.Add(SensorSimulatorPort);
   cbPort.TextPrompt := 'COM5, a Bluetooth port, 192.168.4.1:23...';
   cbPort.OnChange := FieldChanged;
+  cbPort.OnChangeTracking := PortTyping;
   Row('Port', cbPort);
   cbBaud := TComboEdit.Create(FForm);
   cbBaud.Items.CommaText := '4800,9600,19200,38400,57600,115200';
@@ -275,9 +343,10 @@ begin
   chkEnabled.Text := 'Read it when a scan has its PIDs';
   chkEnabled.OnChange := FieldChanged;
   Add(chkEnabled, 34);
-  lblPids := Note;
 
-  Caption('Test');
+  Caption('2. Test it');
+  lblPortHint := Note;
+  lblPortHint.Text := 'Choose its port above first (Simulator makes up data, to try this without the device).';
   pnlTest := TLayout.Create(FForm);
   Add(pnlTest, 44);
   btnTest := TButton.Create(FForm);
@@ -298,6 +367,39 @@ begin
   btnAddPid.OnClick := AddPidClick;
   Add(btnAddPid, 40);
   lblStatus.Text := 'Start the test to see what the sensor sends: every field and its value.';
+
+  Caption('3. Its PIDs');
+  lblPids := Note;
+  lbPidList := TListBox.Create(FForm);
+  lbPidList.Margins.Top := 6;
+  lbPidList.OnDblClick := PidEditClick;
+  Add(lbPidList, 44);
+  pnlPidButtons := TLayout.Create(FForm);
+  pnlPidButtons.Margins.Top := 8;
+  Add(pnlPidButtons, 48);
+  pnlPidButtons.OnResized := PidButtonsResized;
+  btnPidAdd := TButton.Create(FForm);
+  btnPidAdd.Parent := pnlPidButtons;
+  btnPidAdd.Text := 'Add PID...';
+  btnPidAdd.OnClick := PidAddClick;
+  btnPidCalc := TButton.Create(FForm);
+  btnPidCalc.Parent := pnlPidButtons;
+  btnPidCalc.Text := 'Add calculated...';
+  btnPidCalc.OnClick := PidCalcClick;
+  btnPidEdit := TButton.Create(FForm);
+  btnPidEdit.Parent := pnlPidButtons;
+  btnPidEdit.Text := 'Edit...';
+  btnPidEdit.OnClick := PidEditClick;
+  btnPidDelete := TButton.Create(FForm);
+  btnPidDelete.Parent := pnlPidButtons;
+  btnPidDelete.Text := 'Delete PID';
+  btnPidDelete.OnClick := PidDeleteClick;
+
+  Caption('4. Save it');
+  with Note do
+    Text := 'Save (top right) keeps the sensor and its PIDs; then tick them in the PID list to scan them. ' +
+      IfThen(CanShareFiles, 'Share...', 'Export...') + ' (above) writes it all as a ' + SensorFileExt +
+      ' file for someone else, who adds it with Import.';
 
   FTimer := TTimer.Create(FForm);
   FTimer.Enabled := False;
@@ -326,6 +428,7 @@ var
   W: Single;
   L: TLabel;
   N: Integer;
+  Moved: Boolean;
 begin
   if pnlButtons = nil then
     Exit; // not built yet
@@ -345,8 +448,26 @@ begin
   FitTextWidth(btnTest, 140);
   N := Max(1, lbSensors.Count);
   lbSensors.Height := Min(N, 5) * 40 + 4;
-  // every field without scrolling inside the page's own scrolling
+  // every field and PID without scrolling inside the page's own scrolling
   lbFields.Height := Max(1, lbFields.Count) * 36 + 4;
+  lbPidList.Height := Max(1, lbPidList.Count) * 40 + 4;
+  // empty lists (no test yet, no PIDs yet) take no room
+  if CurrentDef <> nil then
+  begin
+    Moved := False;
+    for var Pair in [TPair<TControl, Boolean>.Create(lbFields, lbFields.Count > 0),
+      TPair<TControl, Boolean>.Create(btnAddPid, lbFields.Count > 0),
+      TPair<TControl, Boolean>.Create(lbPidList, lbPidList.Count > 0)] do
+      if Pair.Key.Visible <> Pair.Value then
+      begin
+        Pair.Key.Visible := Pair.Value;
+        Moved := True;
+      end;
+    if Moved then
+      KeepOrder;
+  end;
+  FPidButtonsWidth := pnlPidButtons.Width;
+  FlowControls(pnlPidButtons, [btnPidAdd, btnPidCalc, btnPidEdit, btnPidDelete]);
 end;
 
 procedure TSensorPage.FormCloseQuery(Sender: TObject; var CanClose: Boolean);
@@ -462,26 +583,203 @@ begin
   lblLast.Text := '';
   lblStatus.Text := 'Start the test to see what the sensor sends: every field and its value.';
   UpdatePids;
+  UpdateTestButton;
   Relayout;
 end;
 
+{ The PIDs list: the sensor's PIDs and the calculated ones over them, each
+  with its value now while the test runs; the selection kept. }
 procedure TSensorPage.UpdatePids;
 var
-  Names: string;
-  P: TPidDef;
+  P, Keep: TPidDef;
+  Item: TListBoxItem;
   D: TSensorDef;
+  I: Integer;
 begin
   D := CurrentDef;
   if D = nil then
     Exit;
-  Names := '';
-  for P in PidsOf(D.Name) do
-    Names := Names + IfThen(Names <> '', ', ') + Format('%s (%s)', [P.DisplayName, P.SensorField]);
-  if Names = '' then
-    lblPids.Text := 'No PIDs read it yet: start the test, pick a field and add a PID for it.'
+  Keep := SelectedPid;
+  FPidRows := SensorPids(D.Name);
+  if lbPidList.Count = Length(FPidRows) then
+  begin
+    // the same rows: only their text (a rebuild would lose a tap)
+    for I := 0 to High(FPidRows) do
+      lbPidList.ListItems[I].Text := PidRowText(FPidRows[I]);
+  end
   else
-    lblPids.Text := 'Its PIDs: ' + Names + '. Formulas and units are in Edit PIDs.';
+  begin
+    lbPidList.BeginUpdate;
+    try
+      lbPidList.Clear;
+      for P in FPidRows do
+      begin
+        Item := TListBoxItem.Create(lbPidList);
+        Item.Height := 40;
+        Item.Text := PidRowText(P);
+        lbPidList.AddObject(Item);
+        if P = Keep then
+          Item.IsSelected := True;
+      end;
+    finally
+      lbPidList.EndUpdate;
+    end;
+  end;
+  if Length(FPidRows) = 0 then
+    lblPids.Text := 'None yet. Start the test, pick one of the values it sends and Add a PID for this field; ' +
+      'or Add PID... and type the field.'
+  else
+    lblPids.Text := 'Tap one to change its name, formula (N0 = the value it sends) or units. ' +
+      'Calculated PIDs work out a value from these, e.g. %WBAFR% - 14.7.';
+  btnPidEdit.Enabled := Length(FPidRows) > 0;
+  btnPidDelete.Enabled := Length(FPidRows) > 0;
   Relayout;
+end;
+
+function TSensorPage.PidRowText(P: TPidDef): string;
+var
+  V: Double;
+begin
+  if P.Kind = pkSensor then
+    Result := Format('%s   %s', [P.DisplayName, P.SensorField])
+  else
+    Result := Format('%s   = %s', [P.DisplayName, P.FormulaText]);
+  if FReader <> nil then
+  begin
+    V := LiveValue(P);
+    Result := Result + '   ' + P.FormatValue(V) + IfThen((P.Units <> '') and not IsNan(V), ' ' + P.Units);
+  end
+  else if P.Units <> '' then
+    Result := Result + '   (' + P.Units + ')';
+end;
+
+function TSensorPage.SelectedPid: TPidDef;
+begin
+  if (lbPidList <> nil) and (lbPidList.ItemIndex >= 0) and (lbPidList.ItemIndex <= High(FPidRows)) then
+    Result := FPidRows[lbPidList.ItemIndex]
+  else
+    Result := nil;
+end;
+
+{ Calculated PIDs whose formula uses one of the sensor's PIDs. }
+function TSensorPage.LinkedCalcs(const SensorName: string): TArray<TPidDef>;
+var
+  Mcis: TArray<string>;
+  P: TPidDef;
+  I: Integer;
+  V: string;
+begin
+  Result := nil;
+  Mcis := nil;
+  for P in PidsOf(SensorName) do
+    if P.Mci <> '' then
+      Mcis := Mcis + [UpperCase(P.Mci)];
+  if Mcis = nil then
+    Exit;
+  for I := 0 to FPids.Count - 1 do
+  begin
+    P := FPids[I];
+    if (P.Kind <> pkCalculated) or (P.FormulaError <> '') then
+      Continue;
+    for V in P.Formula.Variables do
+      if IndexStr(V, Mcis) >= 0 then
+      begin
+        Result := Result + [P];
+        Break;
+      end;
+  end;
+end;
+
+function TSensorPage.SensorPids(const SensorName: string): TArray<TPidDef>;
+begin
+  Result := PidsOf(SensorName) + LinkedCalcs(SensorName);
+end;
+
+{ Live values from the running test }
+
+function TSensorPage.LiveRaw(const Field: string): Double;
+begin
+  if (FReader = nil) or not FReader.TryGet(Field, SensorMaxAgeMs, Result) then
+    Result := NaN;
+end;
+
+function TSensorPage.LiveValue(P: TPidDef; Depth: Integer): Double;
+var
+  Raw: Double;
+  Vars: TArray<string>;
+  Values: TArray<Double>;
+  I: Integer;
+begin
+  Result := NaN;
+  if (P = nil) or (Depth > 4) or (P.FormulaError <> '') then
+    Exit;
+  try
+    if P.Kind = pkSensor then
+    begin
+      if (CurrentDef = nil) or not SameText(P.SensorName, CurrentDef.Name) then
+        Exit;
+      Raw := LiveRaw(P.SensorField);
+      if IsNan(Raw) or P.Formula.IsEmpty then
+        Exit(Raw);
+      Result := P.Formula.Evaluate([Raw], []);
+    end
+    else if P.Kind = pkCalculated then
+    begin
+      Vars := P.Formula.Variables;
+      SetLength(Values, Length(Vars));
+      for I := 0 to High(Vars) do
+        Values[I] := LiveValue(FPids.FindByMci(Vars[I]), Depth + 1);
+      if not P.Formula.IsEmpty then
+        Result := P.Formula.Evaluate([], Values);
+    end;
+  except
+    Result := NaN;
+  end;
+end;
+
+function TSensorPage.LiveByMci(const Mci: string): Double;
+begin
+  Result := LiveValue(FPids.FindByMci(Mci));
+end;
+
+{ The fields the test has seen, for the PID dialog's field box. }
+function TSensorPage.TestFields: TArray<string>;
+var
+  F: TSensorField;
+begin
+  Result := nil;
+  if FReader <> nil then
+    for F in FReader.Fields do
+      Result := Result + [F.Name];
+end;
+
+procedure TSensorPage.UpdateTestButton;
+var
+  HasPort: Boolean;
+begin
+  if btnTest = nil then
+    Exit;
+  HasPort := Trim(cbPort.Text) <> '';
+  btnTest.Enabled := HasPort or (FReader <> nil);
+  if lblPortHint.Visible = HasPort then
+  begin
+    lblPortHint.Visible := not HasPort;
+    KeepOrder;
+    Relayout;
+  end;
+end;
+
+procedure TSensorPage.PortTyping(Sender: TObject);
+begin
+  UpdateTestButton;
+end;
+
+procedure TSensorPage.PidButtonsResized(Sender: TObject);
+begin
+  if (btnPidDelete = nil) or SameValue(pnlPidButtons.Width, FPidButtonsWidth, 0.5) then
+    Exit;
+  FPidButtonsWidth := pnlPidButtons.Width;
+  FlowControls(pnlPidButtons, [btnPidAdd, btnPidCalc, btnPidEdit, btnPidDelete]);
 end;
 
 procedure TSensorPage.ApplyFields;
@@ -515,7 +813,9 @@ begin
     Relayout;
     Exit; // typing: a running test goes on with the layout it started with
   end;
-  if FReader <> nil then
+  if Sender = cbPort then
+    UpdateTestButton;
+  if (FReader <> nil) and (Sender <> edtName) and (Sender <> edtDescription) then
     StartTest; // test what is there now
   FLoading := True;
   try
@@ -775,7 +1075,7 @@ begin
   Name := D.Name;
   for var C in '\/:*?"<>|' do
     Name := StringReplace(Name, C, ' ', [rfReplaceAll]);
-  Root := SensorPackage(D, PidsOf(D.Name));
+  Root := SensorPackage(D, SensorPids(D.Name));
   try
     if CanShareFiles then
     begin
@@ -813,7 +1113,7 @@ begin
   D := CurrentDef;
   if D = nil then
     Exit;
-  Pids := PidsOf(D.Name);
+  Pids := SensorPids(D.Name);
   Confirm(Format('Delete the sensor "%s"%s?', [D.Name,
     IfThen(Length(Pids) > 0, Format(' and its %d PID(s)', [Length(Pids)]))]),
     procedure
@@ -821,7 +1121,7 @@ begin
       P: TPidDef;
     begin
       StopTest;
-      for P in PidsOf(FWork[FCurrent].Name) do
+      for P in SensorPids(FWork[FCurrent].Name) do
       begin
         FPids.Delete(FPids.IndexOf(P));
         FPidsChanged := True;
@@ -859,6 +1159,7 @@ begin
   FReader := TSensorReader.Create(CurrentDef);
   btnTest.Text := 'Stop test';
   FTimer.Enabled := True;
+  UpdateTestButton;
   TimerTick(nil);
 end;
 
@@ -868,12 +1169,19 @@ begin
     FTimer.Enabled := False;
   FreeAndNil(FReader);
   if btnTest <> nil then
+  begin
     btnTest.Text := 'Start test';
+    UpdateTestButton;
+    UpdatePids; // no live values now
+  end;
 end;
 
 procedure TSensorPage.TimerTick(Sender: TObject);
 var
   F: TSensorField;
+  Fields: TArray<TSensorField>;
+  Same: Boolean;
+  I: Integer;
   Keep: string;
   Item: TListBoxItem;
   Last, S: string;
@@ -885,81 +1193,519 @@ begin
     S := S + Format(' (%d %s)', [FReader.Packets, IfThen(FReader.Def.Protocol = spText, 'lines', 'packets')]);
   lblStatus.Text := S;
   Last := FReader.LastData;
-  if Length(Last) > 160 then
-    Last := Copy(Last, 1, 160) + '...';
+  if (FReader.Def.Protocol = spPacket) and (Last <> '') then
+  begin
+    // each byte with its number, for the layout
+    var Bytes := Last.Split([' ']);
+    Last := '';
+    for I := 0 to High(Bytes) do
+      Last := Last + IfThen(I > 0, '  ') + Format('%d:%s', [I, Bytes[I]]);
+  end;
+  if Length(Last) > 240 then
+    Last := Copy(Last, 1, 240) + '...';
   lblLast.Text := IfThen(Last <> '', 'Last: ' + Last, '');
   Keep := '';
   if (lbFields.ItemIndex >= 0) and (lbFields.Selected <> nil) then
     Keep := lbFields.Selected.TagString;
-  lbFields.BeginUpdate;
-  try
-    lbFields.Clear;
-    for F in FReader.Fields do
-    begin
-      Item := TListBoxItem.Create(lbFields);
-      Item.TagString := F.Name;
-      Item.Height := 36;
-      if IsNan(F.Value) then
-        Item.Text := F.Name + '   --'
-      else
-        Item.Text := F.Name + '   ' + FormatFloat('0.###', F.Value, TFormatSettings.Invariant);
-      if F.AgeMs > SensorMaxAgeMs then
-        Item.Text := Item.Text + Format('   (%.0f s ago)', [F.AgeMs / 1000]);
-      lbFields.AddObject(Item);
-      if F.Name = Keep then
-        Item.IsSelected := True;
+  Fields := FReader.Fields;
+  // The same fields as shown: their values only. A rebuild four times a
+  // second could lose a tap (the item gone between touch and release).
+  Same := lbFields.Count = Length(Fields);
+  for I := 0 to High(Fields) do
+    Same := Same and (lbFields.ListItems[I].TagString = Fields[I].Name);
+  if not Same then
+  begin
+    lbFields.BeginUpdate;
+    try
+      lbFields.Clear;
+      for F in Fields do
+      begin
+        Item := TListBoxItem.Create(lbFields);
+        Item.TagString := F.Name;
+        Item.Height := 36;
+        lbFields.AddObject(Item);
+        if F.Name = Keep then
+          Item.IsSelected := True;
+      end;
+    finally
+      lbFields.EndUpdate;
     end;
-  finally
-    lbFields.EndUpdate;
   end;
-  Relayout;
+  for I := 0 to High(Fields) do
+  begin
+    F := Fields[I];
+    if IsNan(F.Value) then
+      S := F.Name + '   --'
+    else
+      S := F.Name + '   ' + FormatFloat('0.###', F.Value, TFormatSettings.Invariant);
+    if F.AgeMs > SensorMaxAgeMs then
+      S := S + Format('   (%.0f s ago)', [F.AgeMs / 1000]);
+    if lbFields.ListItems[I].Text <> S then
+      lbFields.ListItems[I].Text := S;
+  end;
+  UpdatePids; // their live values
 end;
 
 procedure TSensorPage.AddPidClick(Sender: TObject);
-var
-  Field, Suggest, Title, Formula, Units: string;
-  D: TSensorDef;
 begin
-  D := CurrentDef;
-  if (D = nil) or (lbFields.Selected = nil) then
+  if (CurrentDef = nil) or (lbFields.Selected = nil) then
   begin
-    ShowInfo('Start the test, then pick one of the fields the sensor sends.');
+    ShowInfo('Start the test, then pick one of the values the sensor sends.');
     Exit;
   end;
-  Field := lbFields.Selected.TagString;
-  if not SuggestSensorPid(D.Protocol, Field, Title, Formula, Units) then
-    Title := Field;
-  if Title = '' then
-    Title := Field;
-  // a second module or wideband of the kind: its number too
-  if (D.Protocol in [spMts, spPlx]) and (Field.Length > 0) and CharInSet(Field[High(Field)], ['2'..'9']) and
-    not Title.EndsWith(Field[High(Field)]) then
-    Title := Title + ' ' + Field[High(Field)];
-  Suggest := D.Name + ' ' + Title;
-  AskText('Add a PID', Format('A name for %s''s %s', [D.Name, Field]), Suggest,
-    procedure(Name: string)
-    var
-      P: TPidDef;
+  EditPid(nil, pkSensor, lbFields.Selected.TagString);
+end;
+
+procedure TSensorPage.PidAddClick(Sender: TObject);
+var
+  Field: string;
+begin
+  if CurrentDef = nil then
+    Exit;
+  Field := '';
+  if lbFields.Selected <> nil then
+    Field := lbFields.Selected.TagString;
+  EditPid(nil, pkSensor, Field);
+end;
+
+procedure TSensorPage.PidCalcClick(Sender: TObject);
+begin
+  if CurrentDef <> nil then
+    EditPid(nil, pkCalculated, '');
+end;
+
+procedure TSensorPage.PidEditClick(Sender: TObject);
+var
+  P: TPidDef;
+begin
+  P := SelectedPid;
+  if P = nil then
+  begin
+    if Length(FPidRows) > 0 then
+      ShowInfo('Pick one of its PIDs first.');
+    Exit;
+  end;
+  EditPid(P, P.Kind, P.SensorField);
+end;
+
+procedure TSensorPage.PidDeleteClick(Sender: TObject);
+var
+  P: TPidDef;
+begin
+  P := SelectedPid;
+  if P = nil then
+    Exit;
+  Confirm(Format('Delete the PID "%s"?', [P.DisplayName]),
+    procedure
     begin
-      if Name = '' then
-        Exit;
-      P := TPidDef.Create;
-      P.Id := FPids.NextFreeId;
-      P.LongName := Name;
-      P.Kind := pkSensor;
-      P.Category := pcSensors;
-      P.SensorName := D.Name;
-      P.SensorField := Field;
-      P.PidCode := SensorPidCode;
-      P.Mci := FreeMci(Name);
-      P.Units := Units;
-      P.FormulaText := Formula;
-      FPids.Add(P);
+      FPids.Delete(FPids.IndexOf(P));
       FPidsChanged := True;
+      lbPidList.Clear; // rebuilt
       UpdatePids;
-      ShowInfo(Format('Added the PID "%s" (in formulas: %%%s%%). After Save, tick it in the PID list ' +
-        'to scan it; its formula and units are in Edit PIDs.', [Name, P.Mci]));
     end);
+end;
+
+{ The PID dialog }
+
+procedure TSensorPage.EditPid(P: TPidDef; Kind: TPidKind; const Field: string);
+var
+  F: TForm;
+  Dlg: TSensorPidDialog;
+begin
+  F := TForm.CreateNew(nil);
+  Dlg := TSensorPidDialog.Create(F);
+  Dlg.FPage := Self;
+  Dlg.FForm := F;
+  Dlg.FPid := P;
+  Dlg.FKind := Kind;
+  Dlg.Build(Field);
+  ShowDialog(F,
+    procedure(R: TModalResult)
+    begin
+      Dlg.FTimer.Enabled := False;
+      if R = mrOk then
+      begin
+        lbPidList.Clear; // rebuilt with the change
+        UpdatePids;
+      end;
+    end);
+end;
+
+procedure TSensorPidDialog.AddRow(const Caption: string; C: TControl);
+var
+  L: TLabel;
+begin
+  L := TLabel.Create(FForm);
+  L.Parent := FBox;
+  L.Align := TAlignLayout.Top;
+  L.Margins.Top := 10;
+  L.Height := 22;
+  L.Position.Y := FY;
+  L.Text := Caption;
+  FY := FY + 1000;
+  C.Parent := FBox;
+  C.Align := TAlignLayout.Top;
+  C.Margins.Top := 2;
+  C.Height := IfThen(IsMobile, 40, 32);
+  C.Position.Y := FY;
+  FY := FY + 1000;
+end;
+
+function TSensorPidDialog.AddNote: TLabel;
+begin
+  Result := TLabel.Create(FForm);
+  Result.Parent := FBox;
+  Result.Align := TAlignLayout.Top;
+  Result.Margins.Top := 4;
+  Result.WordWrap := True;
+  Result.StyledSettings := Result.StyledSettings - [TStyledSetting.FontColor];
+  Result.TextSettings.FontColor := Palette.Muted;
+  Result.Position.Y := FY;
+  FY := FY + 1000;
+end;
+
+procedure TSensorPidDialog.Relayout;
+var
+  W: Single;
+begin
+  W := FBox.Width - FBox.Padding.Left - FBox.Padding.Right - 4;
+  if W < 100 then
+    Exit;
+  for var L in [lblHelp, lblResult] do
+    if L <> nil then
+      L.Height := Max(20, WrappedTextHeight(L, W) + 4);
+end;
+
+procedure TSensorPidDialog.BoxResized(Sender: TObject);
+begin
+  Relayout;
+end;
+
+procedure TSensorPidDialog.Build(const Field: string);
+var
+  Bar: TLayout;
+  B, Ok: TButton;
+  D: TSensorDef;
+  Title, Formula, Units, F: string;
+begin
+  D := FPage.CurrentDef;
+  if FPid <> nil then
+    FForm.Caption := 'PID: ' + FPid.DisplayName
+  else if FKind = pkCalculated then
+    FForm.Caption := 'Add a calculated PID'
+  else
+    FForm.Caption := 'Add a PID';
+  FForm.Position := TFormPosition.MainFormCenter;
+  FForm.ClientWidth := 500;
+  FForm.ClientHeight := 620;
+  Bar := TLayout.Create(FForm);
+  Bar.Parent := FForm;
+  Bar.Align := TAlignLayout.Bottom;
+  Bar.Height := 52;
+  B := TButton.Create(FForm);
+  B.Parent := Bar;
+  B.Align := TAlignLayout.Right;
+  B.Text := 'Cancel';
+  B.Cancel := True;
+  B.ModalResult := mrCancel;
+  Ok := TButton.Create(FForm);
+  Ok.Parent := Bar;
+  Ok.Align := TAlignLayout.Right;
+  Ok.Text := 'OK';
+  Ok.OnClick := OkClick;
+  FBox := TVertScrollBox.Create(FForm);
+  FBox.Parent := FForm;
+  FBox.Align := TAlignLayout.Client;
+  FBox.Padding.Rect := TRectF.Create(16, 4, 16, 12);
+  FBox.OnResized := BoxResized;
+  FY := 0;
+
+  FLoading := True;
+  try
+    edtName := TEdit.Create(FForm);
+    edtName.OnChangeTracking := NameTyping;
+    AddRow('Name', edtName);
+    edtShort := TEdit.Create(FForm);
+    edtShort.TextPrompt := 'optional: for the grid and gauges';
+    AddRow('Short name', edtShort);
+    if FKind = pkSensor then
+    begin
+      cbField := TComboEdit.Create(FForm);
+      for F in FPage.TestFields do
+        cbField.Items.Add(F);
+      cbField.TextPrompt := 'afr1, egt, 1... (the test lists them)';
+      cbField.OnChange := Changed;
+      cbField.OnChangeTracking := Changed;
+      AddRow('The value it sends (field)', cbField);
+    end;
+    edtFormula := TEdit.Create(FForm);
+    edtFormula.OnChangeTracking := Changed;
+    AddRow('Formula', edtFormula);
+    lblHelp := AddNote;
+    if FKind = pkSensor then
+      lblHelp.Text := 'N0 is the value it sends; empty shows it as it is. For example N0 * 9 / 5 + 32 ' +
+        'turns degrees C into F, N0 / 100 undoes a value sent x 100.'
+    else
+      lblHelp.Text := 'Other PIDs by their name in formulas, for example %WBAFR% - 14.7, or ' +
+        '(%EGT1% + %EGT2%) / 2 for the average of two.';
+    if FKind = pkSensor then
+    begin
+      edtTry := TEdit.Create(FForm);
+      edtTry.TextPrompt := 'a number, when the test is not running';
+      edtTry.OnChangeTracking := Changed;
+      AddRow('Try it with N0 =', edtTry);
+    end;
+    lblResult := AddNote;
+    lblResult.StyledSettings := lblResult.StyledSettings - [TStyledSetting.Style];
+    lblResult.TextSettings.Font.Style := [TFontStyle.fsBold];
+    cbUnits := TComboEdit.Create(FForm);
+    for F in ['AFR', 'lambda', #$00B0'C', #$00B0'F', 'psi', 'kPa', 'bar', 'inHg', 'V', '%', 'RPM', 'MPH', 'ms'] do
+      cbUnits.Items.Add(F);
+    cbUnits.OnChangeTracking := Changed;
+    cbUnits.OnChange := Changed;
+    AddRow('Units', cbUnits);
+    edtMci := TEdit.Create(FForm);
+    edtMci.CharCase := TEditCharCase.ecUpperCase;
+    edtMci.TextPrompt := 'e.g. WBAFR: other formulas use it as %WBAFR%';
+    edtMci.OnChangeTracking := MciTyping;
+    AddRow('Name in formulas (MCI)', edtMci);
+
+    if FPid <> nil then
+    begin
+      edtName.Text := FPid.LongName;
+      edtShort.Text := FPid.ShortName;
+      edtFormula.Text := FPid.FormulaText;
+      cbUnits.Text := FPid.Units;
+      edtMci.Text := FPid.Mci;
+      FMciTyped := True;
+      if cbField <> nil then
+        cbField.Text := FPid.SensorField;
+    end
+    else if (FKind = pkSensor) and (Field <> '') then
+    begin
+      // what the protocol knows about the field
+      cbField.Text := Field;
+      if not SuggestSensorPid(D.Protocol, Field, Title, Formula, Units) or (Title = '') then
+        Title := Field;
+      // a second module or wideband of the kind: its number too
+      if (D.Protocol in [spMts, spPlx]) and CharInSet(Field[High(Field)], ['2'..'9']) and
+        not Title.EndsWith(Field[High(Field)]) then
+        Title := Title + ' ' + Field[High(Field)];
+      edtName.Text := D.Name + ' ' + Title;
+      edtFormula.Text := Formula;
+      cbUnits.Text := Units;
+      edtMci.Text := FPage.FreeMci(edtName.Text);
+    end;
+  finally
+    FLoading := False;
+  end;
+  FTimer := TTimer.Create(FForm);
+  FTimer.Interval := 500;
+  FTimer.OnTimer := Changed; // live values
+  FTimer.Enabled := True;
+  MakePage(FForm, FForm.Caption, Ok, 'OK');
+  if not IsMobile then
+    FForm.ActiveControl := edtName; // (a phone would open its keyboard over the page)
+  Changed(nil);
+end;
+
+procedure TSensorPidDialog.NameTyping(Sender: TObject);
+begin
+  if FLoading or FMciTyped or (FPid <> nil) then
+    Exit;
+  FLoading := True;
+  try
+    edtMci.Text := FPage.FreeMci(edtName.Text);
+  finally
+    FLoading := False;
+  end;
+end;
+
+procedure TSensorPidDialog.MciTyping(Sender: TObject);
+begin
+  if not FLoading then
+    FMciTyped := True;
+end;
+
+{ What the PID shows now (live, or for the value typed in), or what is wrong. }
+procedure TSensorPidDialog.Changed(Sender: TObject);
+var
+  F: TFormula;
+  Raw, V: Double;
+  Vars, Missing: TArray<string>;
+  Values: TArray<Double>;
+  I: Integer;
+  Field, Msg, Units: string;
+  Bad: Boolean;
+begin
+  if (lblResult = nil) or FLoading then
+    Exit;
+  Bad := False;
+  Units := Trim(cbUnits.Text);
+  try
+    F := TFormula.Create(Trim(edtFormula.Text));
+  except
+    on E: EFormulaError do
+    begin
+      F := nil;
+      Bad := True;
+      Msg := 'Formula: ' + E.Message;
+    end;
+  end;
+  if F <> nil then
+    try
+      if FKind = pkSensor then
+      begin
+        Field := LowerCase(Trim(cbField.Text));
+        Raw := FPage.LiveRaw(Field);
+        if not IsNan(Raw) then
+          Msg := Format('Now: %s = %s', [Field, Num(Raw)])
+        else if TryStrToFloat(Trim(edtTry.Text), Raw, TFormatSettings.Invariant) then
+          Msg := 'With N0 = ' + Num(Raw)
+        else
+          Raw := NaN;
+        if Field = '' then
+          Msg := 'Choose the value it sends.'
+        else if IsNan(Raw) then
+          Msg := 'Start the test on the Sensors page to see it with live values, or try a number above.'
+        else
+        begin
+          if F.IsEmpty then
+            V := Raw
+          else
+            V := F.Evaluate([Raw], []);
+          Msg := Msg + '   ' + #$2192 + '   ' + Num(V) + IfThen(Units <> '', ' ' + Units);
+        end;
+      end
+      else if F.IsEmpty then
+        Msg := 'Type a formula over other PIDs.'
+      else
+      begin
+        Vars := F.Variables;
+        Missing := nil;
+        SetLength(Values, Length(Vars));
+        for I := 0 to High(Vars) do
+        begin
+          if FPage.FPids.FindByMci(Vars[I]) = nil then
+            Missing := Missing + ['%' + Vars[I] + '%'];
+          Values[I] := FPage.LiveByMci(Vars[I]);
+        end;
+        V := F.Evaluate([], Values);
+        if Missing <> nil then
+        begin
+          Bad := True;
+          Msg := 'No PID has the name ' + string.Join(', ', Missing);
+        end
+        else if IsNan(V) then
+          Msg := 'Uses %' + string.Join('%, %', Vars) + '%. Start the test to see it with live values.'
+        else
+          Msg := 'Now: ' + Num(V) + IfThen(Units <> '', ' ' + Units);
+      end;
+    finally
+      F.Free;
+    end;
+  lblResult.StyledSettings := lblResult.StyledSettings - [TStyledSetting.FontColor];
+  if Bad then
+    lblResult.TextSettings.FontColor := Palette.Bad
+  else
+    lblResult.TextSettings.FontColor := Palette.Text;
+  lblResult.Text := Msg;
+  Relayout;
+end;
+
+procedure TSensorPidDialog.OkClick(Sender: TObject);
+var
+  Name, Mci, OldMci, Field: string;
+  P, Q: TPidDef;
+  New: Boolean;
+  Renamed: TDictionary<string, string>;
+  I: Integer;
+begin
+  Name := Trim(edtName.Text);
+  if Name = '' then
+  begin
+    ShowWarning('Give the PID a name');
+    Exit;
+  end;
+  Field := '';
+  if FKind = pkSensor then
+  begin
+    Field := LowerCase(Trim(cbField.Text));
+    if Field = '' then
+    begin
+      ShowWarning('Choose the value it sends (the field): the test lists them');
+      Exit;
+    end;
+  end
+  else if Trim(edtFormula.Text) = '' then
+  begin
+    ShowWarning('A calculated PID needs a formula over other PIDs, e.g. %WBAFR% - 14.7');
+    Exit;
+  end;
+  try
+    TFormula.Create(Trim(edtFormula.Text)).Free;
+  except
+    on E: EFormulaError do
+    begin
+      ShowWarning('Formula: ' + E.Message);
+      Exit;
+    end;
+  end;
+  Mci := UpperCase(StringReplace(StringReplace(Trim(edtMci.Text), '%', '', [rfReplaceAll]), ' ', '', [rfReplaceAll]));
+  if Mci <> '' then
+  begin
+    Q := FPage.FPids.FindByMci(Mci);
+    if (Q <> nil) and (Q <> FPid) then
+    begin
+      ShowWarning(Format('"%s" already has the name %%%s%% in formulas: choose another', [Q.DisplayName, Mci]));
+      Exit;
+    end;
+  end;
+  New := FPid = nil;
+  if New then
+  begin
+    P := TPidDef.Create;
+    P.Id := FPage.FPids.NextFreeId;
+    P.Kind := FKind;
+    if FKind = pkSensor then
+    begin
+      P.Category := pcSensors;
+      P.PidCode := SensorPidCode;
+      P.SensorName := FPage.CurrentDef.Name;
+    end
+    else
+    begin
+      P.Category := pcCalculated;
+      P.PidCode := 'FPID';
+    end;
+  end
+  else
+    P := FPid;
+  OldMci := P.Mci;
+  P.LongName := Name;
+  P.ShortName := Trim(edtShort.Text);
+  P.FormulaText := Trim(edtFormula.Text);
+  P.Units := Trim(cbUnits.Text);
+  P.Mci := Mci;
+  if FKind = pkSensor then
+    P.SensorField := Field;
+  if New then
+    FPage.FPids.Add(P);
+  // formulas that used its old name follow it
+  if (OldMci <> '') and (Mci <> '') and not SameText(OldMci, Mci) then
+  begin
+    Renamed := TDictionary<string, string>.Create;
+    try
+      Renamed.Add(UpperCase(OldMci), Mci);
+      for I := 0 to FPage.FPids.Count - 1 do
+        if Pos('%', FPage.FPids[I].FormulaText) > 0 then
+          FPage.FPids[I].FormulaText := RenameMcis(FPage.FPids[I].FormulaText, Renamed);
+    finally
+      Renamed.Free;
+    end;
+  end;
+  FPage.FPidsChanged := True;
+  FForm.ModalResult := mrOk;
 end;
 
 { An MCI for a new PID, so formulas can use it as %NAME%: its name in

@@ -20,7 +20,7 @@ Then choose the sensor's **Port**, try it with **Start test**, and **Save**. Its
 
 ## Making your own
 
-The easiest way: set the sensor up on the Sensors page (or start from one of these), add PIDs for its fields from **Start test**, then **Export…** (Windows) or **Share…** (phone) writes a `.uvsensor` file. The port is left out; whoever imports it picks their own.
+The easiest way: build it on the Sensors page (or start from one of these) — the device, **Start test**, its PIDs with their formulas and any calculated ones (see the [video](../../docs/media/phone-sensor-builder.mp4)) — then **Export…** (Windows) or **Share…** (phone) writes the `.uvsensor` file, calculated PIDs included. The port is left out; whoever imports it picks their own.
 
 The files are plain JSON, so they can also be written by hand:
 

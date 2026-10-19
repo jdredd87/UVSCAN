@@ -299,6 +299,9 @@ function SensorPackage(Def: TSensorDef; const Pids: array of TPidDef): TJSONObje
 function ImportSensorPackage(Root: TJSONObject; Sensors: TSensorCatalog; Catalog: TPidCatalog;
   out AddedPids: TArray<Integer>): string;
 function SensorTemplates: TArray<TSensorTemplate>;
+{ Formula with each %NAME% that Renamed (upper-case old MCI -> new) has
+  given another name. }
+function RenameMcis(const Formula: string; Renamed: TDictionary<string, string>): string;
 
 implementation
 
@@ -1593,7 +1596,6 @@ begin
   Result.AddPair('pids', Arr);
 end;
 
-{ Formula with each %NAME% that Renamed has given its new name. }
 function RenameMcis(const Formula: string; Renamed: TDictionary<string, string>): string;
 var
   I, J: Integer;
