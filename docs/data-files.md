@@ -9,6 +9,7 @@ Everything UVScan reads or writes, apart from CSV logs, lives in **`C:\ProgramDa
 | [`display.json`](#displayjson) | PID looks, alert levels, dashboard gauges | *Display & alerts…*, Dashboard |
 | [`controls.json`](#controlsjson) | Real‑time controls | Real‑time controls tab |
 | [`logviews.json`](#logviewsjson) | Saved log viewer set‑ups | Log viewer (*Save view…*) |
+| [`sensors.json`](#sensorsjson) | Sensors read beside the car (widebands…) | *Sensors…* |
 | [`dtcs.json`](#dtcsjson) | Trouble code descriptions | (text editor) |
 | [`settings.json`](#settingsjson) | Port, selection, window, options | written on exit |
 
@@ -37,8 +38,8 @@ The only CSV files UVScan writes are scan logs; the only CSV it reads is an old 
 |---|---|
 | `id` | Unique number; scan lists, display settings and settings refer to PIDs by it. |
 | `name`, `shortName`, `description` | Shown in the list, grid and log header. |
-| `kind` | `vehicle` (read from the PCM: needs `pid` + `bytes`), `calculated` (formula over other PIDs) or `analog` (AVT input: needs `analogChannel` 1–3). |
-| `category` | `engine`, `transmission`, `indicators`, `body`, `accessories`, `calculated`, `analog` or `other` (the list groups). |
+| `kind` | `vehicle` (read from the PCM: needs `pid` + `bytes`), `calculated` (formula over other PIDs), `analog` (AVT input: needs `analogChannel` 1–3) or `sensor` (a field of a sensor in [`sensors.json`](#sensorsjson): needs `sensor` + `field`; `N0` in the formula is its value). |
+| `category` | `engine`, `transmission`, `indicators`, `body`, `accessories`, `calculated`, `analog`, `sensors` or `other` (the list groups). |
 | `pid`, `bytes` | Mode $22 PID number (hex) and answer size, 1–4. |
 | `formula` | `N0`/`N1` = data byte 1, `N2`–`N4` = bytes 2–4; `%MCI%` = another PID's value; `RUNTIME`, `LOGTIME`; `+ - * / << >> & \|`, comparisons, `? :`. |
 | `units`, `format` | Units text; `format` is a legacy printf‑style result format (`%f`, `%d`, …). |
@@ -136,6 +137,27 @@ The top‑level `"defaults"` number records which set of built‑ins the file ha
 | `visible`, `color`, `width` | The line (`width` 1‑4). |
 | `min`, `max` | Fixed scale; leave both out for automatic. |
 | `levelColors`, `levels` | Colour the line by level; levels as in `display.json`. |
+
+## sensors.json
+
+```json
+{ "version": 1,
+  "sensors": [
+    { "name": "Wideband", "protocol": "mts", "port": "COM5", "baud": 19200,
+      "description": "Innovate LC-1 on its serial out" },
+    { "name": "EGT box", "protocol": "text", "port": "192.168.4.1:23", "baud": 9600,
+      "send": "R\\r", "sendEveryMs": 250, "enabled": false } ] }
+```
+
+| Field | Meaning |
+|---|---|
+| `name` | Unique; sensor PIDs name their sensor by it. |
+| `protocol` | `mts`: Innovate's MTS serial protocol 2 (LC‑1, LC‑2, LM‑1/2, MTX‑L and aux boxes chained to them); fields `lambdaN`, `afrN`, `statusN`, `warmupN` (while warming up), `auxN`. `text`: lines of text; each number is a field by its place (`1`, `2`, …), and one after `name=` or `name:` also by that name (lower case). |
+| `port`, `baud` | A COM port, a phone's USB or Bluetooth port name, a network address (`host:port`), or `Simulator` (a made-up device of that protocol). |
+| `send`, `sendEveryMs` | Text sent every so often to a device that answers when asked; `\r`, `\n`, `\t` and `\\` as in C. |
+| `enabled` | `false`: its PIDs stay empty, the port is left alone. |
+
+A sensor shared as a **`.uvsensor`** file is the sensor (without its port) and its PIDs (without their ids): `{ "uvscanSensor": 1, "sensor": { … }, "pids": [ { "name": …, "kind": "sensor", "field": … } ] }`. Importing it gives the sensor a free name, the PIDs new ids and free MCI names.
 
 ## dtcs.json
 

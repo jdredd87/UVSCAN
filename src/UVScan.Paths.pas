@@ -16,6 +16,7 @@ function ListsFile: string;
 function DisplayFile: string;
 function ControlsFile: string;
 function LogViewsFile: string;
+function SensorsFile: string;
 
 implementation
 
@@ -72,6 +73,11 @@ end;
 function LogViewsFile: string;
 begin
   Result := TPath.Combine(DataDir, 'logviews.json');
+end;
+
+function SensorsFile: string;
+begin
+  Result := TPath.Combine(DataDir, 'sensors.json');
 end;
 
 end.

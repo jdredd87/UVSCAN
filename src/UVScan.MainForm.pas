@@ -19,7 +19,7 @@ uses
   UVScan.Serial, UVScan.Simulator, UVScan.Simulator.Elm, UVScan.Adapter, UVScan.Pids, UVScan.Dpid, UVScan.Dtc, UVScan.Engine,
   UVScan.Class2, UVScan.Paths, UVScan.Settings, UVScan.PidLists, UVScan.Defaults,
   UVScan.Display, UVScan.Alerts, UVScan.Controls, UVScan.Gauge, UVScan.UI.DataGrid, UVScan.LogData,
-  UVScan.QuickStart, UVScan.Update, UVScan.Hotkeys;
+  UVScan.QuickStart, UVScan.Update, UVScan.Hotkeys, UVScan.Sensors;
 
 type
   { Parts of the one-line status strip. }
@@ -301,6 +301,10 @@ type
     grdDtcs: TDataGrid;
     grdMessages: TDataGrid;
     FCatalog: TPidCatalog;
+    FSensors: TSensorCatalog;        // sensors.json; the engine reads it when a scan starts
+    gbSensors: TGroupBox;            // Connect page: the sensors there are
+    lblSensors: TLabel;
+    btnSensors: TButton;
     FDtcs: TDtcCatalog;
     FEngine: TScanEngine;
     FState: TEngineState;
@@ -509,6 +513,11 @@ type
     procedure RunQuickStart(const Q: TQuickStart);
     procedure QuickConnect;
     procedure QuickStartClick(Sender: TObject);
+    procedure SensorsClick(Sender: TObject);
+    procedure LoadSensors;
+    procedure BuildSensorBox;
+    procedure UpdateSensorBox;
+    procedure SensorBoxResized(Sender: TObject);
     procedure QuickPickClick(Sender: TObject);
     procedure QuickNewClick(Sender: TObject);
     procedure QuickChooseClick(Sender: TObject);
@@ -661,7 +670,7 @@ implementation
 uses
   System.JSON, UVScan.JsonFile, UVScan.UI.Common, UVScan.UI.Theme, UVScan.Sound, UVScan.PidEditor,
   UVScan.PidDiscovery, UVScan.DisplayEditor, UVScan.GaugeEditor, UVScan.ControlEditor, UVScan.LogViewer,
-  UVScan.QuickStartEditor, UVScan.Version, System.DateUtils, System.Permissions;
+  UVScan.QuickStartEditor, UVScan.SensorEditor, UVScan.Version, System.DateUtils, System.Permissions;
 
 const
   AwayNote = 'uvscan_away';       // the notification's name
@@ -712,6 +721,7 @@ begin
   FSupport := TDictionary<Integer, Boolean>.Create;
   FRejected := TList<Integer>.Create;
   FCatalog := TPidCatalog.Create;
+  FSensors := TSensorCatalog.Create;
   FDtcs := TDtcCatalog.Create;
   FSettings := TAppSettings.Create;
   FPendingLog := TStringList.Create;
@@ -758,13 +768,14 @@ begin
   pnlNotice.Visible := False;
   CreateGrids;
   BuildChrome;
+  BuildSensorBox;
   LoadData;
   LoadSettings;
   ApplyTheme(ThemeModeFromKey(FSettings.Theme));
   FThemeSub := TMessageManager.DefaultManager.SubscribeToMessage(TThemeChangedMessage, ThemeChanged);
   ApplyPalette;
   FillPidList;
-  FEngine := TScanEngine.Create(FCatalog, HandleEvent);
+  FEngine := TScanEngine.Create(FCatalog, HandleEvent, FSensors);
   cbRateChange(nil);
   FEngine.SetTrace(chkTrace.IsChecked);
   SetZoom(FSettings.LiveZoom);
@@ -2671,6 +2682,7 @@ begin
     AddPageMenuItem('Test PIDs', btnTestPidsClick, btnTestPids.Enabled);
     AddPageMenuItem('Untick all', btnClearSelectionClick, not PidsLocked);
     AddPageMenuItem('Edit PIDs...', btnEditPidsClick, btnEditPids.Enabled);
+    AddPageMenuItem('Sensors...', SensorsClick, btnEditPids.Enabled);
     AddPageMenuItem('-', nil);
     AddPageMenuItem('Fold all groups', FoldAllClick);
     AddPageMenuItem('Unfold all groups', UnfoldAllClick);
@@ -2683,6 +2695,7 @@ begin
   else if P = tiConnect then
   begin
     AddPageMenuItem('Quick start...', QuickStartClick);
+    AddPageMenuItem('Sensors...', SensorsClick, FState in [esDisconnected, esConnected]);
     AddPageMenuItem('Refresh ports', btnRefreshPortsClick, btnRefreshPorts.Enabled);
   end
   else if P = tiControls then
@@ -4032,6 +4045,7 @@ begin
   tmrRefresh.Enabled := False;
   FEngine.Free; // stops the scan, closes the port, waits for the thread
   FCatalog.Free;
+  FSensors.Free;
   FSettings.Free;
   FPendingLog.Free;
   FMessages.Free;
@@ -4172,6 +4186,7 @@ begin
     AddMessage('PID definitions: ' + F);
   if FCatalog.Warnings.Count > 0 then
     ShowNotice(Format('%d problem(s) in the PID definitions - see Messages', [FCatalog.Warnings.Count]), False);
+  LoadSensors;
   LoadDisplay;
   LoadControls;
   F := DtcsFile;
@@ -4677,8 +4692,102 @@ begin
   FillPidList;
 end;
 
+{ Sensors }
+
+procedure TMainForm.LoadSensors;
+var
+  W: string;
+begin
+  try
+    FSensors.LoadFromFile(SensorsFile);
+    for W in FSensors.Warnings do
+      AddMessage('Sensors: ' + W);
+  except
+    on E: Exception do
+      AddMessage('Could not load the sensors: ' + E.Message);
+  end;
+  UpdateSensorBox;
+end;
+
+{ Connect page: a box with the sensors there are, under logging. }
+procedure TMainForm.BuildSensorBox;
+begin
+  gbSensors := TGroupBox.Create(Self);
+  gbSensors.Parent := gbLogRec.Parent;
+  gbSensors.Stored := False;
+  gbSensors.Align := TAlignLayout.Top;
+  gbSensors.Margins.Rect := gbLogRec.Margins.Rect;
+  gbSensors.Position.Y := gbLogRec.Position.Y + gbLogRec.Height + 1;
+  gbSensors.Height := 110;
+  gbSensors.Text := 'Sensors';
+  lblSensors := TLabel.Create(Self);
+  lblSensors.Parent := gbSensors;
+  lblSensors.Stored := False;
+  lblSensors.WordWrap := True;
+  lblSensors.SetBounds(12, 28, 400, 22);
+  btnSensors := TButton.Create(Self);
+  btnSensors.Parent := gbSensors;
+  btnSensors.Stored := False;
+  btnSensors.Text := 'Sensors...';
+  btnSensors.CanFocus := False;
+  btnSensors.OnClick := SensorsClick;
+  btnSensors.SetBounds(12, 56, 130, 40);
+  gbSensors.OnResized := SensorBoxResized;
+end;
+
+procedure TMainForm.UpdateSensorBox;
+var
+  S: string;
+  I: Integer;
+  W: Single;
+begin
+  if gbSensors = nil then
+    Exit;
+  S := '';
+  for I := 0 to FSensors.Count - 1 do
+    S := S + IfThen(S <> '', sLineBreak) + Format('%s on %s%s', [FSensors[I].Name,
+      IfThen(FSensors[I].Port <> '', FSensors[I].Port, '(no port yet)'),
+      IfThen(FSensors[I].Enabled, '', ' (off)')]);
+  if S = '' then
+    S := 'None. A wideband, an EGT box or anything that sends numbers can be read beside the car.';
+  lblSensors.Text := S;
+  W := Max(100, gbSensors.Width - 24);
+  lblSensors.SetBounds(12, 28, W, Max(22, WrappedTextHeight(lblSensors, W) + 4));
+  FitTextWidth(btnSensors, 130);
+  btnSensors.Position.Y := lblSensors.Position.Y + lblSensors.Height + 6;
+  btnSensors.Enabled := FState in [esDisconnected, esConnected];
+  gbSensors.Height := btnSensors.Position.Y + btnSensors.Height + 12;
+end;
+
+procedure TMainForm.SensorBoxResized(Sender: TObject);
+begin
+  UpdateSensorBox;
+end;
+
+procedure TMainForm.SensorsClick(Sender: TObject);
+begin
+  // The engine reads the sensors and PIDs when a scan starts: not while one runs.
+  if not (FState in [esDisconnected, esConnected]) then
+  begin
+    ShowInfo('Stop the scan first: the sensors can be changed while nothing is scanning.');
+    Exit;
+  end;
+  EditSensors(FSensors, FCatalog, SensorsFile, PidsFile,
+    procedure(Saved: Boolean)
+    begin
+      if not Saved then
+        Exit;
+      LoadSensors;
+      ReloadCatalog;
+      AddMessage(Format('Sensors saved (%d) to %s', [FSensors.Count, SensorsFile]));
+    end);
+end;
+
 procedure TMainForm.OpenPidEditor(const Filter: string);
 begin
+  var Names: TArray<string> := nil;
+  for var I := 0 to FSensors.Count - 1 do
+    Names := Names + [FSensors[I].Name];
   TPidEditorForm.Execute(FCatalog, PidsFile, Filter,
     procedure(Saved: Boolean)
     begin
@@ -4686,7 +4795,7 @@ begin
         Exit;
       ReloadCatalog;
       AddMessage(Format('PID definitions saved (%d PIDs) to %s', [FCatalog.Count, PidsFile]));
-    end);
+    end, Names);
 end;
 
 procedure TMainForm.btnEditPidsClick(Sender: TObject);
@@ -5345,6 +5454,8 @@ begin
   Idle := FState = esConnected;
   cbPort.Enabled := FState = esDisconnected;
   cbBaud.Enabled := FState = esDisconnected;
+  if btnSensors <> nil then
+    btnSensors.Enabled := FState in [esDisconnected, esConnected];
   cbAdapter.Enabled := FState = esDisconnected;
   edtTcpAddress.Enabled := FState = esDisconnected;
   btnRefreshPorts.Enabled := FState = esDisconnected;

@@ -89,6 +89,9 @@ type
     procedure btnDefaultsClick(Sender: TObject);
   private
     lvList: TDataGrid;
+    lblSensor: TLabel;               // sensor PIDs: which sensor (made in code)
+    cbSensor: TComboBox;
+    FSensorNames: TArray<string>;
     FRows: TArray<TPidDef>;    // the PIDs the list shows (filtered)
     FWork: TPidCatalog;
     FFileName: string;
@@ -127,9 +130,10 @@ type
     procedure CloseDiscarding;
   public
     { Edits a copy of Catalog; on Save writes FileName. OnDone (always called
-      when the window closes) gets True if saved. }
+      when the window closes) gets True if saved. SensorNames: the sensors
+      a sensor PID can read. }
     class procedure Execute(Catalog: TPidCatalog; const FileName: string; const Filter: string;
-      const OnDone: TProc<Boolean>);
+      const OnDone: TProc<Boolean>; const SensorNames: TArray<string> = nil);
   end;
 
 implementation
@@ -141,7 +145,7 @@ uses
   UVScan.Formula, UVScan.LegacyImport, UVScan.Defaults, UVScan.UI.Common, UVScan.UI.Theme;
 
 const
-  KindCaptions: array[TPidKind] of string = ('Vehicle PID', 'Calculated', 'Analog input');
+  KindCaptions: array[TPidKind] of string = ('Vehicle PID', 'Calculated', 'Analog input', 'Sensor');
   ColorError = $FFE00000;
   ColorGrey = $FF808080;
   ColorWarn = $FFE07000;
@@ -301,11 +305,12 @@ begin
 end;
 
 class procedure TPidEditorForm.Execute(Catalog: TPidCatalog; const FileName: string; const Filter: string;
-  const OnDone: TProc<Boolean>);
+  const OnDone: TProc<Boolean>; const SensorNames: TArray<string>);
 var
   F: TPidEditorForm;
 begin
   F := TPidEditorForm.Create(Application);
+  F.FSensorNames := SensorNames;
   F.FFileName := FileName;
   F.FWork.Assign(Catalog);
   F.edtFilter.Text := Filter;
@@ -350,6 +355,17 @@ begin
   lvList.AddColumn('Units', 50);
   lvList.OnGetText := ListGetText;
   lvList.OnSelect := ListSelect;
+  // Sensor PIDs: the sensor, where the analog channel goes (the field is in edtPid).
+  lblSensor := TLabel.Create(Self);
+  lblSensor.Parent := lblChannel.Parent;
+  lblSensor.Stored := False;
+  lblSensor.Text := 'Sensor';
+  lblSensor.Visible := False;
+  cbSensor := TComboBox.Create(Self);
+  cbSensor.Parent := cbChannel.Parent;
+  cbSensor.Stored := False;
+  cbSensor.Visible := False;
+  cbSensor.OnChange := FieldChanged;
   cbKind.Items.Clear;
   for K := Low(TPidKind) to High(TPidKind) do
     cbKind.Items.Add(KindCaptions[K]);
@@ -434,6 +450,8 @@ procedure TPidEditorForm.LayoutWideDetail;
 var
   H, X, R, Y, Half, CapW: Single;
   L: TLabel;
+  C: TControl;
+  Sensor: Boolean;
 
   procedure Cap(Lbl: TLabel; AX: Single);
   begin
@@ -462,7 +480,7 @@ begin
     H := 40;
   CapW := 0;
   for L in [lblId, lblName, lblShortName, lblDescription, lblKind, lblPid, lblFormula, lblFormat, lblMci, lblUnits,
-    lblCategory, lblBytes, lblChannel] do
+    lblCategory, lblBytes, lblChannel, lblSensor] do
   begin
     L.WordWrap := False;
     L.TextSettings.VertAlign := TTextAlign.Center;
@@ -505,6 +523,14 @@ begin
   Field(cbBytes, lblBytes.Position.X + lblBytes.Width + 6, 70);
   Cap(lblChannel, cbBytes.Position.X + 80);
   Field(cbChannel, lblChannel.Position.X + lblChannel.Width + 6, 80);
+  // A sensor PID: the field, then its sensor where bytes and channel go.
+  Sensor := (FCurrent <> nil) and (FCurrent.Kind = pkSensor);
+  for C in [lblBytes, cbBytes, lblChannel, cbChannel] do
+    C.Visible := not Sensor;
+  lblSensor.Visible := Sensor;
+  cbSensor.Visible := Sensor;
+  Cap(lblSensor, X + 100);
+  Field(cbSensor, lblSensor.Position.X + lblSensor.Width + 6, R - (lblSensor.Position.X + lblSensor.Width + 6));
   Y := Y + H + 6;
   Cap(lblFormula, 16);
   Field(edtFormula, X, R - X);
@@ -550,7 +576,8 @@ begin
     W := InnerWidth(Self) - 40;
   Pairs := [Pair(lblId, edtId), Pair(nil, chkEnabled), Pair(lblName, edtName), Pair(lblShortName, edtShortName),
     Pair(lblUnits, edtUnits), Pair(lblDescription, edtDescription), Pair(lblKind, cbKind),
-    Pair(lblCategory, cbCategory), Pair(lblPid, edtPid), Pair(lblBytes, cbBytes), Pair(lblChannel, cbChannel),
+    Pair(lblCategory, cbCategory), Pair(lblSensor, cbSensor), Pair(lblPid, edtPid), Pair(lblBytes, cbBytes),
+    Pair(lblChannel, cbChannel),
     Pair(lblFormula, edtFormula), Pair(nil, lblFormulaStatus), Pair(lblFormat, cbFormat), Pair(nil, lblFormatHelp),
     Pair(lblMci, edtMci), Pair(nil, lblMciHelp), Pair(nil, gbTest)];
   // Captions beside the fields: as wide as the widest, if the fields keep 60 %.
@@ -568,7 +595,7 @@ begin
   for P in Pairs do
   begin
     // Fields that do not apply to this kind of PID are left out on a phone.
-    if (P.Ctl = edtPid) or (P.Ctl = cbBytes) or (P.Ctl = cbChannel) then
+    if (P.Ctl = edtPid) or (P.Ctl = cbBytes) or (P.Ctl = cbChannel) or (P.Ctl = cbSensor) then
     begin
       P.Ctl.Visible := P.Ctl.Enabled;
       P.Cap.Visible := P.Ctl.Enabled;
@@ -752,6 +779,7 @@ begin
       case P.Kind of
         pkVehicle: Text := P.PidCode;
         pkAnalog: Text := 'A/D ' + IntToStr(P.AnalogChannel);
+        pkSensor: Text := P.SensorField;
       end;
     4:
       if P.Kind = pkVehicle then
@@ -858,7 +886,19 @@ begin
     edtDescription.Text := P.Description;
     cbKind.ItemIndex := Ord(P.Kind);
     cbCategory.ItemIndex := Ord(P.Category);
-    edtPid.Text := IfThen(P.Kind = pkVehicle, P.PidCode, '');
+    case P.Kind of
+      pkVehicle: edtPid.Text := P.PidCode;
+      pkSensor: edtPid.Text := P.SensorField;
+    else
+      edtPid.Text := '';
+    end;
+    // The sensors there are, and this PID's even if it is gone.
+    cbSensor.Items.Clear;
+    for var N in FSensorNames do
+      cbSensor.Items.Add(N);
+    if (P.SensorName <> '') and (cbSensor.Items.IndexOf(P.SensorName) < 0) then
+      cbSensor.Items.Add(P.SensorName);
+    cbSensor.ItemIndex := cbSensor.Items.IndexOf(P.SensorName);
     cbBytes.ItemIndex := cbBytes.Items.IndexOf(IntToStr(P.DataLength));
     cbChannel.ItemIndex := cbChannel.Items.IndexOf(IntToStr(P.AnalogChannel));
     edtFormula.Text := P.FormulaText;
@@ -867,6 +907,7 @@ begin
     case P.Kind of
       pkVehicle: edtTestInput.Text := IfThen(P.DataLength = 2, '0C 80', '50');
       pkAnalog: edtTestInput.Text := '80';
+      pkSensor: edtTestInput.Text := '1';
     else
       edtTestInput.Text := '';
     end;
@@ -930,25 +971,48 @@ begin
         P.PidCode := IntToHex($FFFF - P.AnalogChannel + 1, 4);
         P.DataLength := 0;
       end;
+    pkSensor:
+      begin
+        P.SensorName := ComboText(cbSensor);
+        P.SensorField := LowerCase(Trim(edtPid.Text));
+        P.PidCode := SensorPidCode;
+        P.DataLength := 0;
+        P.AnalogChannel := 0;
+      end;
   else
     P.PidCode := 'FPID';
     P.DataLength := 0;
     P.AnalogChannel := 0;
+  end;
+  if P.Kind <> pkSensor then
+  begin
+    P.SensorName := '';
+    P.SensorField := '';
   end;
   FModified := True;
   lvList.Refresh;
 end;
 
 procedure TPidEditorForm.FieldChanged(Sender: TObject);
+var
+  WasKind: TPidKind;
 begin
   if FLoading or (FCurrent = nil) then
     Exit;
+  WasKind := FCurrent.Kind;
   ApplyFields;
   if Sender = cbKind then
   begin
     // Sensible defaults when the kind changes.
     FLoading := True;
     try
+      // the PID box is the field for a sensor: a PID number is no field
+      if (WasKind <> FCurrent.Kind) and ((WasKind = pkSensor) or (FCurrent.Kind = pkSensor)) then
+        edtPid.Text := '';
+      if (FCurrent.Kind = pkSensor) and (cbSensor.ItemIndex < 0) and (cbSensor.Count > 0) then
+        cbSensor.ItemIndex := 0;
+      if (FCurrent.Kind = pkSensor) and (FCurrent.Category <> pcSensors) then
+        cbCategory.ItemIndex := Ord(pcSensors);
       if (FCurrent.Kind = pkVehicle) and (cbBytes.ItemIndex < 0) then
         cbBytes.ItemIndex := 0;
       if (FCurrent.Kind = pkAnalog) and (cbChannel.ItemIndex < 0) then
@@ -962,6 +1026,8 @@ begin
     end;
     ApplyFields;
     UpdateKindControls;
+    if not FNarrow then
+      LayoutWideDetail;
   end;
   UpdateFormulaStatus;
   UpdateTest;
@@ -977,15 +1043,25 @@ begin
   if FCurrent = nil then
     Exit;
   K := FCurrent.Kind;
-  lblPid.Enabled := K = pkVehicle;
-  edtPid.Enabled := K = pkVehicle;
+  lblPid.Text := IfThen(K = pkSensor, 'Field', 'PID');
+  lblPid.Enabled := K in [pkVehicle, pkSensor];
+  edtPid.Enabled := K in [pkVehicle, pkSensor];
+  edtPid.TextPrompt := IfThen(K = pkSensor, 'afr1, 1, egt...', '');
+  // hex PID numbers in capitals; a sensor's fields are lower case
+  if K = pkSensor then
+    edtPid.CharCase := TEditCharCase.ecLowerCase
+  else
+    edtPid.CharCase := TEditCharCase.ecUpperCase;
   lblBytes.Enabled := K = pkVehicle;
   cbBytes.Enabled := K = pkVehicle;
   lblChannel.Enabled := K = pkAnalog;
   cbChannel.Enabled := K = pkAnalog;
+  lblSensor.Enabled := K = pkSensor;
+  cbSensor.Enabled := K = pkSensor;
   case K of
     pkVehicle: lblTestInput.Text := 'Data bytes (hex)';
     pkAnalog: lblTestInput.Text := 'A/D sample (hex)';
+    pkSensor: lblTestInput.Text := 'The sensor''s value (N0)';
   else
     lblTestInput.Text := 'Inputs (NAME=value ...)';
   end;
@@ -1011,6 +1087,8 @@ begin
     SetLabelColor(lblFormulaStatus, ColorGrey);
     if FCurrent.Kind = pkCalculated then
       lblFormulaStatus.Text := 'No formula: shows the value of its MCI (e.g. RUNTIME, LOGTIME)'
+    else if FCurrent.Kind = pkSensor then
+      lblFormulaStatus.Text := 'No formula: shows the sensor''s value as it comes'
     else
       lblFormulaStatus.Text := 'No formula: the value will show as --';
     Exit;
@@ -1076,6 +1154,14 @@ begin
             Values[J] := StrToFloat(Copy(Pair, P + 1, MaxInt), TFormatSettings.Invariant);
       end;
       V := FCurrent.Formula.Evaluate([], Values);
+    end
+    else if FCurrent.Kind = pkSensor then
+    begin
+      Inputs[0] := StrToFloat(Trim(edtTestInput.Text), TFormatSettings.Invariant);
+      if FCurrent.Formula.IsEmpty then
+        V := Inputs[0]
+      else
+        V := FCurrent.Formula.Evaluate(Inputs, []);
     end
     else
     begin

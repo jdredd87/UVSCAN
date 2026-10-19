@@ -25,7 +25,8 @@ uses
   UVScan.Dpid in '..\src\UVScan.Dpid.pas',
   UVScan.Engine in '..\src\UVScan.Engine.pas',
   UVScan.Paths in '..\src\UVScan.Paths.pas',
-  UVScan.JsonFile in '..\src\UVScan.JsonFile.pas';
+  UVScan.JsonFile in '..\src\UVScan.JsonFile.pas',
+  UVScan.Sensors in '..\src\UVScan.Sensors.pas';
 
 var
   Clock: TStopwatch;

@@ -11,10 +11,13 @@ unit UVScan.Pids;
           "formula": "((N1 << 8) + N2) * 0.25", "units": "RPM",
           "format": "", "mci": "RPM" },
         { "id": 39, "name": "Inj Duty Cycle", "kind": "calculated", ... },
-        { "id": 18, "name": "AD1", "kind": "analog", "analogChannel": 1, ... } ] }
+        { "id": 18, "name": "AD1", "kind": "analog", "analogChannel": 1, ... },
+        { "id": 60, "name": "Wideband AFR", "kind": "sensor", "sensor": "LC-1",
+          "field": "afr1", ... } ] }
     Optional: "description", "enabled": false (entry is skipped).
-    kind: vehicle | calculated | analog
-    category: other | engine | transmission | indicators | body | accessories | calculated | analog
+    kind: vehicle | calculated | analog | sensor (a field of a sensor in
+      sensors.json, see UVScan.Sensors; N0 in its formula is the value)
+    category: other | engine | transmission | indicators | body | accessories | calculated | analog | sensors
     format: %f (2 decimals), %d (integer), %o (OFF/ON), %y (NO/YES),
             *c (convert F to C), *f (convert C to F); may be combined, e.g. "*f%d". *)
 
@@ -24,10 +27,10 @@ uses
   System.SysUtils, System.Classes, System.Generics.Collections, System.JSON, UVScan.Formula;
 
 type
-  TPidKind = (pkVehicle, pkCalculated, pkAnalog);
+  TPidKind = (pkVehicle, pkCalculated, pkAnalog, pkSensor);
 
   TPidCategory = (pcOther, pcEngine, pcTransmission, pcIndicators, pcBody,
-    pcAccessories, pcCalculated, pcAnalog);
+    pcAccessories, pcCalculated, pcAnalog, pcSensors);
 
   TPidDef = class
   private
@@ -50,6 +53,8 @@ type
     Kind: TPidKind;
     PidNumber: Word;       // pkVehicle
     AnalogChannel: Integer; // pkAnalog: 1..3
+    SensorName: string;     // pkSensor: the sensor (sensors.json)
+    SensorField: string;    // pkSensor: its field (afr1, 1, egt ...), lower case
     constructor Create;
     destructor Destroy; override;
     procedure Assign(Source: TPidDef);
@@ -121,15 +126,16 @@ type
 
 const
   CategoryNames: array[TPidCategory] of string = ('Other', 'Engine', 'Transmission',
-    'Indicators', 'Body', 'Accessories', 'Calculated', 'Analog inputs');
+    'Indicators', 'Body', 'Accessories', 'Calculated', 'Analog inputs', 'Sensors');
 
   BuiltinRuntime = 'RUNTIME';
   BuiltinLogTime = 'LOGTIME';
 
   PidFileVersion = 1;
-  KindKeys: array[TPidKind] of string = ('vehicle', 'calculated', 'analog');
+  KindKeys: array[TPidKind] of string = ('vehicle', 'calculated', 'analog', 'sensor');
   CategoryKeys: array[TPidCategory] of string = ('other', 'engine', 'transmission',
-    'indicators', 'body', 'accessories', 'calculated', 'analog');
+    'indicators', 'body', 'accessories', 'calculated', 'analog', 'sensors');
+  SensorPidCode = 'SENS';
 
 implementation
 
@@ -178,6 +184,8 @@ begin
   Kind := Source.Kind;
   PidNumber := Source.PidNumber;
   AnalogChannel := Source.AnalogChannel;
+  SensorName := Source.SensorName;
+  SensorField := Source.SensorField;
 end;
 
 function TPidDef.FormulaError: string;
@@ -232,6 +240,11 @@ begin
       end;
     pkAnalog:
       Result.AddPair('analogChannel', TJSONNumber.Create(AnalogChannel));
+    pkSensor:
+      begin
+        Result.AddPair('sensor', SensorName);
+        Result.AddPair('field', SensorField);
+      end;
   end;
   Opt('formula', FormulaText);
   Opt('units', Units);
@@ -277,6 +290,8 @@ begin
     Span := 10
   else if (U = 'v') or (U = 'volts') then
     Span := 5
+  else if U = 'lambda' then
+    Span := 1
   else
     Span := 100;
   Bytes := IfThen(Kind = pkAnalog, 1, DataLength);
@@ -455,6 +470,11 @@ begin
       Problem(P, Where, 'analog channel must be 1-3');
       Exit;
     end;
+    if (P.Kind = pkSensor) and ((P.SensorName = '') or (P.SensorField = '')) then
+    begin
+      Problem(P, Where, 'a sensor PID needs its sensor and field');
+      Exit;
+    end;
     if (P.Mci <> '') and (FindByMci(P.Mci) <> nil) then
       Problem(P, Where, Format('MCI "%s" is already used by "%s"', [P.Mci, FindByMci(P.Mci).LongName]));
     try
@@ -510,7 +530,7 @@ begin
 
     K := KeyIndex(KindKeys, JStr(E, 'kind'));
     if K < 0 then
-      raise EConvertError.CreateFmt('unknown kind "%s" (vehicle, calculated or analog)', [JStr(E, 'kind')]);
+      raise EConvertError.CreateFmt('unknown kind "%s" (vehicle, calculated, analog or sensor)', [JStr(E, 'kind')]);
     Result.Kind := TPidKind(K);
     case Result.Kind of
       pkVehicle:
@@ -528,6 +548,12 @@ begin
         begin
           Result.AnalogChannel := JInt(E, 'analogChannel', 0);
           Result.PidCode := IntToHex($FFFF - Result.AnalogChannel + 1, 4);
+        end;
+      pkSensor:
+        begin
+          Result.SensorName := Trim(JStr(E, 'sensor'));
+          Result.SensorField := LowerCase(Trim(JStr(E, 'field')));
+          Result.PidCode := SensorPidCode;
         end;
     end;
   except

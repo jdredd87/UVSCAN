@@ -345,6 +345,8 @@
         <DCCReference Include="src\UVScan.LogData.pas"/>
         <DCCReference Include="src\UVScan.LogViews.pas"/>
         <DCCReference Include="src\UVScan.Share.pas"/>
+        <DCCReference Include="src\UVScan.Sensors.pas"/>
+        <DCCReference Include="src\UVScan.SensorEditor.pas"/>
         <DCCReference Include="src\UVScan.UI.Common.pas"/>
         <DCCReference Include="src\UVScan.UI.Theme.pas"/>
         <DCCReference Include="src\UVScan.UI.DataGrid.pas"/>

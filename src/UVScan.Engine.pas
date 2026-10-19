@@ -16,7 +16,7 @@ uses
   System.SysUtils, System.Classes, System.SyncObjs, System.Diagnostics, System.Math,
   System.StrUtils, System.Generics.Collections,
   UVScan.Serial, UVScan.Avt, UVScan.Adapter, UVScan.Class2, UVScan.Pids, UVScan.Dpid, UVScan.Hex,
-  UVScan.Formula;
+  UVScan.Formula, UVScan.Sensors;
 
 type
   TEngineState = (esDisconnected, esConnected, esScanning, esBusy);
@@ -171,6 +171,7 @@ type
     FNoDataWarned: Boolean;
     FRestreamClock: TStopwatch; // since the last try at getting a silent PCM streaming again
     FHeld: TDictionary<string, THeldControl>; // active real-time controls by name
+    FSensors: TSensorCatalog;  // shared with the UI, which only changes it while no scan runs
 
     // Current scan
     FScanPids: TArray<TPidDef>;
@@ -186,6 +187,9 @@ type
     FRateCycles: Int64;
     FRate: Double;
     FStray: Int64;
+    FReaders: TObjectList<TSensorReader>; // the sensors this scan reads
+    FSensorOf: TArray<TSensorReader>;     // per scan index: its sensor (sensor PIDs)
+    FSensorTick: TStopwatch;              // a scan of sensors only: its cycles
 
     // Logging
     FLog: TLogFileWriter;
@@ -262,13 +266,18 @@ type
     procedure HandleAnalog(const F: TAvtFrame);
     procedure CompleteCycle;
     procedure ComputeCalculated;
+    procedure StartSensors;
+    procedure StopSensors;
+    procedure ReadSensors;
+    procedure ServiceSensors;
     procedure StopForBackground(AwaySeconds: Int64);
     procedure PublishSnapshot(CycleDone: Boolean = False);
     procedure WriteLogRow;
   protected
     procedure Execute; override;
   public
-    constructor Create(Catalog: TPidCatalog; const OnEvent: TEngineEventHandler);
+    { Sensors: the sensors sensor PIDs read (nil: none). }
+    constructor Create(Catalog: TPidCatalog; const OnEvent: TEngineEventHandler; Sensors: TSensorCatalog = nil);
     destructor Destroy; override;
     procedure Post(const Cmd: TEngineCommand);
     procedure Cancel;
@@ -465,6 +474,7 @@ const
   SourceRuntime = -2;
   SourceLogTime = -3;
   SourceMissing = -1;
+  SensorCycleMs = 100;    // a scan of sensors only: a cycle this often
 
 function Command(Kind: TEngineCommandKind): TEngineCommand;
 begin
@@ -479,9 +489,11 @@ end;
 
 { TScanEngine }
 
-constructor TScanEngine.Create(Catalog: TPidCatalog; const OnEvent: TEngineEventHandler);
+constructor TScanEngine.Create(Catalog: TPidCatalog; const OnEvent: TEngineEventHandler; Sensors: TSensorCatalog);
 begin
   FCatalog := Catalog;
+  FSensors := Sensors;
+  FReaders := TObjectList<TSensorReader>.Create(True);
   FOnEvent := OnEvent;
   FCommands := TThreadedQueue<TEngineCommand>.Create(256, 1000, 0);
   FHeld := TDictionary<string, THeldControl>.Create;
@@ -502,6 +514,7 @@ begin
   FHeld.Free;
   FLock.Free;
   FSamples.Free;
+  FReaders.Free;
 end;
 
 procedure TScanEngine.Post(const Cmd: TEngineCommand);
@@ -730,6 +743,7 @@ begin
   end;
   if NextFrame(20, F) then
     HandleUnsolicited(F);
+  ServiceSensors;
   // Tester present keeps the stream running and device control in force
   // (GM modules drop both a few seconds after the tester goes quiet).
   if (FStreaming or (FHeld.Count > 0)) and (FLastHeartbeat.ElapsedMilliseconds >= HeartbeatMs) then
@@ -1098,7 +1112,7 @@ var
   S: TDpidSlot;
   Msg: TClass2Message;
   Ev: TEngineEvent;
-  HasAnalog: Boolean;
+  HasAnalog, HasSensor: Boolean;
   Vars: TArray<string>;
   Sources: TArray<Integer>;
   DpidId: Byte;
@@ -1128,6 +1142,7 @@ begin
   try
     Reqs := nil;
     HasAnalog := False;
+    HasSensor := False;
     for I := 0 to High(FScanPids) do
       case FScanPids[I].Kind of
         pkVehicle:
@@ -1138,11 +1153,12 @@ begin
             Reqs := Reqs + [R];
           end;
         pkAnalog: HasAnalog := True;
+        pkSensor: HasSensor := True;
       end;
     if HasAnalog and not FAdapter.HasAnalog then
     begin
       // The AVT's own inputs (a wideband, say): an ELM327 has none.
-      if Length(Reqs) = 0 then
+      if (Length(Reqs) = 0) and not HasSensor then
       begin
         EmitText(eeError, Format('The analog inputs are the AVT''s own: an %s has none. ' +
           'Choose vehicle PIDs to scan.', [FAdapter.Name]));
@@ -1151,9 +1167,9 @@ begin
       Warn(Format('The analog inputs are the AVT''s own: an %s has none, so they stay empty', [FAdapter.Name]));
       HasAnalog := False;
     end;
-    if (Length(Reqs) = 0) and not HasAnalog then
+    if (Length(Reqs) = 0) and not HasAnalog and not HasSensor then
     begin
-      EmitText(eeError, 'Select at least one vehicle or analog PID to scan');
+      EmitText(eeError, 'Select at least one vehicle, analog or sensor PID to scan');
       Exit;
     end;
 
@@ -1204,6 +1220,11 @@ begin
     end;
 
     SetState(esBusy);
+    // Sensors open their ports while the PCM is set up.
+    if HasSensor then
+      StartSensors
+    else
+      StopSensors;
     FlushInput;
     SetLength(FRejected, Length(FScanPids));
     for I := 0 to High(FRejected) do
@@ -1262,6 +1283,7 @@ begin
     FLastData := TStopwatch.StartNew;
     FLastHeartbeat := TStopwatch.StartNew;
     FNoDataWarned := False;
+    FSensorTick := TStopwatch.StartNew;
 
     if HasAnalog then
       FAnalogOn := FAdapter.SetAnalog(True);
@@ -1368,6 +1390,7 @@ end;
   edit and reload the catalog while no scan is running. }
 procedure TScanEngine.ForgetScan;
 begin
+  StopSensors;
   FScanPids := nil;
   FCalcSources := nil;
   FRejected := nil;
@@ -1480,8 +1503,106 @@ begin
     end;
 end;
 
+{ Sensors }
+
+{ A reader for each sensor the scan's sensor PIDs use. }
+procedure TScanEngine.StartSensors;
+var
+  I: Integer;
+  P: TPidDef;
+  D: TSensorDef;
+  R: TSensorReader;
+begin
+  StopSensors;
+  SetLength(FSensorOf, Length(FScanPids));
+  for I := 0 to High(FScanPids) do
+  begin
+    P := FScanPids[I];
+    FSensorOf[I] := nil;
+    if P.Kind <> pkSensor then
+      Continue;
+    D := nil;
+    if FSensors <> nil then
+      D := FSensors.Find(P.SensorName);
+    if D = nil then
+    begin
+      Warn(Format('%s reads the sensor "%s", which is not set up (More > Sensors)', [P.DisplayName, P.SensorName]));
+      Continue;
+    end;
+    if not D.Enabled then
+    begin
+      Warn(Format('%s: the sensor "%s" is switched off', [P.DisplayName, D.Name]));
+      Continue;
+    end;
+    R := nil;
+    for var Q in FReaders do
+      if SameText(Q.Def.Name, D.Name) then
+        R := Q;
+    if R = nil then
+    begin
+      Log('Sensor %s on %s', [D.Name, IfThen(D.Port <> '', D.Port, '(no port)')]);
+      R := TSensorReader.Create(D);
+      FReaders.Add(R);
+    end;
+    FSensorOf[I] := R;
+  end;
+end;
+
+procedure TScanEngine.StopSensors;
+begin
+  FSensorOf := nil;
+  FReaders.Clear; // each waits for its thread
+end;
+
+{ The sensor PIDs' latest values (none: --). }
+procedure TScanEngine.ReadSensors;
+var
+  I: Integer;
+  V: Double;
+  F: TFormula;
+begin
+  for I := 0 to Min(High(FSensorOf), High(FWork)) do
+  begin
+    if FSensorOf[I] = nil then
+      Continue;
+    if not FSensorOf[I].TryGet(FScanPids[I].SensorField, SensorMaxAgeMs, V) or IsNan(V) then
+    begin
+      FWork[I] := NaN;
+      Continue;
+    end;
+    F := FScanPids[I].Formula;
+    if F.IsEmpty then
+      FWork[I] := V
+    else
+      FWork[I] := F.Evaluate([V], []);
+  end;
+end;
+
+{ What the sensors say about themselves goes to Messages; a scan with
+  nothing from the PCM (sensors only, maybe the AVT's inputs on an adapter
+  without them) gets its cycles from here. }
+procedure TScanEngine.ServiceSensors;
+var
+  R: TSensorReader;
+  S: string;
+begin
+  if FReaders.Count = 0 then
+    Exit;
+  for R in FReaders do
+    if R.TakeStatusChange(S) then
+      Log('Sensor %s: %s', [R.Def.Name, S]);
+  if FStreaming and (Length(FPlan.Dpids) = 0) and not FAnalogOn and
+    (FSensorTick.ElapsedMilliseconds >= SensorCycleMs) then
+  begin
+    FSensorTick := TStopwatch.StartNew;
+    FLastData := TStopwatch.StartNew;
+    CompleteCycle;
+  end;
+end;
+
 procedure TScanEngine.CompleteCycle;
 begin
+  ReadSensors;
   ComputeCalculated;
   Inc(FCycles);
   Inc(FRateCycles);

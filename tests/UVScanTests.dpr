@@ -41,7 +41,9 @@ uses
   UVScan.LogViews in '..\src\UVScan.LogViews.pas',
   UVScan.LogChart in '..\src\UVScan.LogChart.pas',
   UVScan.Tests.Logs in 'UVScan.Tests.Logs.pas',
-  UVScan.Tests.Elm in 'UVScan.Tests.Elm.pas';
+  UVScan.Tests.Elm in 'UVScan.Tests.Elm.pas',
+  UVScan.Sensors in '..\src\UVScan.Sensors.pas',
+  UVScan.Tests.Sensors in 'UVScan.Tests.Sensors.pas';
 
 {$R 'UVScan.Defaults.res' '..\UVScan.Defaults.rc'}
 

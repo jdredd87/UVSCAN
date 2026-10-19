@@ -154,6 +154,18 @@ begin
     MaxValue := 18;
     Exit;
   end;
+  if U = 'afr' then
+  begin
+    MinValue := 10; // a wideband's useful range
+    MaxValue := 20;
+    Exit;
+  end;
+  if U = 'lambda' then
+  begin
+    MinValue := 0.7;
+    MaxValue := 1.3;
+    Exit;
+  end;
   if U = 'ms' then
   begin
     MaxValue := 20; // injector pulse: the formula reaches 1000 ms

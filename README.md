@@ -23,6 +23,7 @@ It is a rewrite of the 2008 UVSCAN (Delphi 2007) for **Delphi 13 FireMonkey (FMX
 - **Vehicle & codes** — VIN, PCM OS ID, AVT firmware; trouble codes from every module, clear codes.
 - **Real‑time controls** — GM device control (mode $AE): lamps, cooling fan, EVAP vent and fuel trim reset found and checked on a bench PCM, plus your own commands (on / off, hold to run, value, one‑shot).
 - **PID tools** — PID editor with live formula check, import of old `PIDS.csv`, named scan lists, PID support test, and a search of the PCM for every PID it answers.
+- **Sensors** — a wideband (Innovate LC‑1 / LC‑2 / LM‑2 / MTX‑L over MTS, AEM X‑Series), an EGT box or anything that sends numbers on a serial, Bluetooth or network port, read beside the car: its readings are PIDs, so they log, chart, show on gauges and set off alerts with the PCM's. Add one from a template, test it live, and share it as a file.
 - **Network AVT** — an AVT with an Ethernet port (or behind a serial‑to‑network adapter) over TCP/IP, from Windows or a phone.
 - **ELM327 adapters** — Bluetooth (a phone or a PC), USB or Wi‑Fi, with the same DPID streaming at about 10 updates a second; only the AVT's analog inputs are missing. Tried with the vLinker FD over Bluetooth and a cheap Wi‑Fi clone, on a PC and on a phone.
 - **Installer and updates** — a Windows setup program on the [releases page](https://github.com/jdredd87/UVSCAN/releases/latest); UVScan checks for a newer release once a day and offers to install it (*More → About*).

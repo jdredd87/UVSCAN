@@ -20,6 +20,7 @@ UVScan reads live data, trouble codes and vehicle information from GM vehicles o
 - [Tools](#tools)
 - [Editing PIDs](#editing-pids)
 - [Finding PIDs a PCM supports](#finding-pids-a-pcm-supports)
+- [Sensors](#sensors)
 - [About](#about)
 - [Messages](#messages)
 - [Keyboard and command line](#keyboard-and-command-line)
@@ -447,6 +448,7 @@ Every PID has a name, short name, category, kind and formula:
 | Vehicle | the PID number (`000C`, `11A6`, …) and its size in bytes | `N0`/`N1` = data byte 1, `N2` = byte 2, … |
 | Calculated | — | other PIDs by their MCI name, e.g. `%RPM%`, plus `RUNTIME`, `LOGTIME` |
 | Analog | AVT analog channel 1–3 | `N0` = the reading |
+| Sensor | a [sensor](#sensors) and its field (`afr1`, `1`, `egt`) | `N0` = the field's value |
 
 Formulas use `+ - * /`, `<< >>`, `& |`, comparisons and `? :` (e.g. `N0 > 127 ? N0 - 256 : N0`). The **Try the formula** box evaluates it with bytes or values you type. The problems panel lists everything that would stop the file loading; click one to jump to it. **Save** refuses to write while there are problems; the back arrow throws everything away. On a phone or a narrow window the editor is two pages: the list (tap a PID) and its details, with **All PIDs** (or the back key) to return to the list.
 
@@ -462,6 +464,23 @@ Formulas use `+ - * /`, `<< >>`, `& |`, comparisons and `? :` (e.g. `N0 > 127 ? 
 [![Searching the PCM for PIDs](media/win-pid-search.webp)](media/win-pid-search.mp4)
 
 Each PID that answers is listed with its size, raw value and what it is already defined as. Tick the new ones and press **Add** (top right): they are added as `PID $xxxx` (category *Other*) and the PID editor opens filtered to them so you can name them and give them a formula — for example after logging them with the engine running to see what they follow.
+
+## Sensors
+
+A **sensor** is a device UVScan reads beside the car while it scans: a wideband O2 controller, an EGT box, an oil pressure sender on an Arduino, anything that sends numbers on a serial, Bluetooth or network port. Its readings show as **sensor PIDs**, so they go in the live grid, on gauges, in the live chart and in logs (on the same rows as the PCM's data), set off alerts, and can be used in calculated PIDs (`%WBAFR% - 14.7`).
+
+**Sensors…** is on the *Connect* page (and in the *Connect* and *PIDs* page menus); not while scanning.
+
+- **Add…** starts from a template: **Innovate LC‑1, LC‑2, LM‑2, MTX‑L** (Innovate's MTS serial protocol, 19200 baud), **AEM X‑Series / UEGO** (lines of text with the AFR, 9600 baud), **Text sensor** (anything that prints numbers in lines of text), a **Demo wideband** (made up, to try it without one), or *something else* set up yourself. A template adds the sensor and its PIDs (*Wideband AFR*, *Wideband lambda*).
+- **Port** — the sensor's own port: a COM port (a USB‑serial cable), a paired Bluetooth one, a network address (`192.168.4.1:23`), or *Simulator*. On a phone a USB sensor and a USB adapter together need an OTG hub. **Ask with** / **Every** are for a device that only answers when asked (`R\r` sends R and a carriage return).
+- **Start test** opens the port and shows every field the sensor sends, as it comes, with what it says about itself (*warming up*, *needs a free‑air calibration*). Pick a field and **Add a PID for this field…** to scan it.
+- **Share…** (on a phone; **Export…** on Windows) writes the sensor and its PIDs to a `.uvsensor` file to send to someone else, who adds it with **Import…**. The port is left out (theirs will differ).
+
+**Save** writes the sensors, and the PIDs added with them. Then tick the sensor PIDs in the PID list like any others. A scan of sensor PIDs only works too (about 10 rows a second); either way UVScan stays connected to the car's adapter while it scans.
+
+**Fields.** An Innovate (MTS) sensor gives `lambda1`, `afr1` (lambda × the AFR multiplier it is set to: 14.7 for petrol) and `status1` for its wideband (`lambda2`… for a second one in the chain, as an LM‑2 has), and `aux1`, `aux2`… for aux inputs (0–1023 for 0–5 V, from a TC‑4 or SSI‑4 chained to it). A text sensor's fields are its numbers by their place in the line (`1`, `2`, …), and a number written after a name is also that name: the line `afr=14.7 egt=812` gives `1` and `afr` = 14.7, `2` and `egt` = 812. A sensor PID's formula has the field's value as `N0` (no formula: the value as it is); *Edit PIDs* changes it, or picks another sensor or field (kind *Sensor*).
+
+**An Innovate LC‑1** sends MTS on its serial out (the 2.5 mm jack) through Innovate's serial cable; a USB‑serial adapter makes that a COM port. It warms up for a minute or so; until then its PIDs show `--` and *Messages* says why. Wired in a chain (an LM‑2, a TC‑4 behind the LC‑1), the chain's last serial out has everyone's data.
 
 ## About
 
@@ -533,7 +552,7 @@ Names with spaces go in quotes. These are what a desktop shortcut made by **Quic
 
 ## Where things are stored
 
-Everything UVScan reads or writes, apart from CSV logs, is in **`C:\ProgramData\UVScan`**: `pids.json`, `lists.json`, `display.json`, `controls.json`, `logviews.json`, `dtcs.json` and `settings.json`. Missing files are created from the defaults built into `UVScan.exe`. See [data files](data-files.md) for the formats.
+Everything UVScan reads or writes, apart from CSV logs, is in **`C:\ProgramData\UVScan`**: `pids.json`, `lists.json`, `display.json`, `controls.json`, `logviews.json`, `sensors.json`, `dtcs.json` and `settings.json`. Missing files are created from the defaults built into `UVScan.exe`. See [data files](data-files.md) for the formats.
 
 ## Troubleshooting
 
