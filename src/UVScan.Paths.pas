@@ -17,6 +17,8 @@ function DisplayFile: string;
 function ControlsFile: string;
 function LogViewsFile: string;
 function SensorsFile: string;
+{ The example sensor files the Windows setup installs (examples\sensors in the repo). }
+function SensorExamplesDir: string;
 
 implementation
 
@@ -78,6 +80,11 @@ end;
 function SensorsFile: string;
 begin
   Result := TPath.Combine(DataDir, 'sensors.json');
+end;
+
+function SensorExamplesDir: string;
+begin
+  Result := TPath.Combine(TPath.Combine(DataDir, 'Examples'), 'Sensors');
 end;
 
 end.

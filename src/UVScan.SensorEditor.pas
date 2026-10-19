@@ -23,7 +23,7 @@ uses
   System.Classes, System.Types, System.UITypes, System.Math, System.StrUtils, System.JSON, System.IOUtils,
   FMX.Types, FMX.Controls, FMX.Forms, FMX.StdCtrls, FMX.Edit, FMX.ComboEdit, FMX.ListBox, FMX.Layouts,
   FMX.Dialogs, FMX.Graphics,
-  UVScan.Serial, UVScan.JsonFile, UVScan.Share, UVScan.UI.Common, UVScan.UI.Theme;
+  UVScan.Serial, UVScan.JsonFile, UVScan.Share, UVScan.UI.Common, UVScan.UI.Theme, UVScan.Paths;
 
 const
   NarrowWidth = 600;
@@ -751,6 +751,8 @@ begin
   Dlg := TOpenDialog.Create(nil);
   try
     Dlg.Title := 'Import a sensor';
+    if DirectoryExists(SensorExamplesDir) then
+      Dlg.InitialDir := SensorExamplesDir; // the examples the setup installed
     Dlg.Filter := 'UVScan sensors (*' + SensorFileExt + ')|*' + SensorFileExt + '|All files (*.*)|*.*';
     if Dlg.Execute then
       ImportFile(Dlg.FileName);

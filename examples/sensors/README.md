@@ -13,7 +13,7 @@ Single devices (Innovate LC‑1 / LC‑2 / LM‑2 / MTX‑L, AEM X‑Series, PLX
 
 ## Importing one
 
-- **Windows:** *Connect* page → **Sensors…** → **Import…**, and pick the file.
+- **Windows:** the setup installs these files in `C:\ProgramData\UVScan\Examples\Sensors`, where *Connect* page → **Sensors…** → **Import…** opens; pick one. (An update replaces them: copy one elsewhere before changing it.)
 - **Phone:** get the file onto it (email it to yourself, Google Drive, Downloads…), then **Sensors…** → **Import…** opens Android's file picker.
 
 Then choose the sensor's **Port**, try it with **Start test**, and **Save**. Its PIDs are in the PID list under *Sensors*; tick them like any others. A sensor or MCI name you already have gets a number (`EGT 2`, `%EGT2%`), and the file's own formulas follow.

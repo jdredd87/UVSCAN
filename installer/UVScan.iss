@@ -5,7 +5,8 @@
 ;
 ; Installs for the current user (no admin) or, chosen in the first dialog,
 ; for all users in Program Files. The data in C:\ProgramData\UVScan and the
-; logs in Documents\UVScan Logs are kept when UVScan is uninstalled.
+; logs in Documents\UVScan Logs are kept when UVScan is uninstalled (the example sensor files
+; in C:\ProgramData\UVScan\Examples go with it).
 ; UVScan's update runs it with /SILENT /SUPPRESSMSGBOXES /NORESTART: a
 ; progress window only, the earlier choices kept, then UVScan starts again.
 ; It waits for UVScan to close first (InitializeSetup).
@@ -58,6 +59,9 @@ Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{
 
 [Files]
 Source: "{#ExeDir}\UVScan.exe"; DestDir: "{app}"; Flags: ignoreversion
+; Example sensor files and Arduino sketches, where Sensors > Import opens
+; (UVScan.Paths.SensorExamplesDir); an update brings new and corrected ones.
+Source: "..\examples\sensors\*"; DestDir: "{commonappdata}\UVScan\Examples\Sensors"; Flags: ignoreversion
 
 [Dirs]
 ; Installed for all users: every user can change the shared data

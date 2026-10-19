@@ -483,7 +483,7 @@ A **sensor** is a device UVScan reads beside the car while it scans: a wideband 
 - **Start test** opens the port and shows every field the sensor sends, as it comes, with what it says about itself (*warming up*, *needs a free‑air calibration*). Pick a field and **Add a PID for this field…** to scan it; the PID gets an MCI from its name (*EGT 1* → `%EGT1%`; the templates' are `%WBAFR%` and `%WBLAMBDA%`), so calculated PIDs can use it, and it takes colours, alert levels and gauges in *Display and alerts* like any PID.
 - **Share…** (on a phone; **Export…** on Windows) writes the sensor and its PIDs to a `.uvsensor` file to send to someone else, who adds it with **Import…**. The port is left out (theirs will differ).
 
-**Examples to import** are in [`examples/sensors`](../examples/sensors/): an Arduino sending text or binary packets (with its sketch), a PLX chain of AFR, EGT and boost, and two Innovate widebands with a calculated bank difference. Download one, **Import…** it, choose its port.
+**Examples to import** are in [`examples/sensors`](../examples/sensors/), and on Windows the setup puts them in `C:\ProgramData\UVScan\Examples\Sensors`, where **Import…** opens: an Arduino sending text or binary packets (with its sketch), a PLX chain of AFR, EGT and boost, and two Innovate widebands with a calculated bank difference. Download one, **Import…** it, choose its port.
 
 **Save** writes the sensors, and the PIDs added with them. Then tick the sensor PIDs in the PID list like any others. A scan of sensor PIDs only works too (about 10 rows a second); either way UVScan stays connected to the car's adapter while it scans.
 
@@ -563,7 +563,7 @@ Names with spaces go in quotes. These are what a desktop shortcut made by **Quic
 
 ## Where things are stored
 
-Everything UVScan reads or writes, apart from CSV logs, is in **`C:\ProgramData\UVScan`**: `pids.json`, `lists.json`, `display.json`, `controls.json`, `logviews.json`, `sensors.json`, `dtcs.json` and `settings.json`. Missing files are created from the defaults built into `UVScan.exe`. See [data files](data-files.md) for the formats.
+Everything UVScan reads or writes, apart from CSV logs, is in **`C:\ProgramData\UVScan`**: `pids.json`, `lists.json`, `display.json`, `controls.json`, `logviews.json`, `sensors.json`, `dtcs.json` and `settings.json`. Missing files are created from the defaults built into `UVScan.exe`. See [data files](data-files.md) for the formats. The setup also puts the [example sensor files](../examples/sensors/) in its `Examples\Sensors` folder.
 
 ## Troubleshooting
 
