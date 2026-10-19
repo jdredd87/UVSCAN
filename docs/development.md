@@ -50,6 +50,10 @@ The factory data in `data\` is compiled into the exe through `UVScan.Defaults.rc
 - `lists.json`, `logviews.json`, `display.json`: a new built-in needs a new name; changing an existing one does not reach installs that have it.
 - `dtcs.json`: any change reaches every install.
 
+### Icon and splash
+
+`res/artwork/make_artwork.py` (Python with Pillow) draws the icon once - a tachometer over a live-data trace on navy - and writes every file the project uses: `UVScan.ico` (the exe and the installer), the Android launcher PNGs, the adaptive icon with its themed (monochrome) layer, the splash logo for Android 6-11 and the splash icon for 12+, the notification icon, and `uvscan.svg` for the README. `UVScan.dproj` and `UVScan.deployproj` point at these files instead of Delphi's default artwork, and the splash background is `#0E1B2E` in light and dark mode. To change the design, edit the script and run it again.
+
 ### Version
 
 `AppVersion` in `src\UVScan.Version.pas` is the version, changed by hand (major.minor.patch; the rewrite started at 2.0.0, after the VCL UVSCAN's 10.18.08b). Change the version info in `UVScan.dproj` to match (*Project → Options → Version Info*: Windows file version, Android `versionName`). Before each build (IDE or `build.cmd`, either platform) the project runs `tools\stamp.ps1`, which writes `src\UVScan.BuildStamp.inc` (not in git): the build number (the commit count), the commit (with `+` when built with uncommitted changes) and the date. UVScan shows them in the title bar, *More → About* and the first line of *Messages*.

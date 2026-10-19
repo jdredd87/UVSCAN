@@ -40,6 +40,7 @@ DisableProgramGroupPage=yes
 PrivilegesRequired=lowest
 PrivilegesRequiredOverridesAllowed=dialog
 UninstallDisplayIcon={app}\UVScan.exe
+SetupIconFile=..\res\artwork\UVScan.ico
 UninstallDisplayName=UVScan {#AppVersion}
 OutputDir=Output
 OutputBaseFilename=UVScan-{#AppVersion}-build{#BuildNumber}-setup

@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="15 15 78 78" width="256" height="256">
+  <title>UVScan</title>
+  <defs><linearGradient id="bg" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#182C4C"/><stop offset="1" stop-color="#0A1322"/></linearGradient></defs>
+  <rect x="15" y="15" width="78" height="78" rx="17.16" fill="url(#bg)"/>
+  <path d="M38,77 L45,77 L48,72 L52,84 L56,70 L59,77 L70,77" fill="none" stroke="#FFB020" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M37.74,68.26 A23,23 0 1 1 70.26,68.26" fill="none" stroke="#46AAFF" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M76.91,54 A23,23 0 0 1 70.26,68.26" fill="none" stroke="#FF5A3C" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M52.62,56.14 L55.72,54.46 L68.85,42.7 L69.07,41.45 L67.82,41.23 L52.28,49.54 L49.64,51.88 Z" fill="#FFFFFF"/>
+  <path d="M48.8,52 a5.2,5.2 0 1 0 10.4,0 a5.2,5.2 0 1 0 -10.4,0 Z" fill="#FFFFFF"/>
+  <path d="M52,52 a2,2 0 1 0 4,0 a2,2 0 1 0 -4,0 Z" fill="#0E1B2E"/>
+</svg>
