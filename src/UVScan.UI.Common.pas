@@ -185,7 +185,7 @@ function RunProgram(const FileName: string; const Params: string = ''): Boolean;
 implementation
 
 uses
-  System.Math, FMX.DialogService, FMX.Dialogs, FMX.Platform, FMX.TextLayout,
+  System.Math, FMX.DialogService, FMX.Dialogs, FMX.Platform, FMX.TextLayout, FMX.Edit,
   FMX.Effects, UVScan.UI.Theme
   {$IFDEF MSWINDOWS}, Winapi.Windows, Winapi.Messages{$ENDIF}
   {$IFDEF ANDROID}, Androidapi.Helpers, Androidapi.JNI.App, Androidapi.JNI.GraphicsContentViewText,
@@ -1115,12 +1115,78 @@ begin
 end;
 
 procedure AskText(const Title, Prompt, Default: string; const OnOK: TProc<string>);
+var
+  F: TForm;
+  L: TLabel;
+  E: TEdit;
+  Bar: TLayout;
+  B: TButton;
 begin
-  TDialogService.InputQuery(Title, [Prompt], [Default],
-    procedure(const AResult: TModalResult; const AValues: array of string)
+  if IsMobile then
+  begin
+    // Android's own: the prompt above the box, the width of the screen
+    TDialogService.InputQuery(Title, [Prompt], [Default],
+      procedure(const AResult: TModalResult; const AValues: array of string)
+      begin
+        if (AResult = mrOk) and (Length(AValues) > 0) and Assigned(OnOK) then
+          OnOK(Trim(AValues[0]));
+      end);
+    Exit;
+  end;
+  // FMX's InputQuery puts the prompt left of the box at a fixed width, so a
+  // long prompt pushed the box past the edge: the prompt goes above it.
+  F := TForm.CreateNew(nil);
+  F.Caption := Title;
+  F.Position := TFormPosition.MainFormCenter;
+  F.BorderIcons := [TBorderIcon.biSystemMenu];
+  F.ClientWidth := 480;
+  F.Padding.Rect := TRectF.Create(16, 12, 16, 0);
+  L := TLabel.Create(F);
+  L.Parent := F;
+  L.Align := TAlignLayout.Top;
+  L.WordWrap := True;
+  L.Text := Prompt;
+  L.Height := Max(22, WrappedTextHeight(L, F.ClientWidth - 32) + 4);
+  E := TEdit.Create(F);
+  E.Parent := F;
+  E.Align := TAlignLayout.Top;
+  E.Position.Y := 1000; // under the prompt
+  E.Margins.Top := 6;
+  E.Height := 32;
+  E.Text := Default;
+  Bar := TLayout.Create(F);
+  Bar.Parent := F;
+  Bar.Align := TAlignLayout.Bottom;
+  Bar.Height := 52;
+  B := TButton.Create(F);
+  B.Parent := Bar;
+  B.Align := TAlignLayout.Right;
+  B.Margins.Rect := TRectF.Create(6, 10, 0, 10);
+  B.Width := 90;
+  B.Text := 'Cancel';
+  B.Cancel := True;
+  B.ModalResult := mrCancel;
+  B := TButton.Create(F);
+  B.Parent := Bar;
+  B.Align := TAlignLayout.Right;
+  B.Margins.Rect := TRectF.Create(6, 10, 0, 10);
+  B.Width := 90;
+  B.Text := 'OK';
+  B.Default := True;
+  B.ModalResult := mrOk;
+  F.ClientHeight := Round(12 + L.Height + 6 + E.Height + 8 + Bar.Height);
+  F.ActiveControl := E;
+  TThread.ForceQueue(nil,
+    procedure
     begin
-      if (AResult = mrOk) and (Length(AValues) > 0) and Assigned(OnOK) then
-        OnOK(Trim(AValues[0]));
+      if F.Visible then
+        E.SelectAll; // typing replaces the suggestion
+    end);
+  ShowDialog(F,
+    procedure(R: TModalResult)
+    begin
+      if (R = mrOk) and Assigned(OnOK) then
+        OnOK(Trim(E.Text));
     end);
 end;
 
