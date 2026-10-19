@@ -47,9 +47,13 @@ type
     FNarrow: Boolean;
     FButtonsWidth: Single;    // the width the button row was flowed for
     FDetail: TArray<TControl>; // shown while a sensor is selected
+    FOrder: TArray<TControl>;  // everything on the page, top to bottom
     FRows: TArray<TControl>;
     FCaps: TArray<TLabel>;
-    rowSend, rowEvery: TLayout; // text sensors only
+    rowSend, rowEvery: TLayout; // sensors that can be asked (text, packets)
+    rowLayout: TLayout;         // packet sensors only
+    edtLayout: TEdit;
+    lblLayout: TLabel;
     FTemplates: TArray<TSensorTemplate>;
     lbSensors: TListBox;
     lblEmpty: TLabel;
@@ -85,6 +89,10 @@ type
     procedure FieldChanged(Sender: TObject);
     procedure NameChanged(Sender: TObject);
     procedure ProtocolChanged(Sender: TObject);
+    procedure ShowProtocolRows(P: TSensorProtocol);
+    procedure KeepOrder;
+    procedure UpdateLayoutNote;
+    function ListText(D: TSensorDef): string;
     procedure UpdatePids;
     procedure SensorClick(Sender: TObject);
     procedure AddClick(Sender: TObject);
@@ -124,6 +132,7 @@ begin
   C.Position.Y := FY;
   C.Height := Height;
   FY := FY + Height + 100; // the order; the realign closes the gaps
+  FOrder := FOrder + [C];
   if Detail then
     FDetail := FDetail + [C];
   Result := C;
@@ -248,6 +257,12 @@ begin
   edtSend := TEdit.Create(FForm);
   edtSend.TextPrompt := 'nothing (it sends by itself)';
   edtSend.OnChange := FieldChanged;
+  edtLayout := TEdit.Create(FForm);
+  edtLayout.TextPrompt := 'start 00 01 02; length 14; afr 3; egt 4-5 le';
+  edtLayout.OnChange := FieldChanged;
+  edtLayout.OnChangeTracking := FieldChanged;
+  rowLayout := Row('Layout', edtLayout);
+  lblLayout := Note;
   rowSend := Row('Ask with', edtSend);
   edtEvery := TEdit.Create(FForm);
   edtEvery.TextPrompt := '1000';
@@ -391,8 +406,7 @@ begin
         D := FWork[I];
         Item := TListBoxItem.Create(lbSensors);
         Item.Height := 40;
-        Item.Text := Format('%s  -  %s on %s%s', [D.Name, IfThen(D.Protocol = spMts, 'MTS', 'text'),
-          IfThen(D.Port <> '', D.Port, '(no port yet)'), IfThen(D.Enabled, '', ', off')]);
+        Item.Text := ListText(D);
         lbSensors.AddObject(Item);
       end;
     finally
@@ -404,6 +418,7 @@ begin
   end;
   lbSensors.Visible := FWork.Count > 0;
   lblEmpty.Visible := FWork.Count = 0;
+  KeepOrder;
   btnShare.Enabled := FCurrent >= 0;
   btnDelete.Enabled := FCurrent >= 0;
   Relayout;
@@ -420,11 +435,9 @@ begin
   for C in FDetail do
     C.Visible := D <> nil;
   if D <> nil then
-  begin
-    // MTS devices send by themselves: nothing to ask with
-    rowSend.Visible := D.Protocol = spText;
-    rowEvery.Visible := D.Protocol = spText;
-  end;
+    ShowProtocolRows(D.Protocol)
+  else
+    KeepOrder;
   btnShare.Enabled := D <> nil;
   btnDelete.Enabled := D <> nil;
   if D = nil then
@@ -439,10 +452,12 @@ begin
     edtSend.Text := D.Send;
     edtEvery.Text := IfThen(D.Send <> '', IntToStr(D.SendEveryMs), '');
     edtDescription.Text := D.Description;
+    edtLayout.Text := D.Layout;
     chkEnabled.IsChecked := D.Enabled;
   finally
     FLoading := False;
   end;
+  UpdateLayoutNote;
   lbFields.Clear;
   lblLast.Text := '';
   lblStatus.Text := 'Start the test to see what the sensor sends: every field and its value.';
@@ -484,6 +499,7 @@ begin
   if D.Send = '' then
     D.SendEveryMs := 0;
   D.Description := Trim(edtDescription.Text);
+  D.Layout := Trim(edtLayout.Text);
   D.Enabled := chkEnabled.IsChecked;
 end;
 
@@ -493,14 +509,18 @@ begin
     Exit;
   ApplyFields;
   FChanged := True;
+  if Sender = edtLayout then
+  begin
+    UpdateLayoutNote;
+    Relayout;
+    Exit; // typing: a running test goes on with the layout it started with
+  end;
   if FReader <> nil then
     StartTest; // test what is there now
   FLoading := True;
   try
     if (lbSensors.ItemIndex >= 0) and (lbSensors.ItemIndex < lbSensors.Count) then
-      lbSensors.ListItems[lbSensors.ItemIndex].Text := Format('%s  -  %s on %s%s', [CurrentDef.Name,
-        IfThen(CurrentDef.Protocol = spMts, 'MTS', 'text'), IfThen(CurrentDef.Port <> '', CurrentDef.Port,
-        '(no port yet)'), IfThen(CurrentDef.Enabled, '', ', off')]);
+      lbSensors.ListItems[lbSensors.ItemIndex].Text := ListText(CurrentDef);
   finally
     FLoading := False;
   end;
@@ -546,10 +566,64 @@ begin
   finally
     FLoading := False;
   end;
-  rowSend.Visible := P = spText;
-  rowEvery.Visible := P = spText;
+  ShowProtocolRows(P);
   FieldChanged(Sender);
+  UpdateLayoutNote;
   Relayout;
+end;
+
+procedure TSensorPage.ShowProtocolRows(P: TSensorProtocol);
+begin
+  // MTS and PLX devices send by themselves: nothing to ask with
+  rowSend.Visible := P in [spText, spPacket];
+  rowEvery.Visible := P in [spText, spPacket];
+  rowLayout.Visible := P = spPacket;
+  lblLayout.Visible := P = spPacket;
+  KeepOrder;
+end;
+
+{ A top-aligned control shown again goes to the bottom: back to its place. }
+procedure TSensorPage.KeepOrder;
+var
+  I: Integer;
+begin
+  FBox.BeginUpdate;
+  try
+    for I := 0 to High(FOrder) do
+      FOrder[I].Position.Y := I * 10000;
+  finally
+    FBox.EndUpdate; // realigns
+  end;
+end;
+
+procedure TSensorPage.UpdateLayoutNote;
+var
+  L: TPacketLayout;
+  Err, Names: string;
+  F: TPacketField;
+begin
+  if (CurrentDef = nil) or (CurrentDef.Protocol <> spPacket) then
+    Exit;
+  lblLayout.StyledSettings := lblLayout.StyledSettings - [TStyledSetting.FontColor];
+  if ParsePacketLayout(edtLayout.Text, L, Err) then
+  begin
+    Names := '';
+    for F in L.Fields do
+      Names := Names + IfThen(Names <> '', ', ') + F.Name;
+    lblLayout.TextSettings.FontColor := Palette.Muted;
+    lblLayout.Text := Format('%d-byte packets; fields: %s', [L.Length, Names]);
+  end
+  else
+  begin
+    lblLayout.TextSettings.FontColor := Palette.Bad;
+    lblLayout.Text := Err + '. Items split by ";": start 00 01 02; length 14; NAME 3; NAME 4-5 [le] [signed].';
+  end;
+end;
+
+function TSensorPage.ListText(D: TSensorDef): string;
+begin
+  Result := Format('%s  -  %s on %s%s', [D.Name, SensorProtocolShort[D.Protocol],
+    IfThen(D.Port <> '', D.Port, '(no port yet)'), IfThen(D.Enabled, '', ', off')]);
 end;
 
 procedure TSensorPage.SensorClick(Sender: TObject);
@@ -624,8 +698,8 @@ begin
   FCurrent := FWork.IndexOf(Name);
   FillList;
   ShowSensor(FCurrent);
-  if FWork[FCurrent].Port = '' then
-    cbPort.SetFocus;
+  if (FWork[FCurrent].Port = '') and not IsMobile then
+    cbPort.SetFocus; // (a phone would open its keyboard)
 end;
 
 procedure TSensorPage.ImportFile(const FileName: string);
@@ -806,7 +880,7 @@ begin
     Exit;
   S := FReader.Status;
   if FReader.Packets > 0 then
-    S := S + Format(' (%d %s)', [FReader.Packets, IfThen(FReader.Def.Protocol = spMts, 'packets', 'lines')]);
+    S := S + Format(' (%d %s)', [FReader.Packets, IfThen(FReader.Def.Protocol = spText, 'lines', 'packets')]);
   lblStatus.Text := S;
   Last := FReader.LastData;
   if Length(Last) > 160 then
@@ -841,7 +915,7 @@ end;
 
 procedure TSensorPage.AddPidClick(Sender: TObject);
 var
-  Field, Suggest: string;
+  Field, Suggest, Title, Formula, Units: string;
   D: TSensorDef;
 begin
   D := CurrentDef;
@@ -851,12 +925,15 @@ begin
     Exit;
   end;
   Field := lbFields.Selected.TagString;
-  if Field.StartsWith('afr') then
-    Suggest := D.Name + ' AFR'
-  else if Field.StartsWith('lambda') then
-    Suggest := D.Name + ' lambda'
-  else
-    Suggest := D.Name + ' ' + Field;
+  if not SuggestSensorPid(D.Protocol, Field, Title, Formula, Units) then
+    Title := Field;
+  if Title = '' then
+    Title := Field;
+  // a second module or wideband of the kind: its number too
+  if (D.Protocol in [spMts, spPlx]) and (Field.Length > 0) and CharInSet(Field[High(Field)], ['2'..'9']) and
+    not Title.EndsWith(Field[High(Field)]) then
+    Title := Title + ' ' + Field[High(Field)];
+  Suggest := D.Name + ' ' + Title;
   AskText('Add a PID', Format('A name for %s''s %s', [D.Name, Field]), Suggest,
     procedure(Name: string)
     var
@@ -873,15 +950,8 @@ begin
       P.SensorField := Field;
       P.PidCode := SensorPidCode;
       P.Mci := FreeMci(Name);
-      if Field.StartsWith('afr') then
-        P.Units := 'AFR'
-      else if Field.StartsWith('lambda') then
-        P.Units := 'lambda'
-      else if Field.StartsWith('aux') then
-      begin
-        P.Units := 'V';
-        P.FormulaText := 'N0 * 5 / 1023'; // 0..1023 = 0-5 V
-      end;
+      P.Units := Units;
+      P.FormulaText := Formula;
       FPids.Add(P);
       FPidsChanged := True;
       UpdatePids;
@@ -925,6 +995,16 @@ begin
     begin
       ShowWarning('Every sensor needs a name');
       Exit(False);
+    end;
+    if FWork[I].Protocol = spPacket then
+    begin
+      var L: TPacketLayout;
+      var Err: string;
+      if not ParsePacketLayout(FWork[I].Layout, L, Err) then
+      begin
+        ShowWarning(Format('The packet layout of "%s": %s', [FWork[I].Name, Err]));
+        Exit(False);
+      end;
     end;
     for J := 0 to I - 1 do
       if SameText(FWork[I].Name, FWork[J].Name) then

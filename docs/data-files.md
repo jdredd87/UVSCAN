@@ -146,13 +146,16 @@ The top‑level `"defaults"` number records which set of built‑ins the file ha
     { "name": "Wideband", "protocol": "mts", "port": "COM5", "baud": 19200,
       "description": "Innovate LC-1 on its serial out" },
     { "name": "EGT box", "protocol": "text", "port": "192.168.4.1:23", "baud": 9600,
-      "send": "R\\r", "sendEveryMs": 250, "enabled": false } ] }
+      "send": "R\\r", "sendEveryMs": 250, "enabled": false },
+    { "name": "Zeitronix", "protocol": "packet", "port": "COM6", "baud": 9600,
+      "layout": "start 00 01 02; length 14; lambda 3; egt 4-5 le; rpm 6-7 le" } ] }
 ```
 
 | Field | Meaning |
 |---|---|
 | `name` | Unique; sensor PIDs name their sensor by it. |
-| `protocol` | `mts`: Innovate's MTS serial protocol 2 (LC‑1, LC‑2, LM‑1/2, MTX‑L and aux boxes chained to them); fields `lambdaN`, `afrN`, `statusN`, `warmupN` (while warming up), `auxN`. `text`: lines of text; each number is a field by its place (`1`, `2`, …), and one after `name=` or `name:` also by that name (lower case). |
+| `protocol` | `mts`: Innovate's MTS serial protocol 2 (LC‑1, LC‑2, LM‑1/2, MTX‑L and aux boxes chained to them); fields `lambdaN`, `afrN`, `statusN`, `warmupN` (while warming up), `auxN`. `text`: lines of text; each number is a field by its place (`1`, `2`, …), and one after `name=` or `name:` also by that name (lower case). `plx`: PLX iMFD; fields by module and instance (`wideband1`, `egt2`, `boost1`…), the raw 0–4095 value. `packet`: fixed‑size binary packets described by `layout`. |
+| `layout` | A `packet` sensor's packets: items split by `;` — `start` and the hex bytes every packet starts with, `length` in bytes, and `NAME N` or `NAME N-M [le] [signed]` for a value in byte N (or bytes N to M, most significant first unless `le`), bytes counted from 0. |
 | `port`, `baud` | A COM port, a phone's USB or Bluetooth port name, a network address (`host:port`), or `Simulator` (a made-up device of that protocol). |
 | `send`, `sendEveryMs` | Text sent every so often to a device that answers when asked; `\r`, `\n`, `\t` and `\\` as in C. |
 | `enabled` | `false`: its PIDs stay empty, the port is left alone. |

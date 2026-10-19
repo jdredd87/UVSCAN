@@ -18,6 +18,16 @@ unit UVScan.Sensors;
           also a field of that name (egt, afr; not case sensitive). For
           plain-text widebands (AEM X-Series) and anything an Arduino can
           print.
+    plx   PLX Devices' iMFD (PLXApp018): 19200 baud, every 100 ms a 0x80,
+          5 bytes per sensor module in the chain (address, instance, a
+          12-bit value, 6 bits a byte) and a 0x40. Fields by module and
+          instance: wideband1, egt1, boost1, egt2 (a second EGT module)...
+          (PlxNames); the value as sent, 0..4095: the PID's formula
+          converts it (SuggestSensorPid has PLX's own conversions).
+    packet  Fixed-size binary packets described by "layout" (see
+          ParsePacketLayout): the bytes every packet starts with, its
+          length and where each value is. Zeitronix, Tech Edge and any
+          device like them, without new code.
 
   What a sensor measures is shown by sensor PIDs (kind "sensor" in
   pids.json): the sensor's name, a field and a formula over the field's
@@ -31,7 +41,9 @@ unit UVScan.Sensors;
         { "name": "EGT", "protocol": "text", "port": "COM7", "baud": 9600,
           "send": "R\r", "sendEveryMs": 100, "enabled": false } ] }
     Optional: "description"; "send" is text sent every "sendEveryMs" to a
-    device that answers when asked (\r, \n, \t and \\ as in C).
+    device that answers when asked (\r, \n, \t and \\ as in C);
+    "layout" for a packet sensor, e.g.
+      "start 00 01 02; length 14; lambda 3; egt 4-5 le; rpm 6-7 le".
     The port "Simulator" is a made-up device of that protocol (a demo).
 
   A sensor shared as a file (*.uvsensor, JSON): the sensor and its PIDs.
@@ -44,7 +56,7 @@ uses
   System.JSON, UVScan.Serial, UVScan.Pids;
 
 type
-  TSensorProtocol = (spMts, spText);
+  TSensorProtocol = (spMts, spText, spPlx, spPacket);
 
   TSensorDef = class
   public
@@ -56,6 +68,7 @@ type
     Send: string;          // as written in the file: \r etc. not turned into characters yet
     SendEveryMs: Integer;
     Enabled: Boolean;
+    Layout: string;        // spPacket: see ParsePacketLayout
     constructor Create;
     procedure Assign(Source: TSensorDef);
     function Clone: TSensorDef;
@@ -110,13 +123,52 @@ type
     property Count: Int64 read FCount;
   end;
 
-  TMtsParser = class(TSensorParser)
-  private
+  { A parser that collects bytes until a whole packet is there. }
+  TBufferedParser = class(TSensorParser)
+  protected
     FBuf: TBytes;
     FLen: Integer;
-    procedure Decode(Start, Words: Integer; const Emit: TSensorEmit);
+    procedure Append(const Data: TBytes; Count: Integer);
     procedure Drop(N: Integer);
+  end;
+
+  TMtsParser = class(TBufferedParser)
+  private
+    procedure Decode(Start, Words: Integer; const Emit: TSensorEmit);
   public
+    procedure Push(const Data: TBytes; Count: Integer; const Emit: TSensorEmit); override;
+  end;
+
+  TPlxParser = class(TSensorParser)
+  private
+    FFrame: array[0..159] of Byte; // 32 modules of 5 bytes
+    FLen: Integer;
+    FIn: Boolean;
+    procedure Decode(const Emit: TSensorEmit);
+  public
+    procedure Push(const Data: TBytes; Count: Integer; const Emit: TSensorEmit); override;
+  end;
+
+  TPacketField = record
+    Name: string;
+    Offset: Integer;      // from the packet's first byte, 0 based
+    Size: Integer;        // 1..4 bytes
+    Little: Boolean;      // least significant byte first
+    Signed: Boolean;
+  end;
+
+  TPacketLayout = record
+    Start: TBytes;        // every packet starts with these
+    Length: Integer;      // bytes in a packet, the start included
+    Fields: TArray<TPacketField>;
+  end;
+
+  TPacketParser = class(TBufferedParser)
+  private
+    FLayout: TPacketLayout;
+    function StartsAt(I: Integer): Boolean;
+  public
+    constructor Create(const Layout: TPacketLayout);
     procedure Push(const Data: TBytes; Count: Integer; const Emit: TSensorEmit); override;
   end;
 
@@ -181,17 +233,45 @@ type
 const
   SensorFileVersion = 1;
   SensorPackageVersion = 1;
-  SensorProtocolKeys: array[TSensorProtocol] of string = ('mts', 'text');
+  SensorProtocolKeys: array[TSensorProtocol] of string = ('mts', 'text', 'plx', 'packet');
   SensorProtocolNames: array[TSensorProtocol] of string = ('Innovate MTS (LC-1, LC-2, LM-2...)',
-    'Text lines (AEM, Arduino...)');
-  SensorProtocolBaud: array[TSensorProtocol] of Integer = (19200, 9600);
+    'Text lines (AEM, Arduino...)', 'PLX iMFD (SM-AFR, EGT, boost...)', 'Fixed packets (Zeitronix, Tech Edge...)');
+  SensorProtocolShort: array[TSensorProtocol] of string = ('MTS', 'text', 'PLX', 'packets');
+  SensorProtocolBaud: array[TSensorProtocol] of Integer = (19200, 9600, 19200, 9600);
+  { PLX iMFD sensor module addresses (PLXApp018, and 21-26 from later units). }
+  PlxNames: array[0..26] of string = ('wideband', 'egt', 'fluidtemp', 'vacuum', 'boost', 'iat', 'rpm',
+    'speed', 'tps', 'load', 'fluidpressure', 'timing', 'map', 'maf', 'stft', 'ltft', 'narrowband',
+    'fuellevel', 'volts', 'knock', 'duty', 'fuelefficiency', 'analog', 'frequency', 'afrstatus',
+    'afrhealth', 'afrreaction');
   SensorSimulatorPort = 'Simulator';
   SensorFileExt = '.uvsensor';
   { A value older than this is no reading (the sensor stopped sending). }
   SensorMaxAgeMs = 3000;
 
 function SensorProtocolFromKey(const Key: string; out P: TSensorProtocol): Boolean;
-function CreateSensorParser(P: TSensorProtocol): TSensorParser;
+{ The parser for Def's protocol; raises EConvertError for a packet sensor
+  whose layout is wrong. }
+function CreateSensorParser(Def: TSensorDef): TSensorParser;
+{ A packet layout: items split by ";", each words split by spaces.
+    start 00 01 02    the bytes (hex) every packet starts with
+    length 14         bytes in a packet, the start included
+    NAME 3            a value in byte 3 (from 0, the first start byte)
+    NAME 4-5 [le] [signed]  bytes 4 and 5, most significant first (le:
+                      least first); up to 4 bytes
+  False with Error saying what is wrong. }
+function ParsePacketLayout(const Text: string; out Layout: TPacketLayout; out Error: string): Boolean;
+{ The field a PLX module's value is: wideband1, egt2... }
+function PlxFieldName(Address, Instance: Integer): string;
+type
+  TPlxReading = record
+    Address, Instance, Value: Integer;
+  end;
+function PlxReading(Address, Instance, Value: Integer): TPlxReading;
+function BuildPlxPacket(const Readings: array of TPlxReading): TBytes;
+{ What a PID for a field of this protocol is likely to want: a name, a
+  formula from the raw value (N0) and units. False when there is no
+  suggestion (the value as it is). }
+function SuggestSensorPid(Protocol: TSensorProtocol; const Field: string; out Title, Formula, Units: string): Boolean;
 { The port Def names (or the simulator), not opened yet. }
 function CreateSensorPort(Def: TSensorDef): ISerialPort;
 { "R\r" -> R and a carriage return. }
@@ -283,6 +363,7 @@ begin
   Send := Source.Send;
   SendEveryMs := Source.SendEveryMs;
   Enabled := Source.Enabled;
+  Layout := Source.Layout;
 end;
 
 function TSensorDef.Clone: TSensorDef;
@@ -305,6 +386,8 @@ begin
     Result.AddPair('send', Send);
     Result.AddPair('sendEveryMs', TJSONNumber.Create(SendEveryMs));
   end;
+  if Layout <> '' then
+    Result.AddPair('layout', Layout);
   if not Enabled then
     Result.AddPair('enabled', TJSONBool.Create(False));
 end;
@@ -312,6 +395,8 @@ end;
 class function TSensorDef.FromJson(E: TJSONObject): TSensorDef;
 var
   P: TSensorProtocol;
+  L: TPacketLayout;
+  Err: string;
 begin
   Result := TSensorDef.Create;
   try
@@ -319,7 +404,7 @@ begin
     if Result.Name = '' then
       raise EConvertError.Create('a sensor without a "name"');
     if not SensorProtocolFromKey(JStr(E, 'protocol'), P) then
-      raise EConvertError.CreateFmt('sensor "%s": unknown protocol "%s" (mts or text)',
+      raise EConvertError.CreateFmt('sensor "%s": unknown protocol "%s" (mts, text, plx or packet)',
         [Result.Name, JStr(E, 'protocol')]);
     Result.Protocol := P;
     Result.Description := Trim(JStr(E, 'description'));
@@ -332,6 +417,9 @@ begin
     if (Result.Send <> '') and (Result.SendEveryMs = 0) then
       Result.SendEveryMs := 1000;
     Result.Enabled := JBool(E, 'enabled', True);
+    Result.Layout := Trim(JStr(E, 'layout'));
+    if (P = spPacket) and not ParsePacketLayout(Result.Layout, L, Err) then
+      raise EConvertError.CreateFmt('sensor "%s": %s', [Result.Name, Err]);
   except
     Result.Free;
     raise;
@@ -604,7 +692,19 @@ begin
   FNote := Notes;
 end;
 
-procedure TMtsParser.Drop(N: Integer);
+{ TBufferedParser }
+
+procedure TBufferedParser.Append(const Data: TBytes; Count: Integer);
+begin
+  if Count <= 0 then
+    Exit;
+  if FLen + Count > Length(FBuf) then
+    SetLength(FBuf, Max(1024, FLen + Count));
+  Move(Data[0], FBuf[FLen], Count);
+  Inc(FLen, Count);
+end;
+
+procedure TBufferedParser.Drop(N: Integer);
 begin
   if N <= 0 then
     Exit;
@@ -613,6 +713,8 @@ begin
   Dec(FLen, Min(N, FLen));
 end;
 
+{ TMtsParser }
+
 procedure TMtsParser.Push(const Data: TBytes; Count: Integer; const Emit: TSensorEmit);
 var
   I, Words, Need, Skip: Integer;
@@ -620,10 +722,7 @@ var
 begin
   if Count <= 0 then
     Exit;
-  if FLen + Count > Length(FBuf) then
-    SetLength(FBuf, Max(1024, FLen + Count));
-  Move(Data[0], FBuf[FLen], Count);
-  Inc(FLen, Count);
+  Append(Data, Count);
   repeat
     // A header: both bytes with bit 7 set, the first 1x1xxx1x.
     Skip := 0;
@@ -765,28 +864,321 @@ begin
   end;
 end;
 
-function CreateSensorParser(P: TSensorProtocol): TSensorParser;
+function CreateSensorParser(Def: TSensorDef): TSensorParser;
+var
+  L: TPacketLayout;
+  Err: string;
 begin
-  case P of
+  case Def.Protocol of
     spText: Result := TTextParser.Create;
+    spPlx: Result := TPlxParser.Create;
+    spPacket:
+      if ParsePacketLayout(Def.Layout, L, Err) then
+        Result := TPacketParser.Create(L)
+      else
+        raise EConvertError.Create('Packet layout: ' + Err);
   else
     Result := TMtsParser.Create;
   end;
 end;
 
+{ PLX iMFD }
+
+function PlxFieldName(Address, Instance: Integer): string;
+begin
+  if (Address >= 0) and (Address <= High(PlxNames)) then
+    Result := PlxNames[Address] + IntToStr(Instance + 1)
+  else
+    Result := Format('sensor%d_%d', [Address, Instance + 1]);
+end;
+
+function PlxReading(Address, Instance, Value: Integer): TPlxReading;
+begin
+  Result.Address := Address;
+  Result.Instance := Instance;
+  Result.Value := Value;
+end;
+
+function BuildPlxPacket(const Readings: array of TPlxReading): TBytes;
+var
+  R: TPlxReading;
+begin
+  Result := [$80];
+  for R in Readings do
+    Result := Result + [(R.Address shr 6) and $3F, R.Address and $3F, R.Instance and $3F,
+      (R.Value shr 6) and $3F, R.Value and $3F];
+  Result := Result + [$40];
+end;
+
+procedure TPlxParser.Push(const Data: TBytes; Count: Integer; const Emit: TSensorEmit);
+var
+  I: Integer;
+  B: Byte;
+begin
+  for I := 0 to Count - 1 do
+  begin
+    B := Data[I];
+    if B = $80 then
+    begin
+      FIn := True;
+      FLen := 0;
+    end
+    else if not FIn then
+      // waiting for a start
+    else if B = $40 then
+    begin
+      Decode(Emit);
+      FIn := False;
+    end
+    else if ((B and $C0) <> 0) or (FLen > High(FFrame)) then
+      FIn := False // not iMFD, or longer than 32 modules: wait for the next start
+    else
+    begin
+      FFrame[FLen] := B;
+      Inc(FLen);
+    end;
+  end;
+end;
+
+procedure TPlxParser.Decode(const Emit: TSensorEmit);
+var
+  I: Integer;
+begin
+  if (FLen = 0) or (FLen mod 5 <> 0) then
+    Exit; // bytes were lost
+  FLast := '80';
+  for I := 0 to FLen - 1 do
+    FLast := FLast + ' ' + IntToHex(FFrame[I], 2);
+  FLast := FLast + ' 40';
+  Inc(FCount);
+  I := 0;
+  while I < FLen do
+  begin
+    Emit(PlxFieldName((FFrame[I] shl 6) or FFrame[I + 1], FFrame[I + 2]), (FFrame[I + 3] shl 6) or FFrame[I + 4]);
+    Inc(I, 5);
+  end;
+end;
+
+{ Packets }
+
+function ParsePacketLayout(const Text: string; out Layout: TPacketLayout; out Error: string): Boolean;
+
+  function Fail(const Msg: string): Boolean;
+  begin
+    Error := Msg;
+    Result := False;
+  end;
+
+var
+  Item, Name, W: string;
+  Words: TArray<string>;
+  I, A, B, N, P: Integer;
+  F: TPacketField;
+begin
+  Layout := Default(TPacketLayout);
+  Error := '';
+  for Item in Text.Split([';']) do
+  begin
+    Words := Trim(Item).Split([' ', #9], TStringSplitOptions.ExcludeEmpty);
+    if Length(Words) = 0 then
+      Continue;
+    Name := LowerCase(Words[0]);
+    if Name = 'start' then
+    begin
+      Layout.Start := nil;
+      for I := 1 to High(Words) do
+        if (Length(Words[I]) = 2) and TryStrToInt('$' + Words[I], N) then
+          Layout.Start := Layout.Start + [Byte(N)]
+        else
+          Exit(Fail(Format('"%s" in "%s" is not a byte in hex (00 to FF)', [Words[I], Trim(Item)])));
+    end
+    else if Name = 'length' then
+    begin
+      if (Length(Words) <> 2) or not TryStrToInt(Words[1], N) or (N < 1) or (N > 1024) then
+        Exit(Fail('"length" is the packet''s size in bytes, e.g. length 14'));
+      Layout.Length := N;
+    end
+    else
+    begin
+      if not Name[1].IsLetter then
+        Exit(Fail(Format('"%s": a value''s name starts with a letter', [Trim(Item)])));
+      for var C in Name do
+        if not (C.IsLetterOrDigit or (C = '_')) then
+          Exit(Fail(Format('"%s": a value''s name is letters, digits and _', [Trim(Item)])));
+      if Length(Words) < 2 then
+        Exit(Fail(Format('"%s" needs the byte it is in, e.g. %s 3 or %s 4-5', [Name, Name, Name])));
+      W := Words[1];
+      P := Pos('-', W);
+      if P > 0 then
+      begin
+        A := StrToIntDef(Copy(W, 1, P - 1), -1);
+        B := StrToIntDef(Copy(W, P + 1, MaxInt), -1);
+      end
+      else
+      begin
+        A := StrToIntDef(W, -1);
+        B := A;
+      end;
+      if (A < 0) or (B < A) or (B - A > 3) then
+        Exit(Fail(Format('"%s": the bytes are one number, or two like 4-5 (at most 4 bytes)', [Trim(Item)])));
+      F := Default(TPacketField);
+      F.Name := Name;
+      F.Offset := A;
+      F.Size := B - A + 1;
+      for I := 2 to High(Words) do
+        if SameText(Words[I], 'le') then
+          F.Little := True
+        else if SameText(Words[I], 'be') then
+          F.Little := False
+        else if SameText(Words[I], 'signed') then
+          F.Signed := True
+        else
+          Exit(Fail(Format('"%s": unknown "%s" (le, be or signed)', [Trim(Item), Words[I]])));
+      for var G in Layout.Fields do
+        if G.Name = Name then
+          Exit(Fail(Format('"%s" is in the layout twice', [Name])));
+      Layout.Fields := Layout.Fields + [F];
+    end;
+  end;
+  if Length(Layout.Start) = 0 then
+    Exit(Fail('the layout needs the bytes every packet starts with, e.g. start 00 01 02'));
+  if Layout.Length = 0 then
+    Exit(Fail('the layout needs the packet''s length, e.g. length 14'));
+  if Layout.Length < Length(Layout.Start) then
+    Exit(Fail('the packet is shorter than its start bytes'));
+  if Length(Layout.Fields) = 0 then
+    Exit(Fail('the layout names no values, e.g. afr 3'));
+  for F in Layout.Fields do
+    if F.Offset + F.Size > Layout.Length then
+      Exit(Fail(Format('%s is past the end of the %d-byte packet (bytes count from 0)', [F.Name, Layout.Length])));
+  Result := True;
+end;
+
+constructor TPacketParser.Create(const Layout: TPacketLayout);
+begin
+  inherited Create;
+  FLayout := Layout;
+end;
+
+function TPacketParser.StartsAt(I: Integer): Boolean;
+var
+  K: Integer;
+begin
+  for K := 0 to High(FLayout.Start) do
+    if (I + K >= FLen) or (FBuf[I + K] <> FLayout.Start[K]) then
+      Exit(False);
+  Result := True;
+end;
+
+procedure TPacketParser.Push(const Data: TBytes; Count: Integer; const Emit: TSensorEmit);
+var
+  I, K: Integer;
+  V, Full: Int64;
+  F: TPacketField;
+begin
+  Append(Data, Count);
+  repeat
+    I := 0;
+    while (I < FLen) and not StartsAt(I) do
+      Inc(I);
+    Drop(I);
+    if FLen < FLayout.Length then
+      Break;
+    FLast := BytesToHex(Copy(FBuf, 0, FLayout.Length));
+    Inc(FCount);
+    for F in FLayout.Fields do
+    begin
+      V := 0;
+      for K := 0 to F.Size - 1 do
+        if F.Little then
+          V := (V shl 8) or FBuf[F.Offset + F.Size - 1 - K]
+        else
+          V := (V shl 8) or FBuf[F.Offset + K];
+      if F.Signed then
+      begin
+        Full := Int64(1) shl (8 * F.Size);
+        if V >= Full div 2 then
+          V := V - Full;
+      end;
+      Emit(F.Name, V);
+    end;
+    Drop(FLayout.Length);
+  until False;
+  if FLen > 8192 then
+    Drop(FLen - 8192);
+end;
+
+{ Suggestions }
+
+function SuggestSensorPid(Protocol: TSensorProtocol; const Field: string; out Title, Formula, Units: string): Boolean;
+
+  procedure Put(const ATitle, AFormula, AUnits: string);
+  begin
+    Title := ATitle;
+    Formula := AFormula;
+    Units := AUnits;
+  end;
+
+var
+  Base: string;
+begin
+  Title := '';
+  Formula := '';
+  Units := '';
+  Base := LowerCase(Field);
+  while (Base <> '') and CharInSet(Base[High(Base)], ['0'..'9', '_']) do
+    Delete(Base, Length(Base), 1);
+  case Protocol of
+    spMts:
+      if Base = 'afr' then Put('AFR', '', 'AFR')
+      else if Base = 'lambda' then Put('lambda', '', 'lambda')
+      else if Base = 'aux' then Put('aux ' + Copy(Field, 4, MaxInt), 'N0 * 5 / 1023', 'V');
+    spPlx:
+      // PLXApp018's conversions (the default units of each module)
+      if Base = 'wideband' then Put('AFR', '(N0 / 2.55 + 100) / 10', 'AFR')
+      else if Base = 'egt' then Put('EGT', 'N0', #$00B0'C')
+      else if Base = 'fluidtemp' then Put('fluid temperature', 'N0', #$00B0'C')
+      else if Base = 'vacuum' then Put('vacuum', '-(N0 / 11.39 - 29.93)', 'inHg')
+      else if Base = 'boost' then Put('boost', 'N0 / 22.73', 'psi')
+      else if Base = 'iat' then Put('intake air', 'N0', #$00B0'C')
+      else if Base = 'rpm' then Put('RPM', 'N0 * 19.55', 'RPM')
+      else if Base = 'speed' then Put('speed', 'N0 / 6.39', 'MPH')
+      else if Base = 'tps' then Put('throttle', 'N0', '%')
+      else if Base = 'load' then Put('load', 'N0', '%')
+      else if Base = 'fluidpressure' then Put('fluid pressure', 'N0 / 5.115', 'psi')
+      else if Base = 'timing' then Put('timing', 'N0 - 64', #$00B0)
+      else if Base = 'map' then Put('MAP', 'N0', 'kPa')
+      else if Base = 'maf' then Put('MAF', 'N0', 'g/s')
+      else if (Base = 'stft') or (Base = 'ltft') then Put(UpperCase(Base), 'N0 - 100', '%')
+      else if Base = 'narrowband' then Put('O2', 'N0 / 78.43', 'V')
+      else if Base = 'fuellevel' then Put('fuel level', 'N0', '%')
+      else if Base = 'volts' then Put('volts', 'N0 / 51.15', 'V')
+      else if Base = 'knock' then Put('knock', 'N0 / 204.6', 'V')
+      else if Base = 'duty' then Put('duty', 'N0 / 10.23', '%')
+      else if Base = 'analog' then Put('analog', 'N0 / 51.15', 'V')
+      else if Base = 'frequency' then Put('frequency', 'N0 * 0.1', 'Hz')
+      else if Base = 'afrreaction' then Put('AFR reaction', 'N0', 'ms');
+  end;
+  Result := (Title <> '') or (Formula <> '') or (Units <> '');
+end;
+
 { Simulator }
 
 type
-  { A made-up sensor: an LC-1 with an aux box behind it (mts) or a box
-    printing afr, egt and oil pressure lines (text). Warms up for 2 s. }
+  { A made-up sensor: an LC-1 with an aux box behind it (mts, warms up for
+    2 s), a box printing afr, egt and oil pressure lines (text), an SM-AFR
+    and an SM-EGT (plx), or packets with every value of the layout sweeping
+    its range (packet). }
   TSimulatedSensor = class(TInterfacedObject, ISerialPort)
   private
     FProtocol: TSensorProtocol;
+    FLayout: TPacketLayout;
     FOpen: Boolean;
     FClock: TStopwatch;
     FNextMs: Int64;
+    function MakePacket(T: Double): TBytes;
   public
-    constructor Create(Protocol: TSensorProtocol);
+    constructor Create(Def: TSensorDef);
     procedure Open;
     procedure Close;
     function IsOpen: Boolean;
@@ -796,10 +1188,38 @@ type
     function Description: string;
   end;
 
-constructor TSimulatedSensor.Create(Protocol: TSensorProtocol);
+constructor TSimulatedSensor.Create(Def: TSensorDef);
+var
+  Err: string;
 begin
   inherited Create;
-  FProtocol := Protocol;
+  FProtocol := Def.Protocol;
+  if (FProtocol = spPacket) and not ParsePacketLayout(Def.Layout, FLayout, Err) then
+    raise EConvertError.Create('Packet layout: ' + Err);
+end;
+
+function TSimulatedSensor.MakePacket(T: Double): TBytes;
+var
+  I, K: Integer;
+  F: TPacketField;
+  V, Top: Int64;
+begin
+  SetLength(Result, FLayout.Length);
+  FillChar(Result[0], Length(Result), 0);
+  for I := 0 to High(FLayout.Fields) do
+  begin
+    F := FLayout.Fields[I];
+    Top := (Int64(1) shl (8 * Min(F.Size, 2))) - 1;
+    V := Round((Sin(T / 3 + I) + 1) / 2 * Top);
+    for K := 0 to F.Size - 1 do
+      if F.Little then
+        Result[F.Offset + K] := (V shr (8 * K)) and $FF
+      else
+        Result[F.Offset + F.Size - 1 - K] := (V shr (8 * K)) and $FF;
+  end;
+  // the start last: a value may share its bytes
+  for I := 0 to High(FLayout.Start) do
+    Result[I] := FLayout.Start[I];
 end;
 
 procedure TSimulatedSensor.Open;
@@ -849,6 +1269,18 @@ begin
           [Lambda * 14.7, Round(650 + 120 * Sin(T / 4)), 40 + 8 * Sin(T / 3)], TFormatSettings.Invariant));
         FNextMs := FClock.ElapsedMilliseconds + 100;
       end;
+    spPlx:
+      begin
+        // gasoline AFR: raw = (AFR x 10 - 100) x 2.55
+        Data := BuildPlxPacket([PlxReading(0, 0, Round((Lambda * 147 - 100) * 2.55)),
+          PlxReading(1, 0, Round(650 + 120 * Sin(T / 4)))]);
+        FNextMs := FClock.ElapsedMilliseconds + 100;
+      end;
+    spPacket:
+      begin
+        Data := MakePacket(T);
+        FNextMs := FClock.ElapsedMilliseconds + 100;
+      end;
   else
     if T < 2 then
       Data := BuildMtsPacket([MtsLambda(4, 147, Round(T * 500))], [512, 300])
@@ -877,7 +1309,7 @@ end;
 function CreateSensorPort(Def: TSensorDef): ISerialPort;
 begin
   if SameText(Def.Port, SensorSimulatorPort) then
-    Result := TSimulatedSensor.Create(Def.Protocol)
+    Result := TSimulatedSensor.Create(Def)
   else if Trim(Def.Port) = '' then
     raise ESerialError.CreateFmt('No port chosen for the sensor "%s"', [Def.Name])
   else
@@ -962,9 +1394,21 @@ begin
       end;
     end;
   Where := FDef.Port;
+  try
+    CreateSensorParser(FDef).Free;
+  except
+    on E: EConvertError do
+    begin
+      // nothing to read it with: say so until stopped
+      SetStatus(E.Message);
+      while not Terminated do
+        Pause(500);
+      Exit;
+    end;
+  end;
   while not Terminated do
   begin
-    Parser := CreateSensorParser(FDef.Protocol);
+    Parser := CreateSensorParser(FDef);
     try
       try
         if Assigned(FFactory) then
@@ -1008,11 +1452,11 @@ begin
           if LastData.ElapsedMilliseconds >= SensorMaxAgeMs then
             if Got then
               SetStatus('No data from ' + Where + ' for 3 seconds')
-            else if FDef.Protocol = spMts then
-              SetStatus(Format('Nothing it understands from %s yet. MTS is %d baud; check the cable and that the sensor has power.',
-                [Where, SensorProtocolBaud[spMts]]))
+            else if FDef.Protocol = spText then
+              SetStatus(Format('No lines of text from %s yet: check the cable, power and baud rate (%d)', [Where, FDef.Baud]))
             else
-              SetStatus(Format('No lines of text from %s yet: check the cable, power and baud rate (%d)', [Where, FDef.Baud]));
+              SetStatus(Format('Nothing it understands from %s yet: check the cable, that the sensor has power, ' +
+                'and the baud rate (%s sends at %d)', [Where, SensorProtocolShort[FDef.Protocol], SensorProtocolBaud[FDef.Protocol]]));
         end;
       except
         on E: Exception do
@@ -1256,6 +1700,33 @@ begin
       'Any device that prints numbers in lines of text; add a PID for each one',
       '{ "uvscanSensor": 1, "sensor": { "name": "Text sensor", "protocol": "text", "baud": 9600 }, "pids": [' +
       '{ "name": "Sensor value 1", "kind": "sensor", "category": "sensors", "field": "1" } ] }'),
+    T('PLX (SM-AFR, iMFD modules)',
+      'iMFD serial, 19200 baud: wideband, EGT, boost, pressures, temperatures...',
+      '{ "uvscanSensor": 1, "sensor": { "name": "PLX", "protocol": "plx", "baud": 19200, ' +
+      '"description": "PLX iMFD chain through the iMFD serial / USB adapter; AFR for gasoline" }, "pids": [' +
+      '{ "name": "Wideband AFR", "shortName": "WB AFR", "kind": "sensor", "category": "sensors", "field": "wideband1", ' +
+      '"formula": "(N0 / 2.55 + 100) / 10", "units": "AFR", "mci": "WBAFR" },' +
+      '{ "name": "Wideband lambda", "shortName": "WB Lambda", "kind": "sensor", "category": "sensors", ' +
+      '"field": "wideband1", "formula": "(N0 / 3.75 + 68) / 100", "units": "lambda", "mci": "WBLAMBDA" } ] }'),
+    T('Zeitronix ZT-2 / ZT-3',
+      'Serial out, 9600 baud: AFR, EGT, RPM, MAP, TPS, user input',
+      '{ "uvscanSensor": 1, "sensor": { "name": "Zeitronix", "protocol": "packet", "baud": 9600, ' +
+      '"layout": "start 00 01 02; length 14; lambda 3; egt 4-5 le; rpm 6-7 le; map 8-9 le; tps 10; user1 11", ' +
+      '"description": "Zeitronix serial out; byte 3 is lambda x 100" }, "pids": [' +
+      '{ "name": "Wideband AFR", "shortName": "WB AFR", "kind": "sensor", "category": "sensors", "field": "lambda", ' +
+      '"formula": "N0 * 0.147", "units": "AFR", "mci": "WBAFR" },' +
+      '{ "name": "Wideband lambda", "shortName": "WB Lambda", "kind": "sensor", "category": "sensors", ' +
+      '"field": "lambda", "formula": "N0 / 100", "units": "lambda", "mci": "WBLAMBDA" } ] }'),
+    T('Tech Edge WBo2 (2J, 3J...)',
+      '2.0 data frame, 19200 baud: lambda, 3 user inputs, 3 thermocouples, RPM',
+      '{ "uvscanSensor": 1, "sensor": { "name": "Tech Edge", "protocol": "packet", "baud": 19200, ' +
+      '"layout": "start 5A A5; length 28; lambda16 5-6; ipx 7-8; user1 9-10; user2 11-12; user3 13-14; ' +
+      't1 15-16; t2 17-18; t3 19-20; thermistor 21-22; rpmcount 23-24; status 25; heater 26", ' +
+      '"description": "Tech Edge WBo2 2.0 frame; user inputs are 0-8184 for 0-5 V" }, "pids": [' +
+      '{ "name": "Wideband AFR", "shortName": "WB AFR", "kind": "sensor", "category": "sensors", "field": "lambda16", ' +
+      '"formula": "(N0 / 8192 + 0.5) * 14.7", "units": "AFR", "mci": "WBAFR" },' +
+      '{ "name": "Wideband lambda", "shortName": "WB Lambda", "kind": "sensor", "category": "sensors", ' +
+      '"field": "lambda16", "formula": "N0 / 8192 + 0.5", "units": "lambda", "mci": "WBLAMBDA" } ] }'),
     T('Demo wideband (simulated)',
       'A made-up LC-1 to try sensors without one',
       '{ "uvscanSensor": 1, "sensor": { "name": "Demo wideband", "protocol": "mts", "baud": 19200, ' +

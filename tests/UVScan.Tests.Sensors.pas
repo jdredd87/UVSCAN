@@ -34,6 +34,11 @@ type
     [Test] procedure ScansSensorsOnly;
     [Test] procedure WarnsAboutAMissingSensor;
     [Test] procedure ScansOnWithoutTheSensorPluggedIn;
+    [Test] procedure DecodesPlxChain;
+    [Test] procedure ParsesPacketLayouts;
+    [Test] procedure DecodesPackets;
+    [Test] procedure SuggestsFormulas;
+    [Test] procedure ScansSimulatedPlxAndPackets;
   end;
 
 implementation
@@ -589,6 +594,164 @@ begin
       end), 'the scan did not run');
     Assert.IsTrue(IsNan(T.ValueOf(S, 54)));
     Assert.Contains(T.Messages, 'Nowhere reads the sensor "Missing box", which is not set up');
+  finally
+    T.Free;
+  end;
+end;
+
+{ PLXApp018's own example: two SM-AFRs (the second gets instance 1) and an
+  SM-EGT; after noise, and a frame that lost bytes (left out). }
+procedure TSensorTests.DecodesPlxChain;
+var
+  P: TPlxParser;
+  B: TBytes;
+begin
+  B := [$3F, $12, $40, $80, $00, $00, $40] +
+    [$80, $00, $00, $00, $00, $04, $00, $00, $01, $00, $05, $00, $01, $00, $00, $0F, $40];
+  P := TPlxParser.Create;
+  try
+    P.Push(B, Length(B), Collect);
+    Assert.AreEqual(Int64(1), P.Count);
+    Assert.AreEqual(4.0, Field('wideband1'), 1E-9);
+    Assert.AreEqual(5.0, Field('wideband2'), 1E-9);
+    Assert.AreEqual(15.0, Field('egt1'), 1E-9);
+    FFields.Clear;
+    B := BuildPlxPacket([PlxReading(22, 0, 4095), PlxReading(40, 2, 77)]);
+    P.Push(B, Length(B), Collect);
+    Assert.AreEqual(4095.0, Field('analog1'), 1E-9, '12 bits');
+    Assert.AreEqual(77.0, Field('sensor40_3'), 1E-9, 'an address PLX had not listed');
+  finally
+    P.Free;
+  end;
+end;
+
+procedure TSensorTests.ParsesPacketLayouts;
+
+  procedure Bad(const Layout, Part: string);
+  var
+    L: TPacketLayout;
+    Err: string;
+  begin
+    Assert.IsFalse(ParsePacketLayout(Layout, L, Err), Layout);
+    Assert.Contains(Err, Part, Layout);
+  end;
+
+var
+  L: TPacketLayout;
+  Err: string;
+begin
+  Assert.IsTrue(ParsePacketLayout('start 00 01 02; length 14; lambda 3; egt 4-5 le; rpm 6-7 le; ' +
+    'map 8-9 le; tps 10; user1 11', L, Err), Err);
+  Assert.AreEqual(3, Length(L.Start));
+  Assert.AreEqual(14, L.Length);
+  Assert.AreEqual(6, Length(L.Fields));
+  Assert.AreEqual('egt', L.Fields[1].Name);
+  Assert.AreEqual(4, L.Fields[1].Offset);
+  Assert.AreEqual(2, L.Fields[1].Size);
+  Assert.IsTrue(L.Fields[1].Little);
+  Bad('length 14; afr 3', 'starts with');
+  Bad('start 00 01; afr 3', 'length');
+  Bad('start 00; length 4', 'names no values');
+  Bad('start 0G; length 4; afr 1', 'not a byte');
+  Bad('start 00; length 4; afr 3-4', 'past the end');
+  Bad('start 00; length 9; afr 1-5', 'at most 4 bytes');
+  Bad('start 00; length 9; afr 1; afr 2', 'twice');
+  Bad('start 00; length 9; afr 1 msb', 'unknown "msb"');
+  Bad('start 00; length 9; 2afr 1', 'starts with a letter');
+end;
+
+procedure TSensorTests.DecodesPackets;
+var
+  P: TPacketParser;
+  L: TPacketLayout;
+  Err: string;
+  B: TBytes;
+begin
+  Assert.IsTrue(ParsePacketLayout('start 00 01 02; length 14; lambda 3; egt 4-5 le; rpm 6-7 le; ' +
+    'map 8-9 le; tps 10; user1 11', L, Err), Err);
+  P := TPacketParser.Create(L);
+  try
+    // noise and a false start first
+    B := [$33, $00, $01, $07] + [$00, $01, $02, 100, $58, $02, $B8, $0B, $64, $00, 50, 128, 0, 0];
+    P.Push(Copy(B, 0, 9), 9, Collect);
+    Assert.AreEqual(0, FFields.Count, 'half a packet');
+    P.Push(Copy(B, 9, MaxInt), Length(B) - 9, Collect);
+    Assert.AreEqual(Int64(1), P.Count);
+    Assert.AreEqual(100.0, Field('lambda'), 1E-9);
+    Assert.AreEqual(600.0, Field('egt'), 1E-9);
+    Assert.AreEqual(3000.0, Field('rpm'), 1E-9);
+    Assert.AreEqual(100.0, Field('map'), 1E-9);
+    Assert.AreEqual(50.0, Field('tps'), 1E-9);
+    Assert.AreEqual(128.0, Field('user1'), 1E-9);
+  finally
+    P.Free;
+  end;
+  FFields.Clear;
+  Assert.IsTrue(ParsePacketLayout('start AA; length 6; v 1-2 signed; w 3-5', L, Err), Err);
+  P := TPacketParser.Create(L);
+  try
+    B := [$AA, $FF, $FE, $01, $02, $03];
+    P.Push(B, Length(B), Collect);
+    Assert.AreEqual(-2.0, Field('v'), 1E-9, 'signed, most significant first');
+    Assert.AreEqual(Double($010203), Field('w'), 1E-9);
+  finally
+    P.Free;
+  end;
+end;
+
+procedure TSensorTests.SuggestsFormulas;
+var
+  Title, Formula, Units: string;
+begin
+  Assert.IsTrue(SuggestSensorPid(spPlx, 'boost2', Title, Formula, Units));
+  Assert.AreEqual('N0 / 22.73', Formula);
+  Assert.AreEqual('psi', Units);
+  Assert.IsTrue(SuggestSensorPid(spPlx, 'wideband1', Title, Formula, Units));
+  Assert.AreEqual('AFR', Units);
+  Assert.IsTrue(SuggestSensorPid(spMts, 'aux3', Title, Formula, Units));
+  Assert.AreEqual('N0 * 5 / 1023', Formula);
+  Assert.AreEqual('aux 3', Title);
+  Assert.IsFalse(SuggestSensorPid(spText, '1', Title, Formula, Units));
+end;
+
+{ A PLX chain and Zeitronix packets, both simulated, scanned together. }
+procedure TSensorTests.ScansSimulatedPlxAndPackets;
+var
+  T: TSensorScan;
+  D: TSensorDef;
+  Cmd: TEngineCommand;
+  S: TLiveSnapshot;
+begin
+  T := TSensorScan.Create('{"pids":[' +
+    '{"id":1,"name":"ENGINE SPEED","kind":"vehicle","pid":"000C","bytes":2,"formula":"((N1 << 8) +N2) *0.25"},' +
+    '{"id":60,"name":"PLX AFR","kind":"sensor","sensor":"PLX","field":"wideband1","formula":"(N0 / 2.55 + 100) / 10"},' +
+    '{"id":61,"name":"PLX EGT","kind":"sensor","sensor":"PLX","field":"egt1"},' +
+    '{"id":62,"name":"ZT RPM","kind":"sensor","sensor":"ZT","field":"rpm"}]}');
+  try
+    D := TSensorDef.Create;
+    D.Name := 'PLX';
+    D.Protocol := spPlx;
+    D.Port := SensorSimulatorPort;
+    T.Sensors.Add(D);
+    D := TSensorDef.Create;
+    D.Name := 'ZT';
+    D.Protocol := spPacket;
+    D.Layout := 'start 00 01 02; length 14; lambda 3; egt 4-5 le; rpm 6-7 le';
+    D.Port := SensorSimulatorPort;
+    T.Sensors.Add(D);
+    T.Connect;
+    Cmd := Command(ecStartScan);
+    Cmd.PidIds := [1, 60, 61, 62];
+    T.Engine.Post(Cmd);
+    Assert.IsTrue(T.WaitUntil(
+      function: Boolean
+      begin
+        S := T.Engine.GetSnapshot;
+        Result := (S.Cycles > 5) and not IsNan(T.ValueOf(S, 60)) and not IsNan(T.ValueOf(S, 62));
+      end), 'no values: ' + T.Messages);
+    Assert.IsTrue(InRange(T.ValueOf(S, 60), 10, 18), 'PLX AFR');
+    Assert.IsTrue(InRange(T.ValueOf(S, 61), 400, 900), 'PLX EGT');
+    Assert.IsTrue(InRange(T.ValueOf(S, 62), 0, 65535), 'packet value');
   finally
     T.Free;
   end;
