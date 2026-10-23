@@ -102,6 +102,11 @@
         <DCCReference Include="UVScan.Tests.Elm.pas"/>
         <DCCReference Include="..\src\UVScan.Sensors.pas"/>
         <DCCReference Include="UVScan.Tests.Sensors.pas"/>
+        <DCCReference Include="..\src\UVScan.Tls.pas"/>
+        <DCCReference Include="..\src\UVScan.Smtp.pas"/>
+        <DCCReference Include="..\src\UVScan.GoogleDrive.pas"/>
+        <DCCReference Include="..\src\UVScan.LogSend.pas"/>
+        <DCCReference Include="UVScan.Tests.LogSend.pas"/>
         <RcCompile Include="..\UVScan.Defaults.rc">
             <Form>UVScan.Defaults.res</Form>
         </RcCompile>

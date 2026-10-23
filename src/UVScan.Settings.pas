@@ -11,6 +11,7 @@ unit UVScan.Settings;
     "appearance": { "theme": "system", "keepScreenOn": true },
     "updates":    { "check": true, "lastCheck": "2026-10-12T09:30:00.000Z" },
     "hotkeys":    { "connect": "F5", "scan": "F6", "mark": "F12", "liveChart": "Ctrl+G", "global": false },
+    "logSend":    { "everyMinutes": 5, ... }   (sending the log while it is written: UVScan.LogSend)
     "window":     { "left": 100, "top": 80, "width": 1180, "height": 720,
                     "maximized": false, "pidPanelWidth": 400 } }
 
@@ -19,7 +20,7 @@ unit UVScan.Settings;
 interface
 
 uses
-  System.SysUtils, System.JSON, UVScan.QuickStart, UVScan.Hotkeys;
+  System.SysUtils, System.JSON, UVScan.QuickStart, UVScan.Hotkeys, UVScan.LogSend;
 
 type
   TStreamSpeed = (ssFast, ssMedium, ssSlow);
@@ -65,7 +66,9 @@ type
     Hotkeys: THotkeys;      // keys for the main actions (none: Key 0)
     GlobalHotkeys: Boolean; // Windows: they work when another program is in front too
     Window: TWindowSettings;
+    LogSend: TLogSendSettings; // sending the log while it is written (where to, how often)
     constructor Create;
+    destructor Destroy; override;
     procedure ResetToDefaults;
     function ToJson: TJSONObject;
     procedure FromJson(Root: TJSONObject);
@@ -116,7 +119,14 @@ end;
 constructor TAppSettings.Create;
 begin
   inherited;
+  LogSend := TLogSendSettings.Create;
   ResetToDefaults;
+end;
+
+destructor TAppSettings.Destroy;
+begin
+  LogSend.Free;
+  inherited;
 end;
 
 procedure TAppSettings.ResetToDefaults;
@@ -150,6 +160,7 @@ begin
   Hotkeys := DefaultHotkeys;
   GlobalHotkeys := False;
   Window := Default(TWindowSettings);
+  LogSend.ResetToDefaults;
 end;
 
 function TAppSettings.ToJson: TJSONObject;
@@ -227,6 +238,7 @@ begin
     Sec.AddPair(HotkeyIds[A], Hotkeys[A].Text);
   Sec.AddPair('global', TJSONBool.Create(GlobalHotkeys));
   Result.AddPair('hotkeys', Sec);
+  Result.AddPair('logSend', LogSend.ToJson);
 
   if Window.Saved then
   begin
@@ -345,6 +357,8 @@ begin
         Hotkeys[A] := THotkey.Parse(JStr(Sec, HotkeyIds[A]));
     GlobalHotkeys := JBool(Sec, 'global', GlobalHotkeys);
   end;
+
+  LogSend.FromJson(JObj(Root, 'logSend'));
 
   Sec := JObj(Root, 'window');
   if Sec <> nil then

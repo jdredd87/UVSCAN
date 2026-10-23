@@ -19,7 +19,7 @@ uses
   UVScan.Serial, UVScan.Simulator, UVScan.Simulator.Elm, UVScan.Adapter, UVScan.Pids, UVScan.Dpid, UVScan.Dtc, UVScan.Engine,
   UVScan.Class2, UVScan.Paths, UVScan.Settings, UVScan.PidLists, UVScan.Defaults,
   UVScan.Display, UVScan.Alerts, UVScan.Controls, UVScan.Gauge, UVScan.UI.DataGrid, UVScan.LogData,
-  UVScan.QuickStart, UVScan.Update, UVScan.Hotkeys, UVScan.Sensors;
+  UVScan.QuickStart, UVScan.Update, UVScan.Hotkeys, UVScan.Sensors, UVScan.LogSend;
 
 type
   { Parts of the one-line status strip. }
@@ -303,6 +303,14 @@ type
     FCatalog: TPidCatalog;
     FSensors: TSensorCatalog;        // sensors.json; the engine reads it when a scan starts
     gbSensors: TGroupBox;            // Connect page: the sensors there are
+    gbLogSend: TGroupBox;            // Connect page: sending the log while it is written
+    chkLogSend: TCheckBox;
+    lblLogSend: TLabel;
+    btnLogSend: TButton;
+    FLogSender: TLogSender;          // while Send while logging is on
+    FLogSchedule: TLogSendSchedule;  // when the next snapshot of the log is due
+    FLogSendState: array[TSendWay] of string; // how each way is doing, shown
+    FLogSendShown: UInt64;           // when the box was last brought up to date
     lblSensors: TLabel;
     btnSensors: TButton;
     FDtcs: TDtcCatalog;
@@ -518,6 +526,17 @@ type
     procedure BuildSensorBox;
     procedure UpdateSensorBox;
     procedure SensorBoxResized(Sender: TObject);
+    procedure BuildLogSendBox;
+    procedure UpdateLogSendBox;
+    procedure LogSendBoxResized(Sender: TObject);
+    procedure LogSendCheckChange(Sender: TObject);
+    procedure LogSendSettingsClick(Sender: TObject);
+    procedure StartLogSend;
+    procedure StopLogSend;
+    procedure LogSendEvent(const Ev: TSendEvent);
+    procedure LogSendTick;
+    procedure LogSendLogStarted(const FileName: string; Appending: Boolean);
+    procedure LogSendLogStopped;
     procedure QuickPickClick(Sender: TObject);
     procedure QuickNewClick(Sender: TObject);
     procedure QuickChooseClick(Sender: TObject);
@@ -670,7 +689,8 @@ implementation
 uses
   System.JSON, UVScan.JsonFile, UVScan.UI.Common, UVScan.UI.Theme, UVScan.Sound, UVScan.PidEditor,
   UVScan.PidDiscovery, UVScan.DisplayEditor, UVScan.GaugeEditor, UVScan.ControlEditor, UVScan.LogViewer,
-  UVScan.QuickStartEditor, UVScan.SensorEditor, UVScan.Version, System.DateUtils, System.Permissions;
+  UVScan.QuickStartEditor, UVScan.SensorEditor, UVScan.LogSendEditor, UVScan.Version, System.DateUtils,
+  System.Permissions;
 
 const
   AwayNote = 'uvscan_away';       // the notification's name
@@ -768,9 +788,12 @@ begin
   pnlNotice.Visible := False;
   CreateGrids;
   BuildChrome;
+  BuildLogSendBox;
   BuildSensorBox;
   LoadData;
   LoadSettings;
+  FLogSchedule := TLogSendSchedule.Create(FSettings.LogSend);
+  UpdateLogSendBox;
   ApplyTheme(ThemeModeFromKey(FSettings.Theme));
   FThemeSub := TMessageManager.DefaultManager.SubscribeToMessage(TThemeChangedMessage, ThemeChanged);
   ApplyPalette;
@@ -2696,6 +2719,7 @@ begin
   begin
     AddPageMenuItem('Quick start...', QuickStartClick);
     AddPageMenuItem('Sensors...', SensorsClick, FState in [esDisconnected, esConnected]);
+    AddPageMenuItem('Send logs...', LogSendSettingsClick);
     AddPageMenuItem('Refresh ports', btnRefreshPortsClick, btnRefreshPorts.Enabled);
   end
   else if P = tiControls then
@@ -4044,6 +4068,8 @@ begin
   KeepAwake(False);
   tmrRefresh.Enabled := False;
   FEngine.Free; // stops the scan, closes the port, waits for the thread
+  FreeAndNil(FLogSender); // a snapshot going out finishes on its own thread
+  FLogSchedule.Free;
   FCatalog.Free;
   FSensors.Free;
   FSettings.Free;
@@ -4717,7 +4743,7 @@ begin
   gbSensors.Stored := False;
   gbSensors.Align := TAlignLayout.Top;
   gbSensors.Margins.Rect := gbLogRec.Margins.Rect;
-  gbSensors.Position.Y := gbLogRec.Position.Y + gbLogRec.Height + 1;
+  gbSensors.Position.Y := gbLogRec.Position.Y + gbLogRec.Height + 2; // under Send logs
   gbSensors.Height := 110;
   gbSensors.Text := 'Sensors';
   lblSensors := TLabel.Create(Self);
@@ -4762,6 +4788,294 @@ end;
 procedure TMainForm.SensorBoxResized(Sender: TObject);
 begin
   UpdateSensorBox;
+end;
+
+{ Connect page: Send logs - the log on its way to a crew while it is
+  written (UVScan.LogSend). On for the time UVScan is open, never by itself. }
+procedure TMainForm.BuildLogSendBox;
+begin
+  gbLogSend := TGroupBox.Create(Self);
+  gbLogSend.Parent := gbLogRec.Parent;
+  gbLogSend.Stored := False;
+  gbLogSend.Align := TAlignLayout.Top;
+  gbLogSend.Margins.Rect := gbLogRec.Margins.Rect;
+  gbLogSend.Position.Y := gbLogRec.Position.Y + gbLogRec.Height + 1;
+  gbLogSend.Height := 150;
+  gbLogSend.Text := 'Send logs';
+  chkLogSend := TCheckBox.Create(Self);
+  chkLogSend.Parent := gbLogSend;
+  chkLogSend.Stored := False;
+  chkLogSend.Text := 'Send while logging';
+  chkLogSend.CanFocus := False;
+  chkLogSend.OnChange := LogSendCheckChange;
+  chkLogSend.SetBounds(12, 28, 300, 28);
+  lblLogSend := TLabel.Create(Self);
+  lblLogSend.Parent := gbLogSend;
+  lblLogSend.Stored := False;
+  lblLogSend.WordWrap := True;
+  lblLogSend.SetBounds(12, 60, 400, 22);
+  btnLogSend := TButton.Create(Self);
+  btnLogSend.Parent := gbLogSend;
+  btnLogSend.Stored := False;
+  btnLogSend.Text := 'Settings...';
+  btnLogSend.CanFocus := False;
+  btnLogSend.OnClick := LogSendSettingsClick;
+  btnLogSend.SetBounds(12, 90, 130, 40);
+  gbLogSend.OnResized := LogSendBoxResized;
+end;
+
+procedure TMainForm.UpdateLogSendBox;
+var
+  S, Ways: string;
+  W: TSendWay;
+  Width: Single;
+  Next: Int64;
+  Opts: TLogSendSettings;
+begin
+  if (gbLogSend = nil) or (FLogSchedule = nil) then
+    Exit;
+  Opts := FSettings.LogSend;
+  Ways := '';
+  for W in Opts.Ways do
+    Ways := Ways + IfThen(Ways <> '', ', ') + SendWayNames[W];
+  if FLogSender = nil then
+  begin
+    if Ways = '' then
+      S := 'Sends the log on every few minutes while it is written: by email, ' +
+        {$IFDEF MSWINDOWS}'to a cloud drive''s folder ' + {$ENDIF}'or to Google Drive, for a crew away ' +
+        'from the car. Settings first: where it goes.'
+    else
+      S := Format('Off. Set up: %s, every %d min, at most %d per log. Turn it on for a drive.',
+        [Ways, Opts.IntervalMin, Opts.MaxSends]);
+  end
+  else
+  begin
+    S := Format('On: %s, every %d min.', [Ways, Opts.IntervalMin]);
+    if FLogSchedule.Active then
+    begin
+      S := S + Format(' %d of %d taken', [FLogSchedule.Count, Opts.MaxSends]);
+      if FLogSender.Working = [] then
+        S := S + '; stopped: it could not send them (below).'
+      else if FLogSchedule.LimitReached then
+        S := S + IfThen(Opts.AtStop, '; one more when the log stops.', ': no more for this log.')
+      else
+      begin
+        Next := FLogSchedule.NextInMs(TThread.GetTickCount64) div 1000;
+        S := S + Format('; next in %d:%.2d.', [Next div 60, Next mod 60]);
+      end;
+    end
+    else
+      S := S + ' It starts with a log (Start log).';
+    for W := Low(W) to High(W) do
+      if FLogSendState[W] <> '' then
+        S := S + sLineBreak + SendWayNames[W] + ': ' + FLogSendState[W];
+  end;
+  if lblLogSend.Text <> S then
+    lblLogSend.Text := S;
+  Width := Max(100, gbLogSend.Width - 24);
+  chkLogSend.SetBounds(12, 28, Width, 28);
+  lblLogSend.SetBounds(12, 60, Width, Max(22, WrappedTextHeight(lblLogSend, Width) + 4));
+  FitTextWidth(btnLogSend, 130);
+  btnLogSend.Position.Y := lblLogSend.Position.Y + lblLogSend.Height + 6;
+  gbLogSend.Height := btnLogSend.Position.Y + btnLogSend.Height + 12;
+end;
+
+procedure TMainForm.LogSendBoxResized(Sender: TObject);
+begin
+  UpdateLogSendBox;
+end;
+
+procedure TMainForm.LogSendCheckChange(Sender: TObject);
+begin
+  if chkLogSend.IsChecked = (FLogSender <> nil) then
+    Exit; // set to what it is (below)
+  if chkLogSend.IsChecked then
+    StartLogSend
+  else
+    StopLogSend;
+end;
+
+procedure TMainForm.StartLogSend;
+var
+  W: TSendWay;
+  Ready: TSendWays;
+  Problems, Ways: string;
+  Opts: TLogSendSettings;
+begin
+  Opts := FSettings.LogSend;
+  Ready := [];
+  Problems := '';
+  Ways := '';
+  for W in Opts.Ways do
+    if Opts.Problem(W) = '' then
+    begin
+      Include(Ready, W);
+      Ways := Ways + IfThen(Ways <> '', ', ') + SendWayNames[W];
+    end
+    else
+      Problems := Problems + sLineBreak + Opts.Problem(W);
+  if Ready = [] then
+  begin
+    chkLogSend.IsChecked := False;
+    if Opts.Ways = [] then
+      ShowInfo('Choose where the logs go first (email, ' + {$IFDEF MSWINDOWS}'a folder, ' + {$ENDIF}
+        'Google Drive).',
+        procedure
+        begin
+          LogSendSettingsClick(nil);
+        end)
+    else
+      ShowWarning('Sending logs is not set up yet:' + Problems);
+    Exit;
+  end;
+  if Problems <> '' then
+    ShowNotice('Left out (not set up):' + StringReplace(Problems, sLineBreak, ' ', [rfReplaceAll]), False);
+  for W := Low(W) to High(W) do
+    FLogSendState[W] := '';
+  FLogSender := TLogSender.Create(Opts, LogSendEvent);
+  AddMessage(Format('Send while logging on: %s, every %d minutes, at most %d per log', [Ways, Opts.IntervalMin,
+    Opts.MaxSends]));
+  if FLogging and (FLastLogFile <> '') then
+    FLogSchedule.Start(FLastLogFile, 0, TThread.GetTickCount64);
+  UpdateLogSendBox;
+end;
+
+procedure TMainForm.StopLogSend;
+begin
+  FreeAndNil(FLogSender);
+  FLogSchedule.Stop;
+  if chkLogSend.IsChecked then
+    chkLogSend.IsChecked := False;
+  AddMessage('Send while logging off');
+  UpdateLogSendBox;
+end;
+
+procedure TMainForm.LogSendSettingsClick(Sender: TObject);
+begin
+  EditLogSending(FSettings.LogSend,
+    procedure(Saved: Boolean)
+    begin
+      if not Saved then
+        Exit;
+      SaveSettings;
+      AddMessage('Send logs settings saved');
+      if FLogSender <> nil then
+      begin
+        // on already: the new settings from the next snapshot (this log's count goes on)
+        FreeAndNil(FLogSender);
+        FLogSender := TLogSender.Create(FSettings.LogSend, LogSendEvent);
+        for var W := Low(TSendWay) to High(TSendWay) do
+          FLogSendState[W] := '';
+      end;
+      UpdateLogSendBox;
+    end);
+end;
+
+procedure TMainForm.LogSendEvent(const Ev: TSendEvent);
+var
+  What, Way: string;
+begin
+  if FLogSender = nil then
+    Exit;
+  if Ev.Final then
+    What := 'the last snapshot'
+  else
+    What := 'snapshot ' + IntToStr(Ev.Number);
+  Way := SendWayNames[Ev.Way];
+  case Ev.Kind of
+    seSent:
+      begin
+        FLogSendState[Ev.Way] := Format('%s sent at %s', [What, FormatDateTime('hh:nn', Now)]);
+        AddMessage(Format('Log %s sent by %s (%s)', [What, Way, Ev.Text]));
+      end;
+    seRetrying:
+      begin
+        FLogSendState[Ev.Way] := Format('could not send %s (%s); trying again', [What, Ev.Text]);
+        AddMessage(Format('Sending log %s by %s failed (try %d of %d): %s. Again in %d s', [What, Way, Ev.Attempt,
+          FSettings.LogSend.Retries + 1, Ev.Text, RetryDelayMs(Ev.Attempt) div 1000]));
+      end;
+    seGaveUp:
+      begin
+        FLogSendState[Ev.Way] := 'stopped: ' + Ev.Text;
+        AddMessage(Format('Sending logs by %s stopped after %d %s: %s', [Way, Ev.Attempt,
+          IfThen(Ev.Attempt = 1, 'try', 'tries'), Ev.Text]));
+        ShowNotice(Format('Could not send the log by %s after %d %s: %s. Sending by %s has stopped; the log ' +
+          'goes on. (Send while logging off and on tries again.)', [Way, Ev.Attempt,
+          IfThen(Ev.Attempt = 1, 'try', 'tries'), Ev.Text, Way]), True);
+      end;
+  end;
+  UpdateLogSendBox;
+end;
+
+procedure TMainForm.LogSendTick;
+var
+  Snap: TLogSnapshot;
+  NowMs: UInt64;
+begin
+  if (FLogSender = nil) or (FLogSchedule = nil) then
+    Exit;
+  NowMs := TThread.GetTickCount64;
+  if FLogSchedule.Active and (FLogSender.Working <> []) then // none left: no more snapshots
+    try
+      if FLogSchedule.Due(NowMs, Snap) then
+      begin
+        FLogSender.Add(Snap);
+        AddMessage(Format('Log snapshot %d: %d rows, %d KB', [Snap.Number, Snap.Rows,
+          (Length(Snap.Data) + 1023) div 1024]));
+      end;
+    except
+      on E: Exception do
+        AddMessage('Could not take a snapshot of the log: ' + E.Message);
+    end;
+  if NowMs - FLogSendShown >= 1000 then
+  begin
+    FLogSendShown := NowMs;
+    UpdateLogSendBox;
+  end;
+end;
+
+procedure TMainForm.LogSendLogStarted(const FileName: string; Appending: Boolean);
+var
+  Offset: Int64;
+begin
+  if FLogSender = nil then
+    Exit;
+  Offset := 0;
+  if Appending then
+    try
+      Offset := TFile.GetSize(FileName); // only this log's rows count as new
+    except
+      Offset := 0;
+    end;
+  FLogSchedule.Start(FileName, Offset, TThread.GetTickCount64);
+  UpdateLogSendBox;
+end;
+
+procedure TMainForm.LogSendLogStopped;
+var
+  Snap: TLogSnapshot;
+begin
+  if (FLogSender = nil) or not FLogSchedule.Active then
+    Exit;
+  if FLogSender.Working = [] then
+  begin
+    FLogSchedule.Stop;
+    UpdateLogSendBox;
+    Exit;
+  end;
+  try
+    if FLogSchedule.Finish(Snap) then
+    begin
+      FLogSender.Add(Snap);
+      AddMessage(Format('Log snapshot as it stopped: %d rows, %d KB', [Snap.Rows,
+        (Length(Snap.Data) + 1023) div 1024]));
+    end;
+  except
+    on E: Exception do
+      AddMessage('Could not take a snapshot of the log: ' + E.Message);
+  end;
+  FLogSchedule.Stop;
+  UpdateLogSendBox;
 end;
 
 procedure TMainForm.SensorsClick(Sender: TObject);
@@ -5392,6 +5706,7 @@ begin
           SetStatus(spLog, 'Adding to ' + ExtractFileName(Ev.Text))
         else
           SetStatus(spLog, 'Logging to ' + ExtractFileName(Ev.Text));
+        LogSendLogStarted(Ev.Text, Ev.Flag);
         UpdateControls;
       end;
     eeControl:
@@ -5432,6 +5747,7 @@ begin
       begin
         FLogging := False;
         FLogPaused := False;
+        LogSendLogStopped;
         SetStatus(spLog, '');
         UpdateControls;
         // Stopped by the user: maybe ask whether to keep it. Stopped by
@@ -5560,6 +5876,7 @@ var
   Raw: TLiveSnapshot;
 begin
   FlushMessages;
+  LogSendTick;
   if (FSaveDue <> 0) and (TThread.GetTickCount64 >= FSaveDue) then
   begin
     FSaveDue := 0;
@@ -5652,8 +5969,9 @@ begin
   else
     SetStatus(spRate, Format('%.1f updates/s', [FLive.CyclesPerSecond]));
   if FLive.Logging then
-    SetStatus(spLog, Format('Logging: %d rows in %s%s', [FLive.LogRows, ElapsedText(FLogWatch),
-      IfThen(FLive.LogPaused, ' (paused)', '')]))
+    SetStatus(spLog, Format('Logging: %d rows in %s%s%s', [FLive.LogRows, ElapsedText(FLogWatch),
+      IfThen(FLive.LogPaused, ' (paused)', ''),
+      IfThen((FLogSender <> nil) and FLogSchedule.Active, Format(', %d snapshot%s', [FLogSchedule.Count, IfThen(FLogSchedule.Count = 1, '', 's')]), '')]))
   else if (FState = esScanning) and not FTestMode then
     SetStatus(spLog, Format('%d updates in %s', [FLive.Cycles, ElapsedText(FScanWatch)]));
   if FLive.Cycles <> FShownCycles then

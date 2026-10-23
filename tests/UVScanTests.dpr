@@ -43,7 +43,12 @@ uses
   UVScan.Tests.Logs in 'UVScan.Tests.Logs.pas',
   UVScan.Tests.Elm in 'UVScan.Tests.Elm.pas',
   UVScan.Sensors in '..\src\UVScan.Sensors.pas',
-  UVScan.Tests.Sensors in 'UVScan.Tests.Sensors.pas';
+  UVScan.Tests.Sensors in 'UVScan.Tests.Sensors.pas',
+  UVScan.Tls in '..\src\UVScan.Tls.pas',
+  UVScan.Smtp in '..\src\UVScan.Smtp.pas',
+  UVScan.GoogleDrive in '..\src\UVScan.GoogleDrive.pas',
+  UVScan.LogSend in '..\src\UVScan.LogSend.pas',
+  UVScan.Tests.LogSend in 'UVScan.Tests.LogSend.pas';
 
 {$R 'UVScan.Defaults.res' '..\UVScan.Defaults.rc'}
 
