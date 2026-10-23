@@ -49,6 +49,9 @@ type
     FOrder: TArray<TControl>;
     FFolderParts: TArray<TControl>; // Windows only
     FCodeParts: TArray<TControl>;   // while signing in
+    FButtonRows: TArray<TLayout>;   // rows of buttons, flowed at their own width
+    FButtonItems: TArray<TArray<TControl>>;
+    FButtonWidths: TArray<Single>;  // the width each row was flowed for
     cbEvery, cbMax, cbRetries: TComboEdit;
     chkAtStop, chkZip: TCheckBox;
     cbWhat: TComboBox;
@@ -83,6 +86,8 @@ type
     procedure KeepOrder;
     procedure ShowDrive;
     procedure FormResized(Sender: TObject);
+    procedure ButtonRowResized(Sender: TObject);
+    procedure FlowButtons(Row: Integer);
     procedure Changed(Sender: TObject);
     procedure SecurityChanged(Sender: TObject);
     procedure FormCloseQuery(Sender: TObject; var CanClose: Boolean);
@@ -176,12 +181,39 @@ end;
 function TLogSendPage.Buttons(const Items: array of TButton): TLayout;
 var
   B: TButton;
+  List: TArray<TControl>;
 begin
   Result := TLayout.Create(FForm);
   Result.Margins.Top := 8;
   Add(Result, 48);
+  List := nil;
   for B in Items do
+  begin
     B.Parent := Result;
+    List := List + [B];
+  end;
+  Result.Tag := Length(FButtonRows);
+  FButtonRows := FButtonRows + [Result];
+  FButtonItems := FButtonItems + [List];
+  FButtonWidths := FButtonWidths + [0];
+  Result.OnResized := ButtonRowResized;
+end;
+
+{ A row's buttons wrap by the row's own width, known only once the page has
+  been laid out (flowed at a made-up width they ran off the side). }
+procedure TLogSendPage.ButtonRowResized(Sender: TObject);
+var
+  I: Integer;
+begin
+  I := TControl(Sender).Tag;
+  if (I >= 0) and (I < Length(FButtonRows)) and not SameValue(FButtonRows[I].Width, FButtonWidths[I], 0.5) then
+    FlowButtons(I);
+end;
+
+procedure TLogSendPage.FlowButtons(Row: Integer);
+begin
+  FButtonWidths[Row] := FButtonRows[Row].Width;
+  FlowControls(FButtonRows[Row], FButtonItems[Row]);
 end;
 
 function NewButton(Owner: TComponent; const Text: string; OnClick: TNotifyEvent): TButton;
@@ -253,7 +285,9 @@ begin
   cbEvery := NewCombo(FForm, '1,2,5,10,15,30', Changed);
   Row('Every (minutes)', cbEvery);
   cbMax := NewCombo(FForm, '5,10,12,20,30,60', Changed);
-  Row('At most per log', cbMax);
+  Row('Most snapshots per log', cbMax);
+  Note('Then it stops sending for that log, so a long session does not flood anyone: every 5 minutes ' +
+    'and 12 at most is the first hour.');
   chkAtStop := NewCheck(FForm, 'And one more when the log stops', Changed);
   Add(chkAtStop, 34);
   cbRetries := NewCombo(FForm, '0,1,2,3,5,10', Changed);
@@ -394,11 +428,8 @@ begin
       L := TLabel(C);
       L.Height := Max(20, WrappedTextHeight(L, W) + 4);
     end;
-  FlowControls(pnlDriveButtons, [btnSignIn, btnSignOut, btnTestDrive]);
-  FlowControls(pnlCodeButtons, [btnOpenPage, btnCopyCode, btnCancelSignIn]);
-  FlowControls(btnTestEmail.ParentControl, [btnTestEmail]);
-  if btnBrowse <> nil then
-    FlowControls(btnBrowse.ParentControl, [btnBrowse, btnTestFolder]);
+  for var I := 0 to High(FButtonRows) do
+    FlowButtons(I);
 end;
 
 procedure TLogSendPage.Load;

@@ -17,7 +17,7 @@ unit UVScan.LogSend;
             to date each time (whole log), or one per snapshot (new rows)
 
   Settings, in settings.json "logSend":
-    { "everyMinutes": 5, "maxPerLog": 12, "retries": 3, "what": "whole", "zip": true, "atStop": true,
+    { "everyMinutes": 5, "maxPerLog": 12, "retries": 3, "what": "whole", "zip": false, "atStop": true,
       "email": { "on": true, "server": "smtp.gmail.com", "port": 465, "security": "tls",
                  "user": "me@gmail.com", "password": "...", "from": "", "to": "crew@x.com, me@y.com" },
       "folder": { "on": false, "path": "G:\\My Drive\\UVScan" },
@@ -272,7 +272,7 @@ begin
   MaxSends := 12;
   Retries := 3;
   What := lwWhole;
-  Zip := True;
+  Zip := False;
   AtStop := True;
   EmailOn := False;
   Mail := Default(TMailAccount);

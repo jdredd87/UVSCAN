@@ -531,7 +531,8 @@ type
     procedure LogSendBoxResized(Sender: TObject);
     procedure LogSendCheckChange(Sender: TObject);
     procedure LogSendSettingsClick(Sender: TObject);
-    procedure StartLogSend;
+    procedure EditLogSendSettings(TurnOn: Boolean);
+    procedure StartLogSend(OpenSettings: Boolean = True);
     procedure StopLogSend;
     procedure LogSendEvent(const Ev: TSendEvent);
     procedure LogSendTick;
@@ -4845,7 +4846,7 @@ begin
         {$IFDEF MSWINDOWS}'to a cloud drive''s folder ' + {$ENDIF}'or to Google Drive, for a crew away ' +
         'from the car. Settings first: where it goes.'
     else
-      S := Format('Off. Set up: %s, every %d min, at most %d per log. Turn it on for a drive.',
+      S := Format('Off. Set up: %s, every %d min, up to %d per log. Turn it on for a drive.',
         [Ways, Opts.IntervalMin, Opts.MaxSends]);
   end
   else
@@ -4895,7 +4896,9 @@ begin
     StopLogSend;
 end;
 
-procedure TMainForm.StartLogSend;
+{ Not set up yet: the settings open (no question first), and saved with a
+  way that works it goes on. }
+procedure TMainForm.StartLogSend(OpenSettings: Boolean);
 var
   W: TSendWay;
   Ready: TSendWays;
@@ -4917,15 +4920,8 @@ begin
   if Ready = [] then
   begin
     chkLogSend.IsChecked := False;
-    if Opts.Ways = [] then
-      ShowInfo('Choose where the logs go first (email, ' + {$IFDEF MSWINDOWS}'a folder, ' + {$ENDIF}
-        'Google Drive).',
-        procedure
-        begin
-          LogSendSettingsClick(nil);
-        end)
-    else
-      ShowWarning('Sending logs is not set up yet:' + Problems);
+    if OpenSettings then
+      EditLogSendSettings(True);
     Exit;
   end;
   if Problems <> '' then
@@ -4937,6 +4933,7 @@ begin
     Opts.MaxSends]));
   if FLogging and (FLastLogFile <> '') then
     FLogSchedule.Start(FLastLogFile, 0, TThread.GetTickCount64);
+  chkLogSend.IsChecked := True; // when it was turned on from the settings
   UpdateLogSendBox;
 end;
 
@@ -4952,6 +4949,11 @@ end;
 
 procedure TMainForm.LogSendSettingsClick(Sender: TObject);
 begin
+  EditLogSendSettings(False);
+end;
+
+procedure TMainForm.EditLogSendSettings(TurnOn: Boolean);
+begin
   EditLogSending(FSettings.LogSend,
     procedure(Saved: Boolean)
     begin
@@ -4966,7 +4968,9 @@ begin
         FLogSender := TLogSender.Create(FSettings.LogSend, LogSendEvent);
         for var W := Low(TSendWay) to High(TSendWay) do
           FLogSendState[W] := '';
-      end;
+      end
+      else if TurnOn then
+        StartLogSend(False);
       UpdateLogSendBox;
     end);
 end;

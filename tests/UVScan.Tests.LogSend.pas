@@ -237,7 +237,7 @@ begin
     A.MaxSends := 20;
     A.Retries := 5;
     A.What := lwNew;
-    A.Zip := False;
+    A.Zip := True;
     A.AtStop := False;
     A.EmailOn := True;
     A.Mail.Server := 'smtp.example.com';
@@ -269,7 +269,7 @@ begin
     Assert.AreEqual(20, B.MaxSends);
     Assert.AreEqual(5, B.Retries);
     Assert.IsTrue(B.What = lwNew);
-    Assert.IsFalse(B.Zip);
+    Assert.IsTrue(B.Zip);
     Assert.IsFalse(B.AtStop);
     Assert.IsTrue(B.EmailOn);
     Assert.AreEqual('smtp.example.com', B.Mail.Server);
@@ -302,6 +302,7 @@ begin
   S := TLogSendSettings.Create;
   try
     Assert.IsTrue(S.Ways = [], 'nothing on at first');
+    Assert.IsFalse(S.Zip, 'not zipped unless asked');
     S.EmailOn := True;
     Assert.Contains(S.Problem(swEmail), 'account');
     S.Mail.User := 'me@gmail.com';
