@@ -826,6 +826,7 @@ begin
   if TPlatformServices.Current.SupportsPlatformService(IFMXApplicationEventService, Events) then
     Events.SetApplicationEventHandler(AppEvent);
   HookBackGesture; // Android 16 no longer sends the back key
+  HookKeyboard;
   ApplyCommandLine;
   TThread.ForceQueue(nil, FitFlowHeights);
   // Once a day, a few seconds in: is there a newer UVScan on GitHub?

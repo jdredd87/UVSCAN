@@ -175,6 +175,11 @@ procedure RefreshTrackBar(T: TTrackBar);
   it to the open form as the back key (vkHardwareBack), as before. Call once.
   Does nothing elsewhere. }
 procedure HookBackGesture;
+{ Android: the field being typed in stays above the on-screen keyboard. Its
+  scroll box ends at the keyboard's top while the keyboard is up and is
+  scrolled to the field (again when another field takes the focus). Call
+  once. Does nothing elsewhere. }
+procedure HookKeyboard;
 { Android: UVScan to the background, as the Home button does. }
 procedure MoveAppToBack;
 { Opens a web address in the browser. }
@@ -189,7 +194,7 @@ uses
   FMX.Effects, UVScan.UI.Theme
   {$IFDEF MSWINDOWS}, Winapi.Windows, Winapi.Messages{$ENDIF}
   {$IFDEF ANDROID}, Androidapi.Helpers, Androidapi.JNI.App, Androidapi.JNI.GraphicsContentViewText,
-  Androidapi.JNIBridge, FMX.Helpers.Android, FMX.VirtualKeyboard, FMX.MediaLibrary{$ENDIF};
+  Androidapi.JNIBridge, FMX.Helpers.Android, FMX.VirtualKeyboard, FMX.MediaLibrary, System.Messaging{$ENDIF};
 
 {$IFDEF MSWINDOWS}
 type
@@ -285,7 +290,144 @@ begin
   // Called on Android's UI thread; the forms live on Delphi's main thread.
   TThread.Queue(nil, SendBackKey);
 end;
+
+type
+  { Keeps the focused field above the keyboard: Android draws the keyboard
+    over the form, which does not get smaller. }
+  TKeyboardWatch = class(TComponent)
+  private
+    FUp: Boolean;
+    FKeyboardTop: Single;  // screen points
+    FBox: TCustomScrollBox; // the one given a margin
+    FOldMargin: Single;
+    FLast: TObject;         // the field last fitted (compared only)
+    FTimer: TTimer;
+    procedure Changed(const Sender: TObject; const M: TMessage);
+    procedure Check(Sender: TObject);
+    procedure Fit;
+    procedure Release;
+  protected
+    procedure Notification(AComponent: TComponent; Operation: TOperation); override;
+  public
+    constructor Create(AOwner: TComponent); override;
+  end;
+
+var
+  KeyboardWatch: TKeyboardWatch;
+
+constructor TKeyboardWatch.Create(AOwner: TComponent);
+begin
+  inherited;
+  FTimer := TTimer.Create(Self);
+  FTimer.Interval := 300;
+  FTimer.Enabled := False;
+  FTimer.OnTimer := Check;
+  TMessageManager.DefaultManager.SubscribeToMessage(TVKStateChangeMessage, Changed);
+end;
+
+procedure TKeyboardWatch.Notification(AComponent: TComponent; Operation: TOperation);
+begin
+  inherited;
+  if (Operation = opRemove) and (AComponent = FBox) then
+    FBox := nil;
+end;
+
+procedure TKeyboardWatch.Changed(const Sender: TObject; const M: TMessage);
+begin
+  FUp := TVKStateChangeMessage(M).KeyboardVisible;
+  FTimer.Enabled := FUp;
+  if FUp then
+  begin
+    FKeyboardTop := TVKStateChangeMessage(M).KeyboardBounds.Top;
+    FLast := nil;
+    Fit;
+  end
+  else
+    Release;
+end;
+
+{ Tab, Next or a tap moves to another field without the keyboard changing. }
+procedure TKeyboardWatch.Check(Sender: TObject);
+var
+  Form: TCommonCustomForm;
+begin
+  Form := Screen.ActiveForm;
+  if (Form <> nil) and (Form.Focused <> nil) and (Form.Focused.GetObject <> FLast) then
+    Fit;
+end;
+
+procedure TKeyboardWatch.Release;
+begin
+  if FBox <> nil then
+  begin
+    FBox.Margins.Bottom := FOldMargin;
+    FBox.RemoveFreeNotification(Self);
+    FBox := nil;
+  end;
+  FLast := nil;
+end;
+
+procedure TKeyboardWatch.Fit;
+var
+  Form: TCommonCustomForm;
+  Field: TControl;
+  P: TFmxObject;
+  Box: TCustomScrollBox;
+  Bottom: Single;
+begin
+  Form := Screen.ActiveForm;
+  if (Form = nil) or (Form.Focused = nil) or not (Form.Focused.GetObject is TControl) then
+    Exit;
+  Field := TControl(Form.Focused.GetObject);
+  FLast := Field;
+  P := Field.Parent;
+  while (P <> nil) and not (P is TCustomScrollBox) do
+    P := P.Parent;
+  Box := TCustomScrollBox(P);
+  if Box <> FBox then
+  begin
+    Release;
+    FLast := Field;
+    if Box = nil then
+      Exit;
+    FBox := Box;
+    FOldMargin := Box.Margins.Bottom;
+    Box.FreeNotification(Self);
+  end;
+  // the box ends where the keyboard starts (its bottom as it was, without the margin)
+  Bottom := Box.LocalToAbsolute(TPointF.Create(0, Box.Height)).Y + Box.Margins.Bottom - FOldMargin;
+  Box.Margins.Bottom := FOldMargin + Max(0, Bottom - Form.ScreenToClient(TPointF.Create(0, FKeyboardTop)).Y);
+  // scrolled once the box has its new height
+  TThread.ForceQueue(nil,
+    procedure
+    var
+      V: TPointF;
+      Top, Under: Single;
+    begin
+      if (FBox <> Box) or (FLast <> Field) then
+        Exit;
+      // where the field is in the box's visible part
+      Top := Box.AbsoluteToLocal(Field.LocalToAbsolute(TPointF.Zero)).Y;
+      Under := Top + Field.Height;
+      V := Box.ViewportPosition;
+      if Under + 12 > Box.Height then
+        V.Y := V.Y + Under + 12 - Box.Height
+      else if Top < 12 then
+        V.Y := Max(0, V.Y + Top - 12)
+      else
+        Exit;
+      Box.ViewportPosition := V;
+    end);
+end;
 {$ENDIF}
+
+procedure HookKeyboard;
+begin
+  {$IFDEF ANDROID}
+  if KeyboardWatch = nil then
+    KeyboardWatch := TKeyboardWatch.Create(Application);
+  {$ENDIF}
+end;
 
 procedure HookBackGesture;
 begin
