@@ -310,30 +310,18 @@ Something happened on the drive — a stumble, a noise, a light? Press **F12** (
 
 ### Sending the log while it is written
 
-For a crew away from the car — the pits at a road course, a tuner at home — UVScan can send the log on every few minutes while it is written: **by email**, **to a folder** (Windows: a Google Drive, OneDrive or Dropbox folder on the PC uploads it) and **to Google Drive** (a phone too). It needs the internet while it logs (Wi‑Fi, or mobile data on a phone or a tethered laptop).
+For a crew away from the car — the pits at a road course, a tuner at home — UVScan can send the log on every few minutes while it is written: **by email** (Windows and phones) and, on Windows, **to a folder** (a Google Drive, OneDrive or Dropbox folder on the PC uploads it, or a network share or USB drive). It needs the internet while it logs (Wi‑Fi, or mobile data on a phone or a tethered laptop).
 
 It is **off each time UVScan starts**: tick **Send while logging** in the *Send logs* box on the *Connect* page for the drive it is wanted on (not set up yet, ticking it opens the settings, and saving them with a way that works turns it on). **Settings…** in that box (also in the *Connect* page's **⋮** menu) sets it up:
 
 - **When** — **Every** so many minutes of logging (5 unless you change it), **Most snapshots per log** (12: then it stops sending for that log, so a long session does not flood anyone; every 5 minutes, that is the first hour), **And one more when the log stops**, and how many times to **Try again** when one does not go (3).
-- **What** — **The whole log so far** each time (each one opens on its own; Google Drive and the folder keep one file per log, brought up to date) or **Only the rows since the last one** (smaller numbered parts, `…-part01`, `…-part02`, each with the header line). **Zip it** (off unless you tick it) makes each about a tenth of the size: less mobile data.
+- **What** — **The whole log so far** each time (each one opens on its own; the folder keeps one file per log, brought up to date) or **Only the rows since the last one** (smaller numbered parts, `…-part01`, `…-part02`, each with the header line). **Zip it** (off unless you tick it) makes each about a tenth of the size: less mobile data.
 - **Email** — the mail server, **TLS** (port 465) or **STARTTLS** (587), the account and password, and who it goes to (several addresses, separated with commas). For **Gmail** that is `smtp.gmail.com`, TLS, your Gmail address and an **app password** (*Google Account → Security → 2‑Step Verification → App passwords*), not the account's own password; iCloud and Yahoo have app passwords too. Outlook.com and Hotmail no longer accept a password from programs like UVScan. **Send a test email** sends a small one.
-- **Folder** (Windows) — a folder to copy it to. One that Google Drive for desktop, OneDrive or Dropbox keeps in step with the cloud (`G:\My Drive\UVScan`, `OneDrive\UVScan`…) uploads it with nothing to sign in to in UVScan; a shared network folder works too. **Test** writes a small file there.
-- **Google Drive** — **Sign in…** shows a short code: on any phone or computer open *google.com/device*, sign in with the Google account whose Drive gets the logs, type the code and allow UVScan. UVScan can then see only the files it makes there (in the folder named on the page, *UVScan logs*), nothing else in the Drive; share that folder with the crew in Google Drive. **Sign out** forgets the sign‑in. It needs a Google app for UVScan first, below.
+- **Folder** (Windows) — a folder to copy it to. One that Google Drive for desktop, OneDrive or Dropbox keeps in step with the cloud (`G:\My Drive\UVScan`, `OneDrive\UVScan`…) uploads it with nothing to sign in to in UVScan; a shared network folder or a USB drive works too. **Test** writes a small file there.
 
-Each snapshot that goes is in *Messages*, and the box says how each way is doing (*email: snapshot 3 sent at 14:05*) how many snapshots were taken of the most and when the next is due; the status strip adds *3 snapshots* to the row count. One that does not go is tried again after 15 s, 30 s, 1 min, then every 2 min, up to **Try again** times. After that **that way stops for this log** and a red notice says so (tap it away); the log, and the other ways, go on. Untick and tick **Send while logging** to try again.
+Each snapshot that goes is in *Messages*, and the box says how each way is doing (*email: snapshot 3 sent at 14:05*), how many snapshots were taken out of the most, and when the next is due; the status strip adds *3 snapshots* to the row count. One that does not go is tried again after 15 s, 30 s, 1 min, then every 2 min, up to **Try again** times. After that **that way stops for this log** and a red notice says so (tap it away); the log, and the other ways, go on. Untick and tick **Send while logging** to try again.
 
-The password and the Google sign‑in are kept in `settings.json`; on Windows they are locked to your Windows user (another user, or another PC, cannot read them back and has to enter them again).
-
-#### A Google app for UVScan
-
-Google lets a program put files in someone's Drive only through an app registered with Google. It is free and done once, by whoever looks after UVScan for the team:
-
-1. In the [Google Cloud console](https://console.cloud.google.com/) make a project (*UVScan*).
-2. *APIs & Services → Library*: turn on the **Google Drive API**.
-3. *Google Auth Platform*: set it up as **External**, with an app name and a support email; under *Data access* add the scope `…/auth/drive.file`; under *Audience* **publish the app** (an app left in *Testing* only lets its listed test users in, and their sign‑ins run out after 7 days).
-4. *Clients → Create client*: type **TVs and Limited Input devices**. Copy its **client ID** and **secret** into UVScan's *Send logs* page (**Google app ID**, **App secret**).
-
-Google may show *Google hasn't verified this app* at the sign‑in: *Advanced → Go to UVScan* goes on (`drive.file` lets it see only its own files).
+The password is kept in `settings.json`; on Windows it is locked to your Windows user (another user, or another PC, cannot read it back and has to enter it again).
 
 ## Log viewer
 

@@ -46,7 +46,6 @@ uses
   UVScan.Tests.Sensors in 'UVScan.Tests.Sensors.pas',
   UVScan.Tls in '..\src\UVScan.Tls.pas',
   UVScan.Smtp in '..\src\UVScan.Smtp.pas',
-  UVScan.GoogleDrive in '..\src\UVScan.GoogleDrive.pas',
   UVScan.LogSend in '..\src\UVScan.LogSend.pas',
   UVScan.Tests.LogSend in 'UVScan.Tests.LogSend.pas';
 

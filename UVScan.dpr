@@ -40,7 +40,6 @@ uses
   UVScan.SensorEditor in 'src\UVScan.SensorEditor.pas',
   UVScan.Tls in 'src\UVScan.Tls.pas',
   UVScan.Smtp in 'src\UVScan.Smtp.pas',
-  UVScan.GoogleDrive in 'src\UVScan.GoogleDrive.pas',
   UVScan.LogSend in 'src\UVScan.LogSend.pas',
   UVScan.LogSendEditor in 'src\UVScan.LogSendEditor.pas',
   UVScan.UI.Common in 'src\UVScan.UI.Common.pas',

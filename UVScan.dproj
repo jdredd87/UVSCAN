@@ -349,7 +349,6 @@
         <DCCReference Include="src\UVScan.SensorEditor.pas"/>
         <DCCReference Include="src\UVScan.Tls.pas"/>
         <DCCReference Include="src\UVScan.Smtp.pas"/>
-        <DCCReference Include="src\UVScan.GoogleDrive.pas"/>
         <DCCReference Include="src\UVScan.LogSend.pas"/>
         <DCCReference Include="src\UVScan.LogSendEditor.pas"/>
         <DCCReference Include="src\UVScan.UI.Common.pas"/>

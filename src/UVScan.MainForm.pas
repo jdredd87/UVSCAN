@@ -4842,8 +4842,8 @@ begin
   if FLogSender = nil then
   begin
     if Ways = '' then
-      S := 'Sends the log on every few minutes while it is written: by email, ' +
-        {$IFDEF MSWINDOWS}'to a cloud drive''s folder ' + {$ENDIF}'or to Google Drive, for a crew away ' +
+      S := 'Sends the log on every few minutes while it is written: by email' +
+        {$IFDEF MSWINDOWS}' or to a cloud drive''s folder' + {$ENDIF}', for a crew away ' +
         'from the car. Settings first: where it goes.'
     else
       S := Format('Off. Set up: %s, every %d min, up to %d per log. Turn it on for a drive.',

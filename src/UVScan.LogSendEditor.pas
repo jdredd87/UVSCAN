@@ -1,9 +1,9 @@
 unit UVScan.LogSendEditor;
 
-{ The Send logs page: where the log goes while it is written (email, a
-  folder, Google Drive), how often, how much, and how hard it tries; a test
-  for each way, and signing in to Google Drive. Sending itself is turned on
-  on the Connect page ("Send while logging"). See UVScan.LogSend. }
+{ The Send logs page: where the log goes while it is written (email, and
+  on Windows a folder), how often, how much, and how hard it tries; a test
+  for each way. Sending itself is turned on on the Connect page ("Send
+  while logging"). See UVScan.LogSend. }
 
 interface
 
@@ -17,11 +17,10 @@ procedure EditLogSending(Settings: TLogSendSettings; const OnDone: TProc<Boolean
 implementation
 
 uses
-  System.Classes, System.Types, System.UITypes, System.Math, System.StrUtils, System.IOUtils,
-  System.Generics.Collections,
+  System.Classes, System.Types, System.UITypes, System.Math, System.IOUtils,
   FMX.Types, FMX.Controls, FMX.Forms, FMX.StdCtrls, FMX.Edit, FMX.ComboEdit, FMX.ListBox, FMX.Layouts,
-  FMX.Dialogs, FMX.Graphics, FMX.Platform,
-  UVScan.Smtp, UVScan.GoogleDrive, UVScan.UI.Common, UVScan.UI.Theme;
+  FMX.Dialogs, FMX.Graphics,
+  UVScan.Smtp, UVScan.UI.Common, UVScan.UI.Theme;
 
 const
   NarrowWidth = 600;
@@ -32,7 +31,6 @@ type
   TAlive = class(TInterfacedObject)
   public
     Alive: Boolean;
-    StopSignIn: Boolean;
   end;
 
   TLogSendPage = class(TComponent)
@@ -41,14 +39,11 @@ type
     FBox: TVertScrollBox;
     FY: Single;
     FSettings: TLogSendSettings; // the caller's
-    FDriveToken, FDriveAccount: string;
-    FSaved, FChanged, FDiscardOk, FLoading: Boolean;
+    FSaved, FChanged, FDiscardOk, FLoading, FBuilt: Boolean;
     FAlive: IInterface;
     FRows: TArray<TControl>;
     FCaps: TArray<TLabel>;
     FOrder: TArray<TControl>;
-    FFolderParts: TArray<TControl>; // Windows only
-    FCodeParts: TArray<TControl>;   // while signing in
     FButtonRows: TArray<TLayout>;   // rows of buttons, flowed at their own width
     FButtonItems: TArray<TArray<TControl>>;
     FButtonWidths: TArray<Single>;  // the width each row was flowed for
@@ -63,16 +58,6 @@ type
     chkFolder: TCheckBox;
     edtFolder: TEdit;
     btnBrowse, btnTestFolder: TButton;
-    chkDrive: TCheckBox;
-    lblDrive: TLabel;
-    pnlDriveButtons: TLayout;
-    btnSignIn, btnSignOut, btnTestDrive: TButton;
-    lblCode: TLabel;
-    lblCodeHow: TLabel;
-    pnlCodeButtons: TLayout;
-    btnOpenPage, btnCopyCode, btnCancelSignIn: TButton;
-    edtDriveFolder, edtClientId, edtClientSecret: TEdit;
-    FCodeUrl, FCode: string;
     function Alive: TAlive;
     function Add(C: TControl; Height: Single): TControl;
     function Caption(const Text: string): TLabel;
@@ -83,8 +68,6 @@ type
     procedure Load;
     procedure ApplyTo(S: TLogSendSettings);
     procedure Relayout;
-    procedure KeepOrder;
-    procedure ShowDrive;
     procedure FormResized(Sender: TObject);
     procedure ButtonRowResized(Sender: TObject);
     procedure FlowButtons(Row: Integer);
@@ -95,14 +78,7 @@ type
     procedure RunTest(Way: TSendWay; Button: TButton);
     procedure TestEmailClick(Sender: TObject);
     procedure TestFolderClick(Sender: TObject);
-    procedure TestDriveClick(Sender: TObject);
     procedure BrowseClick(Sender: TObject);
-    procedure SignInClick(Sender: TObject);
-    procedure SignOutClick(Sender: TObject);
-    procedure OpenPageClick(Sender: TObject);
-    procedure CopyCodeClick(Sender: TObject);
-    procedure CancelSignInClick(Sender: TObject);
-    procedure ShowCode(Showing: Boolean);
     procedure SaveClick(Sender: TObject);
   public
     destructor Destroy; override;
@@ -116,10 +92,7 @@ end;
 destructor TLogSendPage.Destroy;
 begin
   if FAlive <> nil then
-  begin
     Alive.Alive := False;
-    Alive.StopSignIn := True;
-  end;
   inherited;
 end;
 
@@ -251,7 +224,6 @@ var
   Bar: TLayout;
   B, Ok: TButton;
   M: TMailSecurity;
-  C: TControl;
 begin
   FForm.OnCloseQuery := FormCloseQuery;
   Bar := TLayout.Create(FForm);
@@ -276,8 +248,8 @@ begin
   FBox.OnResized := FormResized;
   FY := 0;
 
-  Note('While a log is written UVScan can send it on every few minutes: to a crew''s email, ' +
-    {$IFDEF MSWINDOWS}'a cloud drive''s folder on this PC ' + {$ENDIF}'or Google Drive. Turn it on for a ' +
+  Note('While a log is written UVScan can send it on every few minutes: to a crew''s email' +
+    {$IFDEF MSWINDOWS}' or a cloud drive''s folder on this PC' + {$ENDIF}'. Turn it on for a ' +
     'drive with Send while logging (Connect page); it is off again each time UVScan starts. It needs the ' +
     'internet (Wi-Fi or mobile data) while it logs.');
 
@@ -303,7 +275,8 @@ begin
   Row('Sends', cbWhat);
   chkZip := NewCheck(FForm, 'Zip it (a tenth of the size: less mobile data)', Changed);
   Add(chkZip, 34);
-  Note('The whole log: each one opens on its own; Google Drive keeps one file per log, brought up to date. ' +
+  Note('The whole log: each one opens on its own' + {$IFDEF MSWINDOWS}'; the folder keeps one file per log, ' +
+    'brought up to date' + {$ENDIF}'. ' +
     'Only the new rows: smaller, numbered parts (-part01, -part02...) to put together.');
 
   Caption('Email');
@@ -332,78 +305,28 @@ begin
   Buttons([btnTestEmail]);
 
   {$IFDEF MSWINDOWS}
-  FFolderParts := FFolderParts + [Caption('Folder')];
+  Caption('Folder');
   chkFolder := NewCheck(FForm, 'Copy it to a folder', Changed);
-  FFolderParts := FFolderParts + [Add(chkFolder, 34)];
+  Add(chkFolder, 34);
   edtFolder := NewEdit(FForm, 'G:\My Drive\UVScan', Changed);
-  FFolderParts := FFolderParts + [Row('Folder', edtFolder)];
-  FFolderParts := FFolderParts + [Note('A folder Google Drive, OneDrive or Dropbox keeps in step with the ' +
-    'cloud (G:\My Drive\..., OneDrive\..., Dropbox\...) uploads it as it changes: nothing to sign in to ' +
-    'here. A shared folder on the network works too.')];
+  Row('Folder', edtFolder);
+  Note('A folder Google Drive, OneDrive or Dropbox keeps in step with the cloud (G:\My Drive\..., ' +
+    'OneDrive\..., Dropbox\...) uploads it as it changes: nothing to sign in to here. A shared folder on ' +
+    'the network or a USB drive works too.');
   btnBrowse := NewButton(FForm, 'Choose...', BrowseClick);
   btnTestFolder := NewButton(FForm, 'Test', TestFolderClick);
-  FFolderParts := FFolderParts + [Buttons([btnBrowse, btnTestFolder])];
+  Buttons([btnBrowse, btnTestFolder]);
   {$ENDIF}
-
-  Caption('Google Drive');
-  chkDrive := NewCheck(FForm, 'Upload it to Google Drive', Changed);
-  Add(chkDrive, 34);
-  lblDrive := Note('');
-  btnSignIn := NewButton(FForm, 'Sign in...', SignInClick);
-  btnSignOut := NewButton(FForm, 'Sign out', SignOutClick);
-  btnTestDrive := NewButton(FForm, 'Test', TestDriveClick);
-  pnlDriveButtons := Buttons([btnSignIn, btnSignOut, btnTestDrive]);
-  lblCode := TLabel.Create(FForm);
-  lblCode.StyledSettings := lblCode.StyledSettings - [TStyledSetting.Size, TStyledSetting.Style];
-  lblCode.TextSettings.Font.Size := 30;
-  lblCode.TextSettings.Font.Style := [TFontStyle.fsBold];
-  lblCode.TextSettings.HorzAlign := TTextAlign.Center;
-  lblCode.Margins.Top := 8;
-  Add(lblCode, 48);
-  lblCodeHow := Note('');
-  btnOpenPage := NewButton(FForm, 'Open the page', OpenPageClick);
-  btnCopyCode := NewButton(FForm, 'Copy the code', CopyCodeClick);
-  btnCancelSignIn := NewButton(FForm, 'Cancel', CancelSignInClick);
-  pnlCodeButtons := Buttons([btnOpenPage, btnCopyCode, btnCancelSignIn]);
-  FCodeParts := [lblCode, lblCodeHow, pnlCodeButtons];
-  edtDriveFolder := NewEdit(FForm, 'UVScan logs', Changed);
-  Row('Folder in Drive', edtDriveFolder);
-  Note('UVScan only sees the files it puts there, nothing else in the Drive. Share the folder with the ' +
-    'crew in Google Drive to let them open it.');
-  edtClientId := NewEdit(FForm, IfThen(DefaultDriveClientId <> '', 'UVScan''s own', 'xxxx.apps.googleusercontent.com'),
-    Changed);
-  Row('Google app ID', edtClientId);
-  edtClientSecret := NewEdit(FForm, IfThen(DefaultDriveClientSecret <> '', 'UVScan''s own', ''), Changed);
-  edtClientSecret.Password := True;
-  Row('App secret', edtClientSecret);
-  Note('A Google Cloud OAuth client of the type "TVs and Limited Input devices", with the Google Drive API ' +
-    'turned on (see the user guide). ' + IfThen(DefaultDriveClientId <> '', 'Empty: UVScan''s own.',
-    'UVScan has none of its own yet.'));
 
   Caption('Kept where');
   {$IFDEF MSWINDOWS}
-  Note('The password and the Google sign-in are kept in settings.json, locked to this Windows user.');
+  Note('The password is kept in settings.json, locked to this Windows user.');
   {$ELSE}
-  Note('The password and the Google sign-in are kept in UVScan''s own storage on this phone.');
+  Note('The password is kept in UVScan''s own storage on this phone.');
   {$ENDIF}
 
-  for C in FCodeParts do
-    C.Visible := False;
+  FBuilt := True;
   MakePage(FForm, 'Send logs', Ok);
-end;
-
-{ Keeps the page's top to bottom order after controls were shown again. }
-procedure TLogSendPage.KeepOrder;
-var
-  I: Integer;
-begin
-  FBox.BeginUpdate;
-  try
-    for I := 0 to High(FOrder) do
-      FOrder[I].Position.Y := I * 1000;
-  finally
-    FBox.EndUpdate;
-  end;
 end;
 
 procedure TLogSendPage.FormResized(Sender: TObject);
@@ -416,7 +339,7 @@ var
   W: Single;
   L: TLabel;
 begin
-  if pnlCodeButtons = nil then
+  if not FBuilt then
     Exit;
   W := FBox.Width - FBox.Padding.Left - FBox.Padding.Right - 4;
   if W < 100 then
@@ -454,13 +377,6 @@ begin
       chkFolder.IsChecked := FSettings.FolderOn;
       edtFolder.Text := FSettings.Folder;
     end;
-    chkDrive.IsChecked := FSettings.DriveOn;
-    FDriveToken := FSettings.DriveToken;
-    FDriveAccount := FSettings.DriveAccount;
-    edtDriveFolder.Text := FSettings.DriveFolder;
-    edtClientId.Text := FSettings.DriveClientId;
-    edtClientSecret.Text := FSettings.DriveClientSecret;
-    ShowDrive;
   finally
     FLoading := False;
   end;
@@ -487,26 +403,6 @@ begin
     S.FolderOn := chkFolder.IsChecked;
     S.Folder := Trim(edtFolder.Text);
   end;
-  S.DriveOn := chkDrive.IsChecked;
-  S.DriveToken := FDriveToken;
-  S.DriveAccount := FDriveAccount;
-  S.DriveFolder := Trim(edtDriveFolder.Text);
-  if S.DriveFolder = '' then
-    S.DriveFolder := 'UVScan logs';
-  S.DriveClientId := Trim(edtClientId.Text);
-  S.DriveClientSecret := Trim(edtClientSecret.Text);
-end;
-
-procedure TLogSendPage.ShowDrive;
-begin
-  if FDriveToken <> '' then
-    lblDrive.Text := 'Signed in' + IfThen(FDriveAccount <> '', ' as ' + FDriveAccount, '') + '.'
-  else
-    lblDrive.Text := 'Not signed in: Sign in shows a code to type at google.com/device on any phone or ' +
-      'computer, with the Google account whose Drive gets the logs.';
-  btnSignOut.Enabled := FDriveToken <> '';
-  btnTestDrive.Enabled := FDriveToken <> '';
-  Relayout;
 end;
 
 procedure TLogSendPage.Changed(Sender: TObject);
@@ -583,30 +479,21 @@ begin
   TThread.CreateAnonymousThread(
     procedure
     var
-      Client: TDriveClient;
-      FolderId, Error, Where: string;
-      Ids: TDictionary<string, string>;
+      Error, Where: string;
     begin
-      Client := nil;
-      FolderId := '';
       Error := '';
-      Ids := TDictionary<string, string>.Create;
       try
         try
-          DeliverSnapshot(Way, S, Snap, Client, FolderId, Ids);
+          DeliverSnapshot(Way, S, Snap);
         except
           on E: Exception do
             Error := E.Message;
         end;
-        case Way of
-          swEmail: Where := 'An email went to ' + S.MailTo + '.';
-          swFolder: Where := TPath.Combine(S.Folder, Snap.FileName) + ' is there.';
+        if Way = swEmail then
+          Where := 'An email went to ' + S.MailTo + '.'
         else
-          Where := Snap.FileName + ' is in "' + S.DriveFolder + '" in the Drive.';
-        end;
+          Where := TPath.Combine(S.Folder, Snap.FileName) + ' is there.';
       finally
-        Client.Free;
-        Ids.Free;
         S.Free;
       end;
       TThread.Queue(nil,
@@ -634,11 +521,6 @@ begin
   RunTest(swFolder, btnTestFolder);
 end;
 
-procedure TLogSendPage.TestDriveClick(Sender: TObject);
-begin
-  RunTest(swDrive, btnTestDrive);
-end;
-
 procedure TLogSendPage.BrowseClick(Sender: TObject);
 var
   Dir: string;
@@ -648,153 +530,6 @@ begin
   if SelectDirectory('Folder to copy the logs to', '', Dir) then
     edtFolder.Text := Dir;
   {$ENDIF}
-end;
-
-{ Signing in to Google Drive }
-
-procedure TLogSendPage.ShowCode(Showing: Boolean);
-var
-  C: TControl;
-begin
-  for C in FCodeParts do
-    C.Visible := Showing;
-  pnlDriveButtons.Visible := not Showing;
-  KeepOrder;
-  Relayout;
-end;
-
-procedure TLogSendPage.SignInClick(Sender: TObject);
-var
-  S: TLogSendSettings;
-  App: TDriveApp;
-  Token: IInterface;
-begin
-  S := TLogSendSettings.Create;
-  try
-    ApplyTo(S);
-    App := S.DriveApp;
-  finally
-    S.Free;
-  end;
-  if not App.IsSet then
-  begin
-    ShowWarning('Google Drive needs a Google app for UVScan first: its client ID and secret, below (see ' +
-      'the user guide for making one).');
-    Exit;
-  end;
-  Token := FAlive;
-  Alive.StopSignIn := False;
-  btnSignIn.Enabled := False;
-  lblCode.Text := '...';
-  lblCodeHow.Text := 'Asking Google for a code...';
-  ShowCode(True);
-  TThread.CreateAnonymousThread(
-    procedure
-    var
-      SignIn: TDeviceSignIn;
-      Refresh, Account, Error: string;
-      Client: TDriveClient;
-      Done: Boolean;
-      I: Integer;
-    begin
-      Error := '';
-      Refresh := '';
-      Account := '';
-      try
-        SignIn := StartDeviceSignIn(App);
-        TThread.Queue(nil,
-          procedure
-          begin
-            if not (Token as TAlive).Alive then
-              Exit;
-            FCode := SignIn.UserCode;
-            FCodeUrl := SignIn.VerifyUrl;
-            lblCode.Text := SignIn.UserCode;
-            lblCodeHow.Text := Format('On any phone or computer open %s, sign in with the Google account ' +
-              'for the logs, type this code and allow UVScan. This page waits for it.', [SignIn.VerifyUrl]);
-            Relayout;
-          end);
-        Done := False;
-        while not Done do
-        begin
-          for I := 1 to SignIn.IntervalS * 10 do
-          begin
-            Sleep(100);
-            if (Token as TAlive).StopSignIn then
-              Exit;
-          end;
-          Done := PollDeviceSignIn(App, SignIn, Refresh);
-        end;
-        Client := TDriveClient.Create(App, Refresh);
-        try
-          try
-            Account := Client.Email;
-          except
-            Account := ''; // signed in all the same
-          end;
-        finally
-          Client.Free;
-        end;
-      except
-        on E: Exception do
-          Error := E.Message;
-      end;
-      TThread.Queue(nil,
-        procedure
-        begin
-          if not (Token as TAlive).Alive or (Token as TAlive).StopSignIn then
-            Exit;
-          btnSignIn.Enabled := True;
-          ShowCode(False);
-          if Error <> '' then
-          begin
-            ShowError('Could not sign in to Google Drive: ' + Error);
-            Exit;
-          end;
-          FDriveToken := Refresh;
-          FDriveAccount := Account;
-          FChanged := True;
-          chkDrive.IsChecked := True;
-          ShowDrive;
-          ShowInfo('Signed in to Google Drive' + IfThen(Account <> '', ' as ' + Account, '') +
-            '. Save keeps it.');
-        end);
-    end).Start;
-end;
-
-procedure TLogSendPage.CancelSignInClick(Sender: TObject);
-begin
-  Alive.StopSignIn := True;
-  btnSignIn.Enabled := True;
-  ShowCode(False);
-end;
-
-procedure TLogSendPage.OpenPageClick(Sender: TObject);
-begin
-  if FCodeUrl <> '' then
-    OpenUrl(FCodeUrl);
-end;
-
-procedure TLogSendPage.CopyCodeClick(Sender: TObject);
-var
-  Clip: IFMXClipboardService;
-begin
-  if (FCode <> '') and TPlatformServices.Current.SupportsPlatformService(IFMXClipboardService, Clip) then
-    Clip.SetClipboard(FCode);
-end;
-
-procedure TLogSendPage.SignOutClick(Sender: TObject);
-begin
-  Confirm('Sign out of Google Drive? Sending there stops until someone signs in again. (To take UVScan''s ' +
-    'access away altogether: Google Account > Security > Third-party connections.)',
-    procedure
-    begin
-      FDriveToken := '';
-      FDriveAccount := '';
-      FChanged := True;
-      chkDrive.IsChecked := False;
-      ShowDrive;
-    end);
 end;
 
 procedure TLogSendPage.SaveClick(Sender: TObject);
@@ -846,7 +581,6 @@ begin
   ShowDialog(F,
     procedure(R: TModalResult)
     begin
-      (Page.FAlive as TAlive).StopSignIn := True;
       if Assigned(OnDone) then
         OnDone(Page.FSaved);
     end);

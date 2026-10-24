@@ -9,7 +9,7 @@ interface
 uses
   System.SysUtils, System.Classes, System.Math, System.JSON, System.IOUtils, System.Zip,
   System.NetEncoding, System.Generics.Collections, DUnitX.TestFramework,
-  UVScan.LogSend, UVScan.Smtp, UVScan.GoogleDrive, UVScan.JsonFile;
+  UVScan.LogSend, UVScan.Smtp, UVScan.JsonFile;
 
 type
   [TestFixture]
@@ -248,17 +248,10 @@ begin
     A.MailTo := 'crew@example.com, pits@example.com';
     A.FolderOn := True;
     A.Folder := 'G:\My Drive\UVScan';
-    A.DriveOn := True;
-    A.DriveToken := '1//refresh-token';
-    A.DriveAccount := 'me@gmail.com';
-    A.DriveFolder := 'Race logs';
-    A.DriveClientId := 'id.apps.googleusercontent.com';
-    A.DriveClientSecret := 'secret';
     J := A.ToJson;
     try
       {$IFDEF MSWINDOWS}
       Assert.IsTrue(JStr(JObj(J, 'email'), 'password').StartsWith('dpapi:'), 'the password locked');
-      Assert.IsTrue(JStr(JObj(J, 'drive'), 'token').StartsWith('dpapi:'), 'the token locked');
       Assert.IsFalse(J.ToJSON.Contains('abcd efgh'));
       {$ENDIF}
       B.FromJson(J);
@@ -280,11 +273,6 @@ begin
     Assert.AreEqual('crew@example.com, pits@example.com', B.MailTo);
     Assert.IsTrue(B.FolderOn);
     Assert.AreEqual('G:\My Drive\UVScan', B.Folder);
-    Assert.IsTrue(B.DriveOn);
-    Assert.AreEqual('1//refresh-token', B.DriveToken);
-    Assert.AreEqual('me@gmail.com', B.DriveAccount);
-    Assert.AreEqual('Race logs', B.DriveFolder);
-    Assert.AreEqual('id.apps.googleusercontent.com', B.DriveApp.ClientId);
     B.FromJson(nil);
     Assert.AreEqual(5, B.IntervalMin, 'defaults without the section');
     Assert.IsFalse(B.EmailOn);
@@ -314,15 +302,6 @@ begin
     S.MailTo := 'crew@example.com; pits@example.org';
     Assert.AreEqual('', S.Problem(swEmail));
     Assert.Contains(S.Problem(swFolder), 'no folder');
-    S.DriveClientId := '';
-    S.DriveToken := 'x';
-    if DefaultDriveClientId = '' then
-      Assert.Contains(S.Problem(swDrive), 'client ID');
-    S.DriveClientId := 'id';
-    S.DriveClientSecret := 'secret';
-    Assert.AreEqual('', S.Problem(swDrive));
-    S.DriveToken := '';
-    Assert.Contains(S.Problem(swDrive), 'not signed in');
   finally
     S.Free;
   end;
@@ -383,30 +362,24 @@ var
   S: TLogSendSettings;
   Snap: TLogSnapshot;
   Offset: Int64;
-  Client: TDriveClient;
-  FolderId: string;
-  Ids: TDictionary<string, string>;
   Target: string;
 begin
   S := TLogSendSettings.Create;
-  Ids := TDictionary<string, string>.Create;
   try
     S.Folder := TPath.Combine(FDir, 'cloud\UVScan');
     S.Zip := False;
     WriteLog(Bom + 'Time (s),RPM,Mark'#13#10'0.0,800,'#13#10);
     Offset := 0;
     MakeSnapshot(FLog, lwWhole, False, Offset, 1, False, Snap);
-    Client := nil;
-    DeliverSnapshot(swFolder, S, Snap, Client, FolderId, Ids);
+    DeliverSnapshot(swFolder, S, Snap);
     Target := TPath.Combine(S.Folder, Snap.FileName);
     Assert.IsTrue(TFile.Exists(Target), 'the folder made and the file in it');
     WriteLog('0.1,900,'#13#10, True);
     MakeSnapshot(FLog, lwWhole, False, Offset, 2, False, Snap);
-    DeliverSnapshot(swFolder, S, Snap, Client, FolderId, Ids);
+    DeliverSnapshot(swFolder, S, Snap);
     Assert.Contains(TFile.ReadAllText(Target, TEncoding.UTF8), '0.1,900', 'brought up to date');
     Assert.AreEqual(1, Length(TDirectory.GetFiles(S.Folder)), 'one file, no leftovers');
   finally
-    Ids.Free;
     S.Free;
   end;
 end;

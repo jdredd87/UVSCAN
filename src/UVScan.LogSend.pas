@@ -13,28 +13,24 @@ unit UVScan.LogSend;
     email   through a mail account (UVScan.Smtp): the snapshot attached
     folder  (Windows) a copy in a folder: one that Google Drive, OneDrive
             or Dropbox keeps in step with the cloud uploads it
-    drive   Google Drive (UVScan.GoogleDrive): one file per log brought up
-            to date each time (whole log), or one per snapshot (new rows)
 
   Settings, in settings.json "logSend":
     { "everyMinutes": 5, "maxPerLog": 12, "retries": 3, "what": "whole", "zip": false, "atStop": true,
       "email": { "on": true, "server": "smtp.gmail.com", "port": 465, "security": "tls",
                  "user": "me@gmail.com", "password": "...", "from": "", "to": "crew@x.com, me@y.com" },
-      "folder": { "on": false, "path": "G:\\My Drive\\UVScan" },
-      "drive": { "on": false, "token": "...", "account": "me@gmail.com", "folder": "UVScan logs",
-                 "clientId": "", "clientSecret": "" } }
-  The password and token are kept for this Windows user only ("dpapi:...",
-  Windows' data protection); a phone keeps them in the app's own storage. *)
+      "folder": { "on": false, "path": "G:\\My Drive\\UVScan" } }
+  The password is kept for this Windows user only ("dpapi:...", Windows'
+  data protection); a phone keeps it in the app's own storage. *)
 
 interface
 
 uses
   System.SysUtils, System.Classes, System.SyncObjs, System.JSON, System.Generics.Collections,
-  UVScan.Smtp, UVScan.GoogleDrive;
+  UVScan.Smtp;
 
 type
   TLogSendWhat = (lwWhole, lwNew);
-  TSendWay = (swEmail, swFolder, swDrive);
+  TSendWay = (swEmail, swFolder);
   TSendWays = set of TSendWay;
 
   TLogSendSettings = class
@@ -50,18 +46,11 @@ type
     MailTo: string;       // addresses, comma separated
     FolderOn: Boolean;
     Folder: string;
-    DriveOn: Boolean;
-    DriveToken: string;   // the refresh token, '' = not signed in
-    DriveAccount: string; // whose Drive (shown)
-    DriveFolder: string;
-    DriveClientId: string;     // '' = UVScan's own
-    DriveClientSecret: string;
     constructor Create;
     procedure ResetToDefaults;
     procedure Assign(Source: TLogSendSettings);
     function ToJson: TJSONObject;
     procedure FromJson(Root: TJSONObject);
-    function DriveApp: TDriveApp;
     { The ways turned on that work here (folder: Windows). }
     function Ways: TSendWays;
     { What is missing for Way, '' when it is ready. }
@@ -140,7 +129,7 @@ type
   end;
 
 const
-  SendWayNames: array[TSendWay] of string = ('email', 'folder', 'Google Drive');
+  SendWayNames: array[TSendWay] of string = ('email', 'folder');
   LogSendWhatKeys: array[TLogSendWhat] of string = ('whole', 'new');
 
 { The snapshot of LogFile now: the whole of it, or (lwNew) its header and
@@ -150,11 +139,8 @@ const
 function MakeSnapshot(const LogFile: string; What: TLogSendWhat; Zip: Boolean; var Offset: Int64;
   Number: Integer; Final: Boolean; out Snap: TLogSnapshot): Boolean;
 
-{ Sends Snap one way, once (raises with what went wrong). Drive: FileIds
-  keeps the file each log went to (whole log: updated each time); Client
-  and FolderId are made on the first call and kept. }
-procedure DeliverSnapshot(Way: TSendWay; Settings: TLogSendSettings; const Snap: TLogSnapshot;
-  var Client: TDriveClient; var FolderId: string; FileIds: TDictionary<string, string>);
+{ Sends Snap one way, once (raises with what went wrong). }
+procedure DeliverSnapshot(Way: TSendWay; Settings: TLogSendSettings; const Snap: TLogSnapshot);
 
 { The wait before try number Attempt + 1: 15 s, 30 s, 60 s, then 2 minutes. }
 function RetryDelayMs(Attempt: Integer): Integer;
@@ -282,12 +268,6 @@ begin
   MailTo := '';
   FolderOn := False;
   Folder := '';
-  DriveOn := False;
-  DriveToken := '';
-  DriveAccount := '';
-  DriveFolder := 'UVScan logs';
-  DriveClientId := '';
-  DriveClientSecret := '';
 end;
 
 procedure TLogSendSettings.Assign(Source: TLogSendSettings);
@@ -327,14 +307,6 @@ begin
   Sec.AddPair('on', TJSONBool.Create(FolderOn));
   Sec.AddPair('path', Folder);
   Result.AddPair('folder', Sec);
-  Sec := TJSONObject.Create;
-  Sec.AddPair('on', TJSONBool.Create(DriveOn));
-  Sec.AddPair('token', ProtectSecret(DriveToken));
-  Sec.AddPair('account', DriveAccount);
-  Sec.AddPair('folder', DriveFolder);
-  Sec.AddPair('clientId', DriveClientId);
-  Sec.AddPair('clientSecret', DriveClientSecret);
-  Result.AddPair('drive', Sec);
 end;
 
 procedure TLogSendSettings.FromJson(Root: TJSONObject);
@@ -374,32 +346,6 @@ begin
     FolderOn := JBool(Sec, 'on');
     Folder := JStr(Sec, 'path');
   end;
-  Sec := JObj(Root, 'drive');
-  if Sec <> nil then
-  begin
-    DriveOn := JBool(Sec, 'on');
-    DriveToken := UnprotectSecret(JStr(Sec, 'token'));
-    DriveAccount := JStr(Sec, 'account');
-    DriveFolder := JStr(Sec, 'folder', DriveFolder);
-    if Trim(DriveFolder) = '' then
-      DriveFolder := 'UVScan logs';
-    DriveClientId := JStr(Sec, 'clientId');
-    DriveClientSecret := JStr(Sec, 'clientSecret');
-  end;
-end;
-
-function TLogSendSettings.DriveApp: TDriveApp;
-begin
-  if Trim(DriveClientId) <> '' then
-  begin
-    Result.ClientId := Trim(DriveClientId);
-    Result.ClientSecret := Trim(DriveClientSecret);
-  end
-  else
-  begin
-    Result.ClientId := DefaultDriveClientId;
-    Result.ClientSecret := DefaultDriveClientSecret;
-  end;
 end;
 
 function TLogSendSettings.Ways: TSendWays;
@@ -411,8 +357,6 @@ begin
   if FolderOn then
     Include(Result, swFolder);
   {$ENDIF}
-  if DriveOn then
-    Include(Result, swDrive);
 end;
 
 function TLogSendSettings.Problem(Way: TSendWay): string;
@@ -438,13 +382,6 @@ begin
     swFolder:
       if Trim(Folder) = '' then
         Exit('Folder: no folder chosen');
-    swDrive:
-      begin
-        if not DriveApp.IsSet then
-          Exit('Google Drive: no Google app set up for UVScan (client ID and secret)');
-        if DriveToken = '' then
-          Exit('Google Drive: not signed in');
-      end;
   end;
 end;
 
@@ -622,11 +559,9 @@ begin
       FormatDateTime('hh:nn', Snap.When)]);
 end;
 
-procedure DeliverSnapshot(Way: TSendWay; Settings: TLogSendSettings; const Snap: TLogSnapshot;
-  var Client: TDriveClient; var FolderId: string; FileIds: TDictionary<string, string>);
+procedure DeliverSnapshot(Way: TSendWay; Settings: TLogSendSettings; const Snap: TLogSnapshot);
 var
   Att: TMailAttachment;
-  Id: string;
 begin
   case Way of
     swEmail:
@@ -638,26 +573,6 @@ begin
       end;
     swFolder:
       CopyToFolder(Settings.Folder, Snap);
-    swDrive:
-      begin
-        if Client = nil then
-          Client := TDriveClient.Create(Settings.DriveApp, Settings.DriveToken);
-        if FolderId = '' then
-          FolderId := Client.FolderId(Settings.DriveFolder);
-        if (Snap.What = lwWhole) and FileIds.TryGetValue(Snap.LogFile, Id) then
-          try
-            Client.Update(Id, Snap.MimeType, Snap.Data);
-            Exit;
-          except
-            on E: EDriveError do
-              if not ContainsText(E.Message, 'not found') then
-                raise;
-              // taken out of the Drive since: a new one
-          end;
-        Id := Client.Upload(FolderId, Snap.FileName, Snap.MimeType, Snap.Data);
-        if Snap.What = lwWhole then
-          FileIds.AddOrSetValue(Snap.LogFile, Id);
-      end;
   end;
 end;
 
@@ -681,9 +596,6 @@ type
     FWake: TEvent;
     FBusy: Boolean;
     FGaveUp: Boolean;
-    FClient: TDriveClient;
-    FFolderId: string;
-    FFileIds: TDictionary<string, string>;
     procedure Report(Kind: TSendEventKind; const Snap: TLogSnapshot; Attempt: Integer; const Text: string);
     function Take(out Snap: TLogSnapshot): Boolean;
     function Pause(Ms: Integer): Boolean;
@@ -707,15 +619,12 @@ begin
   FLock := TCriticalSection.Create;
   FQueue := TList<TLogSnapshot>.Create;
   FWake := TEvent.Create(nil, False, False, '');
-  FFileIds := TDictionary<string, string>.Create;
   inherited Create(False); // runs once constructed (AfterConstruction)
   FreeOnTerminate := True;
 end;
 
 destructor TSendWorker.Destroy;
 begin
-  FClient.Free;
-  FFileIds.Free;
   FWake.Free;
   FQueue.Free;
   FLock.Free;
@@ -830,13 +739,11 @@ begin
     repeat
       Inc(Attempt);
       try
-        DeliverSnapshot(FWay, FSettings, Snap, FClient, FFolderId, FFileIds);
-        case FWay of
-          swEmail: Where := FSettings.MailTo;
-          swFolder: Where := FSettings.Folder;
+        DeliverSnapshot(FWay, FSettings, Snap);
+        if FWay = swEmail then
+          Where := FSettings.MailTo
         else
-          Where := FSettings.DriveFolder;
-        end;
+          Where := FSettings.Folder;
         Report(seSent, Snap, Attempt, Where);
         Break;
       except
