@@ -4859,7 +4859,12 @@ begin
       if FLogSender.Working = [] then
         S := S + '; stopped: it could not send them (below).'
       else if FLogSchedule.LimitReached then
-        S := S + IfThen(Opts.AtStop, '; one more when the log stops.', ': no more for this log.')
+        case Opts.AtStop of
+          lsSnapshot: S := S + '; one more when the log stops.';
+          lsWhole: S := S + '; the whole log when it stops.';
+        else
+          S := S + ': no more for this log.';
+        end
       else
       begin
         Next := FLogSchedule.NextInMs(TThread.GetTickCount64) div 1000;
@@ -5072,8 +5077,8 @@ begin
     if FLogSchedule.Finish(Snap) then
     begin
       FLogSender.Add(Snap);
-      AddMessage(Format('Log snapshot as it stopped: %d rows, %d KB', [Snap.Rows,
-        (Length(Snap.Data) + 1023) div 1024]));
+      AddMessage(Format('%s as it stopped: %d rows, %d KB', [IfThen(Snap.What = lwWhole, 'The whole log',
+        'Log snapshot'), Snap.Rows, (Length(Snap.Data) + 1023) div 1024]));
     end;
   except
     on E: Exception do

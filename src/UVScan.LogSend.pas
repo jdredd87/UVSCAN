@@ -5,9 +5,10 @@ unit UVScan.LogSend;
   time UVScan is open ("Send while logging"), never on by itself.
 
   Every IntervalMin minutes of logging a snapshot of the log goes out (up
-  to MaxSends per log, and one more when the log stops): the whole log so
-  far, or only the rows since the last one (with the header line), zipped
-  or as the .csv. Each way it goes is tried Retries more times when it
+  to MaxSends per log): the whole log so far, or only the rows since the
+  last one (with the header line), zipped or as the .csv. When the log
+  stops (AtStop) one more goes: a snapshot like the others, or the whole
+  log in one file. An email over 10 MB is zipped whatever Zip says. Each way it goes is tried Retries more times when it
   fails, a while apart; after that that way stops for this log and the
   page says so. The ways:
     email   through a mail account (UVScan.Smtp): the snapshot attached
@@ -15,7 +16,8 @@ unit UVScan.LogSend;
             or Dropbox keeps in step with the cloud uploads it
 
   Settings, in settings.json "logSend":
-    { "everyMinutes": 5, "maxPerLog": 12, "retries": 3, "what": "whole", "zip": false, "atStop": true,
+    { "everyMinutes": 5, "maxPerLog": 12, "retries": 3, "what": "whole", "zip": false, "atStop": "whole",
+      ("atStop": "none", "snapshot" or "whole"; true and false from before are "snapshot" and "none")
       "email": { "on": true, "server": "smtp.gmail.com", "port": 465, "security": "tls",
                  "user": "me@gmail.com", "password": "...", "from": "", "to": "crew@x.com, me@y.com" },
       "folder": { "on": false, "path": "G:\\My Drive\\UVScan" } }
@@ -30,6 +32,7 @@ uses
 
 type
   TLogSendWhat = (lwWhole, lwNew);
+  TLogSendAtStop = (lsNone, lsSnapshot, lsWhole);
   TSendWay = (swEmail, swFolder);
   TSendWays = set of TSendWay;
 
@@ -40,7 +43,7 @@ type
     Retries: Integer;     // tries after the first, per snapshot and way
     What: TLogSendWhat;
     Zip: Boolean;
-    AtStop: Boolean;      // one more when the log stops
+    AtStop: TLogSendAtStop; // what goes when the log stops
     EmailOn: Boolean;
     Mail: TMailAccount;
     MailTo: string;       // addresses, comma separated
@@ -119,7 +122,8 @@ type
     procedure Stop;
     { The snapshot due now, when one is. }
     function Due(NowMs: Int64; out Snap: TLogSnapshot): Boolean;
-    { The last one, when the log stops (AtStop; not counted); then stopped. }
+    { The last one, when the log stops (AtStop: like the others or the
+      whole log; not counted, the most reached or not); then stopped. }
     function Finish(out Snap: TLogSnapshot): Boolean;
     function Active: Boolean;
     function LimitReached: Boolean;
@@ -131,6 +135,10 @@ type
 const
   SendWayNames: array[TSendWay] of string = ('email', 'folder');
   LogSendWhatKeys: array[TLogSendWhat] of string = ('whole', 'new');
+  LogSendAtStopKeys: array[TLogSendAtStop] of string = ('none', 'snapshot', 'whole');
+  { An email attachment bigger than this is zipped (mail servers turn big
+    ones away: Gmail over 25 MB, and base64 makes it a third bigger). }
+  EmailZipOver = 10 * 1024 * 1024;
 
 { The snapshot of LogFile now: the whole of it, or (lwNew) its header and
   the rows from Offset on, cut at the last whole line. lwNew moves Offset
@@ -259,7 +267,7 @@ begin
   Retries := 3;
   What := lwWhole;
   Zip := False;
-  AtStop := True;
+  AtStop := lsWhole;
   EmailOn := False;
   Mail := Default(TMailAccount);
   Mail.Server := 'smtp.gmail.com';
@@ -292,7 +300,7 @@ begin
   Result.AddPair('retries', TJSONNumber.Create(Retries));
   Result.AddPair('what', LogSendWhatKeys[What]);
   Result.AddPair('zip', TJSONBool.Create(Zip));
-  Result.AddPair('atStop', TJSONBool.Create(AtStop));
+  Result.AddPair('atStop', LogSendAtStopKeys[AtStop]);
   Sec := TJSONObject.Create;
   Sec.AddPair('on', TJSONBool.Create(EmailOn));
   Sec.AddPair('server', Mail.Server);
@@ -314,6 +322,8 @@ var
   Sec: TJSONObject;
   M: TMailSecurity;
   W: TLogSendWhat;
+  A: TLogSendAtStop;
+  V: TJSONValue;
 begin
   ResetToDefaults;
   if Root = nil then
@@ -325,7 +335,13 @@ begin
     if SameText(JStr(Root, 'what'), LogSendWhatKeys[W]) then
       What := W;
   Zip := JBool(Root, 'zip', Zip);
-  AtStop := JBool(Root, 'atStop', AtStop);
+  V := Root.GetValue('atStop');
+  if V is TJSONBool then
+    AtStop := TLogSendAtStop(IfThen(TJSONBool(V).AsBoolean, Ord(lsSnapshot), Ord(lsNone)))
+  else if V <> nil then
+    for A := Low(A) to High(A) do
+      if SameText(V.Value, LogSendAtStopKeys[A]) then
+        AtStop := A;
   Sec := JObj(Root, 'email');
   if Sec <> nil then
   begin
@@ -395,7 +411,9 @@ begin
     Kind := 'the whole log so far'
   else
     Kind := 'the rows since the last one';
-  if Final then
+  if Final and (What = lwWhole) then
+    Result := Format('The whole log, as it stopped: %d rows', [Rows])
+  else if Final then
     Result := Format('The last snapshot, as the log stopped (%s): %d rows', [Kind, Rows])
   else
     Result := Format('Snapshot %d (%s): %d rows', [Number, Kind, Rows]);
@@ -551,7 +569,10 @@ end;
 
 function MailSubject(const Snap: TLogSnapshot): string;
 begin
-  if Snap.Final then
+  if Snap.Final and (Snap.What = lwWhole) then
+    Result := Format('UVScan log %s - whole log (%s)', [TPath.GetFileNameWithoutExtension(Snap.LogFile),
+      FormatDateTime('hh:nn', Snap.When)])
+  else if Snap.Final then
     Result := Format('UVScan log %s - last (%s)', [TPath.GetFileNameWithoutExtension(Snap.LogFile),
       FormatDateTime('hh:nn', Snap.When)])
   else
@@ -562,14 +583,22 @@ end;
 procedure DeliverSnapshot(Way: TSendWay; Settings: TLogSendSettings; const Snap: TLogSnapshot);
 var
   Att: TMailAttachment;
+  Mailed: TLogSnapshot;
 begin
   case Way of
     swEmail:
       begin
-        Att.FileName := Snap.FileName;
-        Att.MimeType := Snap.MimeType;
-        Att.Data := Snap.Data;
-        SendMail(Settings.Mail, SplitAddresses(Settings.MailTo), MailSubject(Snap), MailBody(Snap), [Att]);
+        Mailed := Snap;
+        if (Mailed.MimeType <> 'application/zip') and (Length(Mailed.Data) > EmailZipOver) then
+        begin
+          Mailed.Data := ZipOne(Snap.FileName, Snap.Data);
+          Mailed.FileName := ChangeFileExt(Snap.FileName, '.zip');
+          Mailed.MimeType := 'application/zip';
+        end;
+        Att.FileName := Mailed.FileName;
+        Att.MimeType := Mailed.MimeType;
+        Att.Data := Mailed.Data;
+        SendMail(Settings.Mail, SplitAddresses(Settings.MailTo), MailSubject(Mailed), MailBody(Mailed), [Att]);
       end;
     swFolder:
       CopyToFolder(Settings.Folder, Snap);
@@ -870,7 +899,14 @@ begin
 end;
 
 function TLogSendSchedule.Take(Final: Boolean; out Snap: TLogSnapshot): Boolean;
+var
+  Whole: Int64;
 begin
+  if Final and (FSettings.AtStop = lsWhole) then
+  begin
+    Whole := 0;
+    Exit(MakeSnapshot(FLogFile, lwWhole, FSettings.Zip, Whole, FCount + 1, True, Snap));
+  end;
   Result := MakeSnapshot(FLogFile, FSettings.What, FSettings.Zip, FOffset, FCount + 1, Final, Snap);
   if Result and not Final then
     Inc(FCount);
@@ -888,7 +924,7 @@ end;
 function TLogSendSchedule.Finish(out Snap: TLogSnapshot): Boolean;
 begin
   Result := False;
-  if Active and FSettings.AtStop then
+  if Active and (FSettings.AtStop <> lsNone) then
     Result := Take(True, Snap);
   Stop;
 end;

@@ -48,8 +48,8 @@ type
     FButtonItems: TArray<TArray<TControl>>;
     FButtonWidths: TArray<Single>;  // the width each row was flowed for
     cbEvery, cbMax, cbRetries: TComboEdit;
-    chkAtStop, chkZip: TCheckBox;
-    cbWhat: TComboBox;
+    chkZip: TCheckBox;
+    cbWhat, cbAtStop: TComboBox;
     chkEmail: TCheckBox;
     cbServer: TComboEdit;
     cbSecurity: TComboBox;
@@ -260,8 +260,14 @@ begin
   Row('Most snapshots per log', cbMax);
   Note('Then it stops sending for that log, so a long session does not flood anyone: every 5 minutes ' +
     'and 12 at most is the first hour.');
-  chkAtStop := NewCheck(FForm, 'And one more when the log stops', Changed);
-  Add(chkAtStop, 34);
+  cbAtStop := TComboBox.Create(FForm);
+  cbAtStop.Items.Add('Nothing more');
+  cbAtStop.Items.Add('One more, like the others');
+  cbAtStop.Items.Add('The whole log, in one file');
+  cbAtStop.OnChange := Changed;
+  Row('When the log stops', cbAtStop);
+  Note('The whole log: everything from start to stop in one file, also when the others are only the new ' +
+    'rows or the most was reached. An email over 10 MB is zipped.');
   cbRetries := NewCombo(FForm, '0,1,2,3,5,10', Changed);
   Row('Tries again', cbRetries);
   Note('A snapshot that does not go is tried again that many times (15 s, 30 s, 1 min, then every 2 min ' +
@@ -362,7 +368,7 @@ begin
     cbEvery.Text := IntToStr(FSettings.IntervalMin);
     cbMax.Text := IntToStr(FSettings.MaxSends);
     cbRetries.Text := IntToStr(FSettings.Retries);
-    chkAtStop.IsChecked := FSettings.AtStop;
+    cbAtStop.ItemIndex := Ord(FSettings.AtStop);
     cbWhat.ItemIndex := Ord(FSettings.What);
     chkZip.IsChecked := FSettings.Zip;
     chkEmail.IsChecked := FSettings.EmailOn;
@@ -387,7 +393,7 @@ begin
   S.IntervalMin := NumText(cbEvery.Text, 5, 1, 240);
   S.MaxSends := NumText(cbMax.Text, 12, 1, 1000);
   S.Retries := NumText(cbRetries.Text, 3, 0, 20);
-  S.AtStop := chkAtStop.IsChecked;
+  S.AtStop := TLogSendAtStop(Max(0, cbAtStop.ItemIndex));
   S.What := TLogSendWhat(Max(0, cbWhat.ItemIndex));
   S.Zip := chkZip.IsChecked;
   S.EmailOn := chkEmail.IsChecked;

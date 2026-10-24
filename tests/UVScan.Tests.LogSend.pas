@@ -210,12 +210,26 @@ begin
   Sched := TLogSendSchedule.Create(Opts);
   try
     Opts.MaxSends := 1;
+    Opts.AtStop := lsSnapshot;
     Sched.Start(FLog, 0, 0);
     Assert.IsTrue(Sched.Due(Int64(Opts.IntervalMin) * 60000, Snap));
     Assert.IsTrue(Sched.Finish(Snap), 'the last one, the most reached or not');
     Assert.IsTrue(Snap.Final);
     Assert.IsFalse(Sched.Active);
-    Opts.AtStop := False;
+    // only the new rows each time, the whole log at the end
+    Opts.What := lwNew;
+    Opts.AtStop := lsWhole;
+    Sched.Start(FLog, 0, 0);
+    WriteLog('0.1,810,'#13#10, True);
+    Assert.IsTrue(Sched.Due(Int64(Opts.IntervalMin) * 60000, Snap));
+    Assert.AreEqual(2, Snap.Rows);
+    WriteLog('0.2,820,'#13#10, True);
+    Assert.IsTrue(Sched.Finish(Snap));
+    Assert.IsTrue(Snap.What = lwWhole);
+    Assert.AreEqual(3, Snap.Rows, 'every row');
+    Assert.AreEqual('Log 2026-10-23 12.00.00.csv', Snap.FileName);
+    Assert.Contains(Snap.Summary, 'The whole log');
+    Opts.AtStop := lsNone;
     Sched.Start(FLog, 0, 0);
     Assert.IsFalse(Sched.Finish(Snap), 'not wanted');
     Assert.IsFalse(Sched.Active);
@@ -238,7 +252,7 @@ begin
     A.Retries := 5;
     A.What := lwNew;
     A.Zip := True;
-    A.AtStop := False;
+    A.AtStop := lsNone;
     A.EmailOn := True;
     A.Mail.Server := 'smtp.example.com';
     A.Mail.Security := msStartTls;
@@ -263,7 +277,7 @@ begin
     Assert.AreEqual(5, B.Retries);
     Assert.IsTrue(B.What = lwNew);
     Assert.IsTrue(B.Zip);
-    Assert.IsFalse(B.AtStop);
+    Assert.IsTrue(B.AtStop = lsNone);
     Assert.IsTrue(B.EmailOn);
     Assert.AreEqual('smtp.example.com', B.Mail.Server);
     Assert.IsTrue(B.Mail.Security = msStartTls);
@@ -273,8 +287,16 @@ begin
     Assert.AreEqual('crew@example.com, pits@example.com', B.MailTo);
     Assert.IsTrue(B.FolderOn);
     Assert.AreEqual('G:\My Drive\UVScan', B.Folder);
+    J := TJSONObject.ParseJSONValue('{"atStop": true}') as TJSONObject;
+    try
+      B.FromJson(J);
+      Assert.IsTrue(B.AtStop = lsSnapshot, 'true from before: one more like the others');
+    finally
+      J.Free;
+    end;
     B.FromJson(nil);
     Assert.AreEqual(5, B.IntervalMin, 'defaults without the section');
+    Assert.IsTrue(B.AtStop = lsWhole, 'the whole log at the end');
     Assert.IsFalse(B.EmailOn);
     Assert.AreEqual('', UnprotectSecret('dpapi:bm90IHJlYWxseSBsb2NrZWQ='), 'one that does not unlock: none');
   finally
