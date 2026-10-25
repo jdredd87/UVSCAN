@@ -8,8 +8,9 @@ unit UVScan.LogSend;
   to MaxSends per log): the whole log so far, or only the rows since the
   last one (with the header line), zipped or as the .csv. When the log
   stops (AtStop) one more goes: a snapshot like the others, or the whole
-  log in one file. An email over 10 MB is zipped whatever Zip says. Each way it goes is tried Retries more times when it
-  fails, a while apart; after that that way stops for this log and the
+  log in one file. Or (OnlyAtStop) nothing while it is written and the
+  whole log when it stops. An email over 10 MB is zipped whatever Zip
+  says. Each way it goes is tried Retries more times when it fails, a while apart; after that that way stops for this log and the
   page says so. The ways:
     email   through a mail account (UVScan.Smtp): the snapshot attached
     folder  (Windows) a copy in a folder: one that Google Drive, OneDrive
@@ -17,6 +18,7 @@ unit UVScan.LogSend;
 
   Settings, in settings.json "logSend":
     { "everyMinutes": 5, "maxPerLog": 12, "retries": 3, "what": "whole", "zip": false, "atStop": "whole",
+      "onlyAtStop": false,
       ("atStop": "none", "snapshot" or "whole"; true and false from before are "snapshot" and "none")
       "email": { "on": true, "server": "smtp.gmail.com", "port": 465, "security": "tls",
                  "user": "me@gmail.com", "password": "...", "from": "", "to": "crew@x.com, me@y.com" },
@@ -44,6 +46,7 @@ type
     What: TLogSendWhat;
     Zip: Boolean;
     AtStop: TLogSendAtStop; // what goes when the log stops
+    OnlyAtStop: Boolean;  // none while it is written, the whole log when it stops
     EmailOn: Boolean;
     Mail: TMailAccount;
     MailTo: string;       // addresses, comma separated
@@ -120,7 +123,7 @@ type
       log carried on), for lwNew. }
     procedure Start(const LogFile: string; FromOffset: Int64; NowMs: Int64);
     procedure Stop;
-    { The snapshot due now, when one is. }
+    { The snapshot due now, when one is (never with OnlyAtStop). }
     function Due(NowMs: Int64; out Snap: TLogSnapshot): Boolean;
     { The last one, when the log stops (AtStop: like the others or the
       whole log; not counted, the most reached or not); then stopped. }
@@ -268,6 +271,7 @@ begin
   What := lwWhole;
   Zip := False;
   AtStop := lsWhole;
+  OnlyAtStop := False;
   EmailOn := False;
   Mail := Default(TMailAccount);
   Mail.Server := 'smtp.gmail.com';
@@ -301,6 +305,7 @@ begin
   Result.AddPair('what', LogSendWhatKeys[What]);
   Result.AddPair('zip', TJSONBool.Create(Zip));
   Result.AddPair('atStop', LogSendAtStopKeys[AtStop]);
+  Result.AddPair('onlyAtStop', TJSONBool.Create(OnlyAtStop));
   Sec := TJSONObject.Create;
   Sec.AddPair('on', TJSONBool.Create(EmailOn));
   Sec.AddPair('server', Mail.Server);
@@ -342,6 +347,7 @@ begin
     for A := Low(A) to High(A) do
       if SameText(V.Value, LogSendAtStopKeys[A]) then
         AtStop := A;
+  OnlyAtStop := JBool(Root, 'onlyAtStop', OnlyAtStop);
   Sec := JObj(Root, 'email');
   if Sec <> nil then
   begin
@@ -902,7 +908,7 @@ function TLogSendSchedule.Take(Final: Boolean; out Snap: TLogSnapshot): Boolean;
 var
   Whole: Int64;
 begin
-  if Final and (FSettings.AtStop = lsWhole) then
+  if Final and ((FSettings.AtStop = lsWhole) or FSettings.OnlyAtStop) then
   begin
     Whole := 0;
     Exit(MakeSnapshot(FLogFile, lwWhole, FSettings.Zip, Whole, FCount + 1, True, Snap));
@@ -915,7 +921,7 @@ end;
 function TLogSendSchedule.Due(NowMs: Int64; out Snap: TLogSnapshot): Boolean;
 begin
   Result := False;
-  if not Active or LimitReached or (NowMs < FNextAt) then
+  if not Active or FSettings.OnlyAtStop or LimitReached or (NowMs < FNextAt) then
     Exit;
   FNextAt := NowMs + Int64(FSettings.IntervalMin) * 60000;
   Result := Take(False, Snap);
@@ -924,7 +930,7 @@ end;
 function TLogSendSchedule.Finish(out Snap: TLogSnapshot): Boolean;
 begin
   Result := False;
-  if Active and (FSettings.AtStop <> lsNone) then
+  if Active and ((FSettings.AtStop <> lsNone) or FSettings.OnlyAtStop) then
     Result := Take(True, Snap);
   Stop;
 end;

@@ -233,6 +233,15 @@ begin
     Sched.Start(FLog, 0, 0);
     Assert.IsFalse(Sched.Finish(Snap), 'not wanted');
     Assert.IsFalse(Sched.Active);
+    // only when it stops: nothing on the way, the whole log at the end
+    Opts.OnlyAtStop := True;
+    Sched.Start(FLog, 0, 0);
+    Assert.IsFalse(Sched.Due(Int64(Opts.IntervalMin) * 60000 * 10, Snap), 'none while it logs');
+    Assert.AreEqual(0, Sched.Count);
+    Assert.IsTrue(Sched.Finish(Snap), 'whatever When the log stops says');
+    Assert.IsTrue(Snap.What = lwWhole);
+    Assert.AreEqual(3, Snap.Rows);
+    Assert.IsFalse(Sched.Active);
   finally
     Sched.Free;
     Opts.Free;
@@ -253,6 +262,7 @@ begin
     A.What := lwNew;
     A.Zip := True;
     A.AtStop := lsNone;
+    A.OnlyAtStop := True;
     A.EmailOn := True;
     A.Mail.Server := 'smtp.example.com';
     A.Mail.Security := msStartTls;
@@ -278,6 +288,7 @@ begin
     Assert.IsTrue(B.What = lwNew);
     Assert.IsTrue(B.Zip);
     Assert.IsTrue(B.AtStop = lsNone);
+    Assert.IsTrue(B.OnlyAtStop);
     Assert.IsTrue(B.EmailOn);
     Assert.AreEqual('smtp.example.com', B.Mail.Server);
     Assert.IsTrue(B.Mail.Security = msStartTls);
@@ -297,6 +308,7 @@ begin
     B.FromJson(nil);
     Assert.AreEqual(5, B.IntervalMin, 'defaults without the section');
     Assert.IsTrue(B.AtStop = lsWhole, 'the whole log at the end');
+    Assert.IsFalse(B.OnlyAtStop, 'snapshots on the way');
     Assert.IsFalse(B.EmailOn);
     Assert.AreEqual('', UnprotectSecret('dpapi:bm90IHJlYWxseSBsb2NrZWQ='), 'one that does not unlock: none');
   finally

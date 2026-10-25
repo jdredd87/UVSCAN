@@ -4846,14 +4846,26 @@ begin
       S := 'Sends the log on every few minutes while it is written: by email' +
         {$IFDEF MSWINDOWS}' or to a cloud drive''s folder' + {$ENDIF}', for a crew away ' +
         'from the car. Settings first: where it goes.'
+    else if Opts.OnlyAtStop then
+      S := Format('Off. Set up: %s, the whole log when it stops. Turn it on for a drive.', [Ways])
     else
       S := Format('Off. Set up: %s, every %d min, up to %d per log. Turn it on for a drive.',
         [Ways, Opts.IntervalMin, Opts.MaxSends]);
   end
   else
   begin
-    S := Format('On: %s, every %d min.', [Ways, Opts.IntervalMin]);
-    if FLogSchedule.Active then
+    if Opts.OnlyAtStop then
+      S := Format('On: %s, the whole log when it stops.', [Ways])
+    else
+      S := Format('On: %s, every %d min.', [Ways, Opts.IntervalMin]);
+    if FLogSchedule.Active and Opts.OnlyAtStop then
+    begin
+      if FLogSender.Working = [] then
+        S := S + ' Stopped: it could not send it (below).'
+      else
+        S := S + ' It goes when this log stops.';
+    end
+    else if FLogSchedule.Active then
     begin
       S := S + Format(' %d of %d taken', [FLogSchedule.Count, Opts.MaxSends]);
       if FLogSender.Working = [] then

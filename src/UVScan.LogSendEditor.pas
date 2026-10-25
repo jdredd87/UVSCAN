@@ -49,7 +49,8 @@ type
     FButtonWidths: TArray<Single>;  // the width each row was flowed for
     cbEvery, cbMax, cbRetries: TComboEdit;
     chkZip: TCheckBox;
-    cbWhat, cbAtStop: TComboBox;
+    cbWhen, cbWhat, cbAtStop: TComboBox;
+    FEveryParts: TArray<TControl>; // only for a snapshot every few minutes
     chkEmail: TCheckBox;
     cbServer: TComboEdit;
     cbSecurity: TComboBox;
@@ -73,6 +74,8 @@ type
     procedure FlowButtons(Row: Integer);
     procedure Changed(Sender: TObject);
     procedure SecurityChanged(Sender: TObject);
+    procedure WhenChanged(Sender: TObject);
+    procedure ShowWhen;
     procedure FormCloseQuery(Sender: TObject; var CanClose: Boolean);
     procedure CloseDiscarding;
     procedure RunTest(Way: TSendWay; Button: TButton);
@@ -248,24 +251,30 @@ begin
   FBox.OnResized := FormResized;
   FY := 0;
 
-  Note('While a log is written UVScan can send it on every few minutes: to a crew''s email' +
+  Note('While a log is written UVScan can send it on every few minutes, or the whole log once when it ' +
+    'stops: to a crew''s email' +
     {$IFDEF MSWINDOWS}' or a cloud drive''s folder on this PC' + {$ENDIF}'. Turn it on for a ' +
     'drive with Send while logging (Connect page); it is off again each time UVScan starts. It needs the ' +
     'internet (Wi-Fi or mobile data) while it logs.');
 
   Caption('When');
+  cbWhen := TComboBox.Create(FForm);
+  cbWhen.Items.Add('Every few minutes while it logs');
+  cbWhen.Items.Add('Only when the log stops: the whole log');
+  cbWhen.OnChange := WhenChanged;
+  Row('Send it', cbWhen);
   cbEvery := NewCombo(FForm, '1,2,5,10,15,30', Changed);
-  Row('Every (minutes)', cbEvery);
+  FEveryParts := [Row('Every (minutes)', cbEvery)];
   cbMax := NewCombo(FForm, '5,10,12,20,30,60', Changed);
-  Row('Most snapshots per log', cbMax);
-  Note('Then it stops sending for that log, so a long session does not flood anyone: every 5 minutes ' +
-    'and 12 at most is the first hour.');
+  FEveryParts := FEveryParts + [Row('Most snapshots per log', cbMax)];
+  FEveryParts := FEveryParts + [Note('Then it stops sending for that log, so a long session does not flood ' +
+    'anyone: every 5 minutes and 12 at most is the first hour.')];
   cbAtStop := TComboBox.Create(FForm);
   cbAtStop.Items.Add('Nothing more');
   cbAtStop.Items.Add('One more, like the others');
   cbAtStop.Items.Add('The whole log, in one file');
   cbAtStop.OnChange := Changed;
-  Row('When the log stops', cbAtStop);
+  FEveryParts := FEveryParts + [Row('When the log stops', cbAtStop)];
   Note('The whole log: everything from start to stop in one file, also when the others are only the new ' +
     'rows or the most was reached. An email over 10 MB is zipped.');
   cbRetries := NewCombo(FForm, '0,1,2,3,5,10', Changed);
@@ -278,7 +287,7 @@ begin
   cbWhat.Items.Add('The whole log so far, each time');
   cbWhat.Items.Add('Only the rows since the last one');
   cbWhat.OnChange := Changed;
-  Row('Sends', cbWhat);
+  FEveryParts := FEveryParts + [Row('Sends', cbWhat)];
   chkZip := NewCheck(FForm, 'Zip it (a tenth of the size: less mobile data)', Changed);
   Add(chkZip, 34);
   Note('The whole log: each one opens on its own' + {$IFDEF MSWINDOWS}'; the folder keeps one file per log, ' +
@@ -369,6 +378,8 @@ begin
     cbMax.Text := IntToStr(FSettings.MaxSends);
     cbRetries.Text := IntToStr(FSettings.Retries);
     cbAtStop.ItemIndex := Ord(FSettings.AtStop);
+    cbWhen.ItemIndex := Ord(FSettings.OnlyAtStop);
+    ShowWhen;
     cbWhat.ItemIndex := Ord(FSettings.What);
     chkZip.IsChecked := FSettings.Zip;
     chkEmail.IsChecked := FSettings.EmailOn;
@@ -394,6 +405,7 @@ begin
   S.MaxSends := NumText(cbMax.Text, 12, 1, 1000);
   S.Retries := NumText(cbRetries.Text, 3, 0, 20);
   S.AtStop := TLogSendAtStop(Max(0, cbAtStop.ItemIndex));
+  S.OnlyAtStop := cbWhen.ItemIndex = 1;
   S.What := TLogSendWhat(Max(0, cbWhat.ItemIndex));
   S.Zip := chkZip.IsChecked;
   S.EmailOn := chkEmail.IsChecked;
@@ -415,6 +427,20 @@ procedure TLogSendPage.Changed(Sender: TObject);
 begin
   if not FLoading then
     FChanged := True;
+end;
+
+procedure TLogSendPage.WhenChanged(Sender: TObject);
+begin
+  Changed(Sender);
+  ShowWhen;
+end;
+
+{ Only when the log stops: the settings for the ones every few minutes do
+  nothing, so they are greyed. }
+procedure TLogSendPage.ShowWhen;
+begin
+  for var C in FEveryParts do
+    C.Enabled := cbWhen.ItemIndex <> 1;
 end;
 
 procedure TLogSendPage.SecurityChanged(Sender: TObject);
