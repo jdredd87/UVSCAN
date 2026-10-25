@@ -161,6 +161,7 @@ type
     procedure PlaceShortTitle;
     procedure MenuSelectRange(Sender: TObject);
     procedure ShareMenu(Sender: TObject);
+    procedure ManageLogsClick(Sender: TObject);
     function ShareableLog: string;
     procedure ShareLogClick(Sender: TObject);
     procedure SaveLogCopyClick(Sender: TObject);
@@ -270,6 +271,10 @@ type
     { The main window's hotkeys, for keys pressed in the viewer's window:
       True when the key was one. }
     class var OnHotkey: TFunc<Word, TShiftState, Boolean>;
+    { The main window's Logs page (rename, share, delete), for the menu. }
+    class var OnManageLogs: TProc;
+    { The log folder changed (logs renamed or deleted): the recent logs again. }
+    class procedure LogsChanged;
   end;
 
 implementation
@@ -937,6 +942,8 @@ begin
     Item('Save selection as a log', btnTrimClick, btnTrim, FChart.HasSelection)];
   if CanShareFiles then
     Items := Items + [Item('Share or save the log...', ShareMenu, nil, FData.Count > 0)];
+  if Assigned(OnManageLogs) then
+    Items := Items + [Item('Manage logs...', ManageLogsClick, nil)];
   Items := Items + [
     Item('-', nil, nil),
     Item('Follow the cursor', MenuToggle, chkFollow, True, chkFollow.IsChecked),
@@ -947,6 +954,18 @@ begin
   if IsMobile and not btnSelect.Visible then // no room for it in the bar
     Items := Items + [Item('Select range', MenuSelectRange, nil, FData.Count > 0, btnSelect.IsPressed)];
   ShowMenu(Items);
+end;
+
+procedure TLogViewerForm.ManageLogsClick(Sender: TObject);
+begin
+  if Assigned(OnManageLogs) then
+    OnManageLogs();
+end;
+
+class procedure TLogViewerForm.LogsChanged;
+begin
+  if Viewer <> nil then
+    Viewer.FillRecent;
 end;
 
 { Share (a tablet's button, a phone's menu): the log or the chart picture to

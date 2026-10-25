@@ -48,6 +48,8 @@ type
     OneLog: Boolean;        // a log started again carries on the same file until UVScan closes
     AskKeep: Boolean;       // stopping the scan (or the log) asks whether to keep the log
     KeepByDefault: Boolean; // that question's default answer is Yes
+    LogNamePattern: string; // a new log's name: {date}, {time}, {n}, {vin} (UVScan.LogFiles)
+    AskLogName: Boolean;    // starting a log asks for its name (the pattern's filled in)
     BackgroundStop: Integer; // phone: seconds in the background before the log, scan and connection stop
     PendingNotice: string;   // shown at the next start (Android may end the app before the user is back)
     Trace: Boolean;
@@ -93,7 +95,7 @@ implementation
 
 uses
   {$IFDEF MSWINDOWS}Winapi.Windows,{$ELSE}Posix.Stdio, Posix.Unistd,{$ENDIF} System.IOUtils, System.Generics.Collections, System.Math,
-  System.DateUtils, System.StrUtils, UVScan.JsonFile, UVScan.Class2;
+  System.DateUtils, System.StrUtils, UVScan.JsonFile, UVScan.Class2, UVScan.LogFiles;
 
 function StreamSpeedNibble(Speed: TStreamSpeed): Byte;
 begin
@@ -144,6 +146,8 @@ begin
   OneLog := False;
   AskKeep := False;
   KeepByDefault := True;
+  LogNamePattern := DefaultLogNamePattern;
+  AskLogName := False;
   BackgroundStop := 15;
   PendingNotice := '';
   Trace := False;
@@ -198,6 +202,8 @@ begin
   Sec.AddPair('oneLog', TJSONBool.Create(OneLog));
   Sec.AddPair('askKeep', TJSONBool.Create(AskKeep));
   Sec.AddPair('keepByDefault', TJSONBool.Create(KeepByDefault));
+  Sec.AddPair('namePattern', LogNamePattern);
+  Sec.AddPair('askName', TJSONBool.Create(AskLogName));
   Sec.AddPair('backgroundStop', TJSONNumber.Create(BackgroundStop));
   if PendingNotice <> '' then
     Sec.AddPair('pendingNotice', PendingNotice);
@@ -300,6 +306,10 @@ begin
     OneLog := JBool(Sec, 'oneLog', OneLog);
     AskKeep := JBool(Sec, 'askKeep', AskKeep);
     KeepByDefault := JBool(Sec, 'keepByDefault', KeepByDefault);
+    LogNamePattern := JStr(Sec, 'namePattern', LogNamePattern);
+    if Trim(LogNamePattern) = '' then
+      LogNamePattern := DefaultLogNamePattern;
+    AskLogName := JBool(Sec, 'askName', AskLogName);
     BackgroundStop := EnsureRange(JInt(Sec, 'backgroundStop', BackgroundStop), 5, 600);
     PendingNotice := JStr(Sec, 'pendingNotice', '');
   end;

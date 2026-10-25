@@ -106,6 +106,8 @@
         <DCCReference Include="..\src\UVScan.Smtp.pas"/>
         <DCCReference Include="..\src\UVScan.LogSend.pas"/>
         <DCCReference Include="UVScan.Tests.LogSend.pas"/>
+        <DCCReference Include="..\src\UVScan.LogFiles.pas"/>
+        <DCCReference Include="UVScan.Tests.LogFiles.pas"/>
         <RcCompile Include="..\UVScan.Defaults.rc">
             <Form>UVScan.Defaults.res</Form>
         </RcCompile>

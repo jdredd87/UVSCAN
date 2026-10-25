@@ -42,6 +42,8 @@ uses
   UVScan.Smtp in 'src\UVScan.Smtp.pas',
   UVScan.LogSend in 'src\UVScan.LogSend.pas',
   UVScan.LogSendEditor in 'src\UVScan.LogSendEditor.pas',
+  UVScan.LogFiles in 'src\UVScan.LogFiles.pas',
+  UVScan.LogManager in 'src\UVScan.LogManager.pas',
   UVScan.UI.Common in 'src\UVScan.UI.Common.pas',
   UVScan.UI.Theme in 'src\UVScan.UI.Theme.pas',
   UVScan.UI.DataGrid in 'src\UVScan.UI.DataGrid.pas',

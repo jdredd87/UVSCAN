@@ -24,6 +24,8 @@ type
 function CanShareFiles: Boolean;
 { Offers the file to the apps that take MimeType; Subject and Text for an email. }
 procedure ShareFile(const FileName, MimeType, Subject, Text: string);
+{ The same for several files at once (one goes as ShareFile). }
+procedure ShareFiles(const FileNames: TArray<string>; const MimeType, Subject, Text: string);
 { Asks where to put a copy of the file (named as it is), then writes it there. }
 procedure SaveFileCopy(const FileName, MimeType: string; const Done: TSaveCopyDone);
 { Asks for a file (from Downloads, Google Drive, an email's attachment
@@ -88,6 +90,31 @@ begin
   Intent.addFlags(TJIntent.JavaClass.FLAG_GRANT_READ_URI_PERMISSION);
   TAndroidHelper.Activity.startActivity(TJIntent.JavaClass.createChooser(Intent,
     StrToJCharSequence('Share ' + ExtractFileName(FileName))));
+end;
+
+procedure ShareFiles(const FileNames: TArray<string>; const MimeType, Subject, Text: string);
+var
+  Uris: JArrayList;
+  Intent: JIntent;
+begin
+  if Length(FileNames) = 1 then
+  begin
+    ShareFile(FileNames[0], MimeType, Subject, Text);
+    Exit;
+  end;
+  Uris := TJArrayList.JavaClass.init;
+  for var F in FileNames do
+    Uris.add(TAndroidHelper.JFileToJURI(TJFile.JavaClass.init(StringToJString(F))));
+  Intent := TJIntent.JavaClass.init(TJIntent.JavaClass.ACTION_SEND_MULTIPLE);
+  Intent.setType(StringToJString(MimeType));
+  Intent.putParcelableArrayListExtra(TJIntent.JavaClass.EXTRA_STREAM, Uris);
+  if Subject <> '' then
+    Intent.putExtra(TJIntent.JavaClass.EXTRA_SUBJECT, StringToJString(Subject));
+  if Text <> '' then
+    Intent.putExtra(TJIntent.JavaClass.EXTRA_TEXT, StringToJString(Text));
+  Intent.addFlags(TJIntent.JavaClass.FLAG_GRANT_READ_URI_PERMISSION);
+  TAndroidHelper.Activity.startActivity(TJIntent.JavaClass.createChooser(Intent,
+    StrToJCharSequence(Format('Share %d files', [Length(FileNames)]))));
 end;
 
 { The picked place's stream gets the file in 64 KB pieces. }
@@ -264,6 +291,10 @@ begin
 end;
 
 procedure ShareFile(const FileName, MimeType, Subject, Text: string);
+begin
+end;
+
+procedure ShareFiles(const FileNames: TArray<string>; const MimeType, Subject, Text: string);
 begin
 end;
 

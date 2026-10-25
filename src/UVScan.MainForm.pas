@@ -19,7 +19,7 @@ uses
   UVScan.Serial, UVScan.Simulator, UVScan.Simulator.Elm, UVScan.Adapter, UVScan.Pids, UVScan.Dpid, UVScan.Dtc, UVScan.Engine,
   UVScan.Class2, UVScan.Paths, UVScan.Settings, UVScan.PidLists, UVScan.Defaults,
   UVScan.Display, UVScan.Alerts, UVScan.Controls, UVScan.Gauge, UVScan.UI.DataGrid, UVScan.LogData,
-  UVScan.QuickStart, UVScan.Update, UVScan.Hotkeys, UVScan.Sensors, UVScan.LogSend;
+  UVScan.QuickStart, UVScan.Update, UVScan.Hotkeys, UVScan.Sensors, UVScan.LogSend, UVScan.LogFiles;
 
 type
   { Parts of the one-line status strip. }
@@ -73,6 +73,11 @@ type
     chkAskKeep: TCheckBox;
     lblKeepDefault: TLabel;
     cbKeepDefault: TComboBox;
+    lblLogName: TLabel;              // Settings > Logging: the name a new log gets
+    edtLogName: TEdit;
+    lblLogNameNext: TLabel;
+    chkAskName: TCheckBox;
+    btnManageLogs: TButton;          // Connect page: the Logs page (rename, share, delete)
     gbHotkeys: TGroupBox;
     lblHotkeyHelp: TLabel;
     chkGlobalHotkeys: TCheckBox;
@@ -209,6 +214,13 @@ type
     procedure chkAlwaysLogChange(Sender: TObject);
     procedure chkOneLogChange(Sender: TObject);
     procedure KeepLogOptionChange(Sender: TObject);
+    procedure LogNameTyped(Sender: TObject);
+    procedure LogNameChange(Sender: TObject);
+    procedure ShowNextLogName;
+    function CurrentVin: string;
+    procedure StartLogNamed(const FileName, AppendTo: string);
+    procedure ManageLogsClick(Sender: TObject);
+    procedure OpenLogInViewer(const FileName: string);
     procedure AskKeepLog(const Ev: TEngineEvent);
     function LogSavedText(const FileName: string): string;
     // Hotkeys
@@ -402,6 +414,7 @@ type
     FNavButtons: array[0..6] of TRectangle;
     FNavPages: array[0..6] of TTabItem; // nil: the log viewer (a window of its own)
     FMorePages: TArray<TTabItem>;    // lbMore row -> page
+    FMoreActions: TArray<TNotifyEvent>; // ... or what it does (a page of its own)
     FPageMenu: TPopupMenu;
     FPidsDocked: Boolean;            // wide window: the PID list sits beside the pages
     FWide: Boolean;                  // the window is wide enough for the PID list beside the pages
@@ -690,7 +703,7 @@ implementation
 uses
   System.JSON, UVScan.JsonFile, UVScan.UI.Common, UVScan.UI.Theme, UVScan.Sound, UVScan.PidEditor,
   UVScan.PidDiscovery, UVScan.DisplayEditor, UVScan.GaugeEditor, UVScan.ControlEditor, UVScan.LogViewer,
-  UVScan.QuickStartEditor, UVScan.SensorEditor, UVScan.LogSendEditor, UVScan.Version, System.DateUtils,
+  UVScan.QuickStartEditor, UVScan.SensorEditor, UVScan.LogSendEditor, UVScan.LogManager, UVScan.Version, System.DateUtils,
   System.Permissions;
 
 const
@@ -1064,6 +1077,13 @@ procedure TMainForm.BuildChrome;
     Item.Height := 64;
     lbMore.AddObject(Item);
     FMorePages := FMorePages + [Page];
+    SetLength(FMoreActions, Length(FMorePages)); // the new one nil: a page
+  end;
+
+  procedure AddMoreAction(const Text, Detail: string; Action: TNotifyEvent);
+  begin
+    AddMore(Text, Detail, nil);
+    FMoreActions[High(FMoreActions)] := Action;
   end;
 
   function AddIcon(Button: TControl): TPath; forward;
@@ -1346,6 +1366,7 @@ begin
 
   AddMore('Real-time controls', 'Switch outputs, hold values, reset learned values', tiControls);
   AddMore('Tools', 'Write VIN, raw AVT frames, PID discovery', tiTools);
+  AddMoreAction('Logs', 'Rename, share and delete logs', ManageLogsClick);
   AddMore('Settings', 'Theme, rounding, alert sounds, log folder, stream speed, hotkeys', tiSettings);
   AddMore('Messages', 'Connection log and raw traffic', tiMessages);
   BuildAbout;
@@ -1486,6 +1507,45 @@ begin
   cbKeepDefault.Items.Add('No, delete it');
   cbKeepDefault.Hint := 'The button Enter presses in the question';
   cbKeepDefault.OnChange := KeepLogOptionChange;
+  // ... the name a new log gets, and whether to ask for one
+  lblLogName := TLabel.Create(Self);
+  lblLogName.Parent := gbLogging;
+  lblLogName.Stored := False;
+  lblLogName.Text := 'Log name';
+  edtLogName := TEdit.Create(Self);
+  edtLogName.Parent := gbLogging;
+  edtLogName.Stored := False;
+  edtLogName.Height := edtLogFolder.Height;
+  edtLogName.TextPrompt := DefaultLogNamePattern;
+  edtLogName.OnChangeTracking := LogNameTyped;
+  edtLogName.OnChange := LogNameChange;
+  lblLogNameNext := TLabel.Create(Self);
+  lblLogNameNext.Parent := gbLogging;
+  lblLogNameNext.Stored := False;
+  lblLogNameNext.Position.X := 12;
+  lblLogNameNext.WordWrap := True;
+  chkAskName := TCheckBox.Create(Self);
+  chkAskName.Stored := False;
+  chkAskName.Parent := gbLogging;
+  chkAskName.Position.X := 12;
+  chkAskName.Height := 30;
+  chkAskName.Text := 'Ask for a name when a log starts (the name above is filled in: OK takes it)';
+  chkAskName.OnChange := LogNameChange;
+  // Connect page: the Logs page, next to Open logs
+  btnManageLogs := TButton.Create(Self);
+  btnManageLogs.Parent := btnLogViewer.Parent;
+  btnManageLogs.Stored := False;
+  btnManageLogs.Text := 'Manage logs';
+  btnManageLogs.Hint := 'Rename, share and delete logs';
+  btnManageLogs.ShowHint := True;
+  btnManageLogs.Size.Size := btnLogViewer.Size.Size;
+  btnManageLogs.Index := btnLogViewer.Index + 1;
+  btnManageLogs.OnClick := ManageLogsClick;
+  TLogViewerForm.OnManageLogs :=
+    procedure
+    begin
+      ManageLogsClick(nil);
+    end;
   BuildHotkeys;
   tiConnect.Text := 'Connection';
 
@@ -2596,6 +2656,17 @@ begin
   if (Item = nil) or (Item.Index > High(FMorePages)) then
     Exit;
   Page := FMorePages[Item.Index];
+  if Assigned(FMoreActions[Item.Index]) then
+  begin
+    var Action := FMoreActions[Item.Index];
+    TThread.ForceQueue(nil,
+      procedure
+      begin
+        lbMore.ItemIndex := -1;
+        Action(nil);
+      end);
+    Exit;
+  end;
   TThread.ForceQueue(nil,
     procedure
     begin
@@ -3490,6 +3561,19 @@ begin
   Y := Row(lblLogFolderCaption, edtLogFolder, btnBrowseLogFolder, gbLogging);
   if cbAway.Visible then
     Y := Row(lblAway, cbAway, nil, gbLogging, Y + 6);
+  Y := Row(lblLogName, edtLogName, nil, gbLogging, Y + 6);
+  if gbLogging.Width >= 50 then
+  begin
+    Wide(lblLogNameNext, gbLogging);
+    lblLogNameNext.Height := Max(22, WrappedTextHeight(lblLogNameNext, lblLogNameNext.Width) + 4);
+    lblLogNameNext.Position.Y := Y - 4;
+    Y := Y - 4 + lblLogNameNext.Height + 4;
+    Wide(chkAskName, gbLogging);
+    chkAskName.TextSettings.WordWrap := True;
+    chkAskName.Height := Max(30, WrappedTextHeight(chkAskName, chkAskName.Width - 40) + 8);
+    chkAskName.Position.Y := Y;
+    Y := Y + chkAskName.Height + 4;
+  end;
   if gbLogging.Width >= 50 then
   begin
     Wide(chkAlwaysLog, gbLogging);
@@ -4274,6 +4358,9 @@ begin
   chkAlwaysLog.IsChecked := FSettings.AlwaysLog;
   chkOneLog.IsChecked := FSettings.OneLog;
   chkAskKeep.IsChecked := FSettings.AskKeep;
+  edtLogName.Text := FSettings.LogNamePattern;
+  chkAskName.IsChecked := FSettings.AskLogName;
+  ShowNextLogName;
   if FSettings.KeepByDefault then
     cbKeepDefault.ItemIndex := 0
   else
@@ -4327,6 +4414,8 @@ begin
   FSettings.Adapter := AdapterKeys[ChosenAdapter];
   FSettings.TcpAddress := Trim(edtTcpAddress.Text);
   FSettings.LogFolder := edtLogFolder.Text;
+  FSettings.LogNamePattern := IfThen(Trim(edtLogName.Text) = '', DefaultLogNamePattern, Trim(edtLogName.Text));
+  FSettings.AskLogName := chkAskName.IsChecked;
   if cbAway.ItemIndex >= 0 then
     FSettings.BackgroundStop := AwayChoices[cbAway.ItemIndex];
   FSettings.StreamSpeed := TStreamSpeed(Max(0, cbRate.ItemIndex));
@@ -5544,7 +5633,7 @@ end;
 
 procedure TMainForm.btnLogClick(Sender: TObject);
 var
-  Cmd: TEngineCommand;
+  Name, AppendTo: string;
 begin
   if FLogging then
   begin
@@ -5553,13 +5642,95 @@ begin
     Exit;
   end;
   ForceDirectories(LogFolder);
-  Cmd := Command(ecStartLog);
-  Cmd.Text := System.IOUtils.TPath.Combine(LogFolder, 'UVScan_' + FormatDateTime('yyyy-mm-dd_hhnnss', Now) + '.csv');
+  Name := ExpandLogName(FSettings.LogNamePattern, LogFolder, Now, CurrentVin);
   // One log: carry on this run's log, if it is still in the log folder
+  AppendTo := '';
   if FSettings.OneLog and (FSessionLog <> '') and FileExists(FSessionLog) and
     SameText(ExtractFileDir(FSessionLog), ExcludeTrailingPathDelimiter(LogFolder)) then
-    Cmd.AppendTo := FSessionLog;
+    AppendTo := FSessionLog;
+  if FSettings.AskLogName and (AppendTo = '') then
+    AskText('New log', 'Name of the log', Name,
+      procedure(S: string)
+      begin
+        if (FState = esScanning) and not FLogging then // still: the answer can take a while
+          StartLogNamed(UniqueLogFile(LogFolder, IfThen(CleanLogName(S) = '', Name, S)), '');
+      end)
+  else
+    StartLogNamed(UniqueLogFile(LogFolder, Name), AppendTo);
+end;
+
+procedure TMainForm.StartLogNamed(const FileName, AppendTo: string);
+var
+  Cmd: TEngineCommand;
+begin
+  Cmd := Command(ecStartLog);
+  Cmd.Text := FileName;
+  Cmd.AppendTo := AppendTo;
   Post(Cmd);
+end;
+
+// The VIN read on connecting, for {vin} in a log's name; '' without one.
+function TMainForm.CurrentVin: string;
+begin
+  Result := '';
+  if (FState <> esDisconnected) and (Length(Trim(lblVin.Text)) >= 11) then
+    Result := Trim(lblVin.Text);
+end;
+
+procedure TMainForm.LogNameTyped(Sender: TObject);
+begin
+  ShowNextLogName;
+end;
+
+procedure TMainForm.LogNameChange(Sender: TObject);
+begin
+  ShowNextLogName;
+  if FChromeReady then
+    SaveSettings;
+end;
+
+{ Under Settings > Logging > Log name: what the next log will be called. }
+procedure TMainForm.ShowNextLogName;
+var
+  S: string;
+begin
+  S := 'Next log: ' + ExpandLogName(edtLogName.Text, LogFolder, Now, CurrentVin) + '.csv' + sLineBreak +
+    'In the name: {date} ' + FormatDateTime('yyyy-mm-dd', Now) + ', {time} ' + FormatDateTime('hhnnss', Now) +
+    ', {n} a number that counts up (1, 2, 3...), {vin} the car''s VIN.';
+  lblLogNameNext.Text := S;
+end;
+
+{ The Logs page (UVScan.LogManager): Open shows the log in the viewer. }
+procedure TMainForm.ManageLogsClick(Sender: TObject);
+var
+  InUse: string;
+begin
+  InUse := '';
+  if FLogging then
+    InUse := FLastLogFile;
+  ManageLogs(LogFolder, InUse,
+    procedure(FileName: string)
+    begin
+      OpenLogInViewer(FileName);
+    end,
+    procedure
+    begin
+      if (FLastLogFile <> '') and not FileExists(FLastLogFile) then
+        FLastLogFile := '';
+      if (FSessionLog <> '') and not FileExists(FSessionLog) then
+        FSessionLog := '';
+      TLogViewerForm.LogsChanged;
+      ShowNextLogName;
+    end);
+end;
+
+procedure TMainForm.OpenLogInViewer(const FileName: string);
+begin
+  if not FileExists(FileName) then
+    Exit;
+  FViewerLog := FileName;
+  FViewerLogTime := TFile.GetLastWriteTime(FileName);
+  TLogViewerForm.ShowViewer(FCatalog, FDisplay, LogFolder, LogViewsFile, FileName);
 end;
 
 procedure TMainForm.btnPauseClick(Sender: TObject);

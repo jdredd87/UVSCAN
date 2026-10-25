@@ -290,7 +290,7 @@ The gauge editor shows the gauge at the top; drag **Try a value** to see it at a
 
 ## Logging
 
-While scanning, **Start log (F8)** (on the *Connect* page, the *Live* and *Gauges* bars, and their **⋮** menus) writes every update to a CSV file named `UVScan_<date>_<time>.csv` in the log folder (default *Documents\UVScan Logs*, change it in *More → Settings*). **Pause (F9)** stops writing rows without closing the file. While it logs, the status dot is red and the strip counts the rows written (*Logging: 1234 rows*).
+While scanning, **Start log (F8)** (on the *Connect* page, the *Live* and *Gauges* bars, and their **⋮** menus) writes every update to a CSV file (named `UVScan_<date>_<time>.csv` unless you change it, see [Log names](#log-names)) in the log folder (default *Documents\UVScan Logs*, change it in *More → Settings*). **Pause (F9)** stops writing rows without closing the file. While it logs, the status dot is red and the strip counts the rows written (*Logging: 1234 rows*).
 
 Three options in *More → Settings → Logging* help on a drive:
 
@@ -322,6 +322,32 @@ It is **off each time UVScan starts**: tick **Send while logging** in the *Send 
 Each snapshot that goes is in *Messages*, and the box says how each way is doing (*email: snapshot 3 sent at 14:05*), how many snapshots were taken out of the most, and when the next is due; the status strip adds *3 snapshots* to the row count. One that does not go is tried again after 15 s, 30 s, 1 min, then every 2 min, up to **Try again** times. After that **that way stops for this log** and a red notice says so (tap it away); the log, and the other ways, go on. Untick and tick **Send while logging** to try again.
 
 The password is kept in `settings.json`; on Windows it is locked to your Windows user (another user, or another PC, cannot read it back and has to enter it again).
+
+### Log names
+
+*More → Settings → Logging → Log name* is the name each new log gets, from words in braces:
+
+| In the name | Becomes |
+|---|---|
+| `{date}` | the day, `2026-10-25` |
+| `{time}` | the time it started, `191716` |
+| `{n}` | a number that counts up: one more than the highest log already named like this one, so `Camaro_{date}_{n}` gives `Camaro_2026-10-25_1`, `_2`, `_3`... and starts at 1 again the next day. Words added after the number (`Camaro_2026-10-25_2 - hot lap`) keep it counted. |
+| `{vin}` | the car's VIN, when it was read on connecting (nothing otherwise) |
+
+The default is `UVScan_{date}_{time}`, the name logs always had. Under the box, *Next log* shows what the next one will be called. Characters a file name cannot have become `-`, and a name that is taken gets `_2`, `_3`...
+
+**Ask for a name when a log starts**: starting a log asks for its name, with the pattern's name filled in, so **OK** takes it and a few words ("Run 3 - hot lap") make it yours. A log carried on with *One log until UVScan closes* is not asked about. Cancel starts no log.
+
+### Managing logs
+
+**Manage logs** on the *Connect* page (also *More → Logs*, and **Manage logs...** in the log viewer's **⋮** menu) lists the logs in the log folder, newest first, with when each ended, how long it is and its size. Tap logs to tick them (**Tick all** ticks every one), then:
+
+- **Open** shows the ticked log in the log viewer.
+- **Share...** (phone) sends the ticked logs with Android's share sheet: Gmail, Google Drive, Messages, Quick Share... **Save a copy...** puts a copy of one where the file picker says (Downloads, Drive, a USB stick). **Show in folder** (Windows) opens Explorer at the log.
+- **Rename...** gives one log a new name.
+- **Delete** deletes the ticked logs, after asking. **Delete old...** deletes every log older than a week, a month, 3 months or a year at once.
+
+The log being written is marked *logging now* and is never renamed or deleted. On a phone the logs live in UVScan's own folder, which the Files app cannot open and which **uninstalling UVScan deletes** (an update keeps them): share or save a copy of the ones you want to keep.
 
 ## Log viewer
 
