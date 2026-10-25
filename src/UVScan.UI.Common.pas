@@ -305,6 +305,7 @@ type
     procedure Changed(const Sender: TObject; const M: TMessage);
     procedure Check(Sender: TObject);
     procedure Fit;
+    procedure SafeFit;
     procedure Release;
   protected
     procedure Notification(AComponent: TComponent; Operation: TOperation); override;
@@ -340,7 +341,7 @@ begin
   begin
     FKeyboardTop := TVKStateChangeMessage(M).KeyboardBounds.Top;
     FLast := nil;
-    Fit;
+    SafeFit;
   end
   else
     Release;
@@ -353,7 +354,7 @@ var
 begin
   Form := Screen.ActiveForm;
   if (Form <> nil) and (Form.Focused <> nil) and (Form.Focused.GetObject <> FLast) then
-    Fit;
+    SafeFit;
 end;
 
 procedure TKeyboardWatch.Release;
@@ -365,6 +366,17 @@ begin
     FBox := nil;
   end;
   FLast := nil;
+end;
+
+{ Fit, never failing: an exception here would end the app (it comes from
+  Android's keyboard message). The page just stays as it is. }
+procedure TKeyboardWatch.SafeFit;
+begin
+  try
+    Fit;
+  except
+    Release;
+  end;
 end;
 
 procedure TKeyboardWatch.Fit;
@@ -384,12 +396,17 @@ begin
   while (P <> nil) and not (P is TCustomScrollBox) do
     P := P.Parent;
   Box := TCustomScrollBox(P);
+  if Box = nil then
+  begin
+    // not in a box (a button, or Android's own text box over the page): nothing to move
+    Release;
+    FLast := Field;
+    Exit;
+  end;
   if Box <> FBox then
   begin
     Release;
     FLast := Field;
-    if Box = nil then
-      Exit;
     FBox := Box;
     FOldMargin := Box.Margins.Bottom;
     Box.FreeNotification(Self);
