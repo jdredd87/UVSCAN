@@ -533,7 +533,7 @@ Everything UVScan does is written here with a timestamp: connection steps, PCM a
 
 ### Hotkeys
 
-A key for each main action, to press without looking — on a drive, say. Change them in *More → Settings → Hotkeys*: click a box and press the key. Only keys that never type into a text box can be one: an F key (with Ctrl, Alt or Shift if you like), Ctrl or Alt with a letter or digit, Pause, Scroll Lock or a media key (Play/Pause, next / previous track). So typing in a box elsewhere in UVScan never sets one off. Backspace or **Clear** empties a box; a key another action has moves to this one, and that action gets this one's old key. **Reset to defaults** puts these back:
+A key for each main action, to press without looking — on a drive, say. Change them in *More → Settings → Hotkeys*: click a box and press the key. Only keys that never type into a text box can be one: an F key (with Ctrl, Alt or Shift if you like), Ctrl or Alt with a letter or digit, Pause, Scroll Lock or a media key (Play/Pause, next / previous track). So typing in a box elsewhere in UVScan never sets one off. On a phone they come from a Bluetooth keyboard or a Bluetooth media button — a clicker on the steering wheel, or headphones: give *Mark this moment* its Play/Pause and you mark the log with one press, without touching the phone (tap a box, then press the button). Backspace or **Clear** empties a box; a key another action has moves to this one, and that action gets this one's old key. **Reset to defaults** puts these back:
 
 | Key | Action |
 |---|---|

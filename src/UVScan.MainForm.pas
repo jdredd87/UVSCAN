@@ -2885,14 +2885,17 @@ begin
   gbHotkeys.Margins.Rect := gbStream.Margins.Rect;
   gbHotkeys.Position.Y := gbStream.Position.Y + gbStream.Height + 20; // the last box
   gbHotkeys.SetBounds(0, gbHotkeys.Position.Y, gbStream.Width, 420);
-  gbHotkeys.Text := 'Hotkeys';
+  // a phone: keys from a Bluetooth keyboard, or a media button (a clicker on the wheel)
+  gbHotkeys.Text := IfThen(IsMobile, 'Hotkeys (Bluetooth keyboard or media button)', 'Hotkeys');
   gbHotkeys.OnResized := FlowBoxResized; // its rows fit the width it gets
   lblHotkeyHelp := TLabel.Create(Self);
   lblHotkeyHelp.Stored := False;
   lblHotkeyHelp.Parent := gbHotkeys;
   lblHotkeyHelp.Position.X := 12;
-  lblHotkeyHelp.Text := 'Click a box and press the key for it: an F key (Ctrl, Alt or Shift with it if you like), ' +
-    'or Ctrl or Alt with a letter or digit. Backspace clears the box. A key another action has moves here, ' +
+  lblHotkeyHelp.Text := IfThen(IsMobile, 'For a Bluetooth keyboard, or a Bluetooth media button (a clicker on the ' +
+    'steering wheel, headphones): tap a box and press the key for it', 'Click a box and press the key for it') +
+    ': an F key (Ctrl, Alt or Shift with it if you like), Ctrl or Alt with a letter or digit, or a media key ' +
+    '(Play/Pause, next or previous track). Backspace clears the box. A key another action has moves here, ' +
     'and that action gets this one''s key.';
   for var A := Low(THotkeyAction) to High(THotkeyAction) do
   begin
