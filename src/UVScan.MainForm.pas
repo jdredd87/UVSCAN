@@ -727,7 +727,7 @@ uses
   System.JSON, UVScan.JsonFile, UVScan.UI.Common, UVScan.UI.Theme, UVScan.Sound, UVScan.PidEditor,
   UVScan.PidDiscovery, UVScan.DisplayEditor, UVScan.GaugeEditor, UVScan.ControlEditor, UVScan.LogViewer,
   UVScan.QuickStartEditor, UVScan.SensorEditor, UVScan.LogSendEditor, UVScan.LogManager, UVScan.Version, System.DateUtils,
-  System.Permissions, UVScan.LogViews;
+  System.Permissions, UVScan.LogViews, UVScan.LogChart;
 
 const
   AwayNote = 'uvscan_away';       // the notification's name
@@ -5251,9 +5251,12 @@ var
   Root, Row, Dash, Gj, Zj, Look: TJSONObject;
   Arr, Zones: TJSONArray;
   I, J: Integer;
-  Mode: TChartMode;
-  Styles: TArray<TChannelStyle>;
+  LL: TLiveLook;
+  Cs: TChannelStyle;
   Order: TArray<Integer>;
+  Lo, Hi: Double;
+  Levels: TArray<TDisplayLevel>;
+  Lv: TDisplayLevel;
   P: TPidDef;
   Part: TStatusPart;
   Text, Note: string;
@@ -5261,6 +5264,9 @@ var
   S: TResolvedStyle;
   G: TGauge;
   Z: TGaugeZone;
+
+const
+  LevelOpKeys: array[TCompareOp] of string = ('ge', 'gt', 'le', 'lt', 'eq', 'ne');
 
   function Color(C: TAlphaColor): TJSONValue;
   begin
@@ -5385,20 +5391,22 @@ begin
     end;
 
     // The chart: as the live chart shows it (each channel in its lane order,
-    // ticked or not, its colour and a fixed scale), and the mode.
-    TLogViewerForm.LiveLook(LogViewsFile, Mode, Styles);
+    // ticked or not, its colour, its scale: fixed, else what the scan kept
+    // spans; its alert levels' bands and line colours), the mode, the span.
+    LL := TLogViewerForm.LiveLook(FCatalog, FDisplay, LogViewsFile);
     Look := TJSONObject.Create;
     Root.AddPair('chart', Look);
-    Look.AddPair('mode', ChartModeKeys[Mode]);
+    Look.AddPair('mode', ChartModeKeys[LL.Mode]);
+    Look.AddPair('span', Num(LL.Span));
     Arr := TJSONArray.Create;
     Look.AddPair('ch', Arr);
     Order := nil;
-    for I := 0 to High(Styles) do
+    for I := 0 to Min(High(LL.Styles), FLiveLog.ChannelCount - 1) do
     begin
       // in lane order (few: a simple insertion)
       J := Length(Order);
       Order := Order + [I];
-      while (J > 0) and (Styles[Order[J - 1]].Order > Styles[I].Order) do
+      while (J > 0) and (LL.Styles[Order[J - 1]].Order > LL.Styles[I].Order) do
       begin
         Order[J] := Order[J - 1];
         Dec(J);
@@ -5407,16 +5415,50 @@ begin
     end;
     for I in Order do
     begin
+      Cs := LL.Styles[I];
       Gj := TJSONObject.Create;
       Arr.AddElement(Gj);
-      Gj.AddPair('name', Styles[I].Name);
-      Gj.AddPair('on', TJSONBool.Create(Styles[I].Visible));
-      Gj.AddPair('color', ColorToHex(Styles[I].Color));
-      Gj.AddPair('width', TJSONNumber.Create(Styles[I].Width));
-      if not Styles[I].AutoScale and (Styles[I].MaxValue > Styles[I].MinValue) then
+      Gj.AddPair('name', Cs.Name);
+      Gj.AddPair('on', TJSONBool.Create(Cs.Visible));
+      Gj.AddPair('color', ColorToHex(Cs.Color));
+      Gj.AddPair('width', TJSONNumber.Create(Cs.Width));
+      if not Cs.AutoScale and (Cs.MaxValue > Cs.MinValue) then
       begin
-        Gj.AddPair('lo', Num(Styles[I].MinValue));
-        Gj.AddPair('hi', Num(Styles[I].MaxValue));
+        Lo := Cs.MinValue;
+        Hi := Cs.MaxValue;
+      end
+      else
+        AutoRange(FLiveLog.Channels[I], Lo, Hi);
+      Gj.AddPair('lo', Num(Lo));
+      Gj.AddPair('hi', Num(Hi));
+      Levels := nil;
+      if I <= High(LL.Levels) then
+        Levels := LL.Levels[I];
+      if Cs.LevelColors and (Length(Levels) > 0) then
+      begin
+        Zones := TJSONArray.Create;
+        Gj.AddPair('levels', Zones);
+        for Lv in Levels do
+        begin
+          Zj := TJSONObject.Create;
+          Zones.AddElement(Zj);
+          Zj.AddPair('op', LevelOpKeys[Lv.Op]);
+          Zj.AddPair('v', Num(Lv.Value));
+          Zj.AddPair('color', Color(Lv.RowColor));
+        end;
+      end;
+      if LL.Bands and (Length(Levels) > 0) then
+      begin
+        Zones := TJSONArray.Create;
+        Gj.AddPair('bands', Zones);
+        for Z in ZonesFromLevels(Levels, Lo, Hi) do
+        begin
+          Zj := TJSONObject.Create;
+          Zones.AddElement(Zj);
+          Zj.AddPair('from', Num(Z.FromValue));
+          Zj.AddPair('to', Num(Z.ToValue));
+          Zj.AddPair('color', ColorToHex(Z.Color));
+        end;
       end;
     end;
     Result := Root.ToJSON;

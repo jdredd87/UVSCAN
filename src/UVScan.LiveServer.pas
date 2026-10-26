@@ -989,19 +989,20 @@ begin
     // first, then what came after), a lane per PID, each on its own scale.
     const COLORS = ["#46aaff", "#ff8a3d", "#3ddc84", "#f0c419", "#c77dff", "#ff5d73", "#2ec4b6", "#a3a3ff", "#ffb4a2", "#9be564"];
     // What it charts is what UVScan's chart shows (its PIDs, their order,
-    // colours and fixed scales, the mode), unless this device picks its own
-    // PIDs (ch.mine, kept with the span).
+    // colours, scales and alert levels, the mode, the span), unless this
+    // device picks its own PIDs (ch.mine) or span (ch.ownSpan), kept here.
     const ch = { session: -1, loaded: 0, names: [], units: [], sw: [], t: [], v: [], marks: [], span: 60,
-      paused: false, t1: 0, cursor: null, mine: null, picking: false, chipKey: "" };
+      paused: false, t1: 0, cursor: null, mine: null, ownSpan: 0, picking: false, chipKey: "" };
     try {
       const sv = JSON.parse(localStorage.getItem("uvscanChart") || "{}");
-      if ([15, 30, 60, 120, 300, 600, 900].includes(sv.span)) ch.span = sv.span;
+      if ([15, 30, 60, 120, 300, 600, 900].includes(sv.ownSpan)) ch.span = ch.ownSpan = sv.ownSpan;
       if (Array.isArray(sv.mine)) ch.mine = sv.mine;
     } catch (e) { }
     function saveChart() {
-      try { localStorage.setItem("uvscanChart", JSON.stringify({ span: ch.span, mine: ch.mine })); } catch (e) { }
+      try { localStorage.setItem("uvscanChart", JSON.stringify({ ownSpan: ch.ownSpan, mine: ch.mine })); } catch (e) { }
     }
-    // every channel, in UVScan's lane order: {c, name, color, width, lo, hi, on}
+    // every channel, in UVScan's lane order: {c, name, color, width, lo, hi,
+    // levels, bands, on}
     function looks() {
       const lk = last && last.chart && Array.isArray(last.chart.ch) ? last.chart.ch : [];
       const by = new Map(lk.map(s => [s.name, s]));
@@ -1009,6 +1010,7 @@ begin
       return order.map(n => {
         const c = ch.names.indexOf(n), s = by.get(n) || {};
         return { c, name: n, color: s.color || COLORS[c % COLORS.length], width: s.width || 2, lo: s.lo, hi: s.hi,
+          levels: s.levels || null, bands: s.bands || [],
           on: ch.mine ? ch.mine.includes(n) : lk.length ? !!s.on : c < 8 };
       });
     }
@@ -1044,7 +1046,7 @@ begin
     // The PIDs picker: made again only when what it shows changes (UVScan's
     // ticks, colours or order, or this device's pick).
     function paintChips(all) {
-      $("csame").hidden = !ch.mine;
+      $("csame").hidden = !ch.mine && !ch.ownSpan;
       setText($("cnote"), ch.mine ? "This device's own pick. Same as UVScan shows what UVScan's chart shows again."
         : "As UVScan's chart shows them; ticking PIDs there changes it here. Tap one to pick your own.");
       const key = JSON.stringify(all.map(s => [s.name, s.color, s.on]));
@@ -1094,25 +1096,65 @@ begin
       const pad = (hi - lo) * 0.08;
       return [lo >= 0 && lo - pad < 0 ? 0 : lo - pad, hi + pad]; // never below 0 for what is never negative
     }
-    // the line: several samples to a pixel are drawn as their lowest and highest
+    // An alert level's test, as UVScan's (the first level that matches wins).
+    const OPS = {
+      ge: (a, b) => a >= b, gt: (a, b) => a > b, le: (a, b) => a <= b, lt: (a, b) => a < b,
+      eq: (a, b) => Math.abs(a - b) <= Math.max(1e-12, Math.min(Math.abs(a), Math.abs(b)) * 1e-12),
+      ne: (a, b) => !OPS.eq(a, b) };
+    function levelOf(lv, x) {
+      for (let i = 0; i < lv.length; i++) if (lv[i].v != null && (OPS[lv[i].op] || OPS.ne)(x, lv[i].v)) return i;
+      return -1;
+    }
+    // the alert levels shaded behind the line (Level bands in UVScan)
+    function plotBands(g, s, lo, hi, top, bot, w) {
+      const Y = x => bot - (x - lo) / (hi - lo) * (bot - top);
+      g.save();
+      g.globalAlpha = 28 / 255;
+      for (const z of s.bands) {
+        if (z.from == null || z.to == null) continue;
+        const y1 = Math.max(top, Y(z.to)), y2 = Math.min(bot, Y(z.from));
+        if (y2 > y1) { g.fillStyle = z.color; g.fillRect(0, y1, w, y2 - y1); }
+      }
+      g.restore();
+    }
+    // the line: several samples to a pixel are drawn as their lowest and
+    // highest; where an alert level matches (level colours on), in its colour
+    // and thicker
     function plotLine(g, s, lo, hi, top, bot, X, i0, i1, w) {
-      const vals = ch.v[s.c], Y = x => bot - (x - lo) / (hi - lo) * (bot - top);
+      const vals = ch.v[s.c], Y = x => bot - (x - lo) / (hi - lo) * (bot - top), lv = s.levels;
       g.save();
       g.beginPath(); g.rect(0, top - 2, w, bot - top + 4); g.clip(); // a fixed scale: what is off it, cut
-      g.strokeStyle = s.color; g.lineWidth = Math.max(1.2, s.width * 0.85); g.lineJoin = "round";
-      g.beginPath();
+      g.lineJoin = "round"; g.lineCap = "round";
+      const base = Math.max(1.2, s.width * 0.85);
+      let pts = [], run = -2;
+      const flush = () => {
+        if (pts.length >= 2) {
+          const L = run >= 0 ? lv[run] : null;
+          g.strokeStyle = L && L.color ? L.color : s.color;
+          g.lineWidth = L ? base + 1.5 : base;
+          g.beginPath();
+          g.moveTo(pts[0][0], pts[0][1]);
+          for (let k = 1; k < pts.length; k++) g.lineTo(pts[k][0], pts[k][1]);
+          g.stroke();
+        }
+        pts = pts.length ? [pts[pts.length - 1]] : []; // the next run starts where this one ended
+      };
+      const add = (px, x) => {
+        const L = lv ? levelOf(lv, x) : -1;
+        if (pts.length && L !== run) flush();
+        run = L;
+        pts.push([px, Y(x)]);
+      };
       const per = Math.max(1, Math.floor((i1 - i0) / (w * 2)));
-      let pen = false;
       for (let i = i0; i < i1; i += per) {
         let mn = null, mx = null;
         for (let j = i; j < Math.min(i + per, i1); j++) { const x = vals[j]; if (x == null) continue; if (mn == null || x < mn) mn = x; if (mx == null || x > mx) mx = x; }
-        if (mn == null) { pen = false; continue; }
+        if (mn == null) { flush(); pts = []; continue; } // no data: a break
         const px = X(ch.t[i]);
-        if (pen) g.lineTo(px, Y(mn)); else g.moveTo(px, Y(mn));
-        if (mx !== mn) g.lineTo(px, Y(mx));
-        pen = true;
+        add(px, mn);
+        if (mx !== mn) add(px, mx);
       }
-      g.stroke();
+      flush();
       g.restore();
     }
     function fmtTick(x, step) { return trimNum(x.toFixed(step >= 1 ? 0 : step >= 0.1 ? 1 : 2)); }
@@ -1166,6 +1208,7 @@ begin
           g.fillRect(0, y0, w, laneH);
           timeGrid(y0, y0 + laneH);
           const [lo, hi] = rangeOf(s, i0, i1);
+          plotBands(g, s, lo, hi, top, bot, w);
           plotLine(g, s, lo, hi, top, bot, X, i0, i1, w);
           // name and value, the scale at the right
           g.textBaseline = "middle";
@@ -1204,6 +1247,7 @@ begin
           }
           g.textAlign = "left";
         }
+        if (!one) sel.forEach((s, k) => plotBands(g, s, rs[k][0], rs[k][1], top, bot, w)); // (one scale: no bands, as in UVScan)
         sel.forEach((s, k) => { const r = one || rs[k]; plotLine(g, s, r[0], r[1], top, bot, X, i0, i1, w); });
         // each one's name and value (and its own scale) in a box at the top left
         const rows = sel.map((s, k) => ({ s, text: s.name + "  " + valText(s),
@@ -1221,7 +1265,10 @@ begin
           g.fillRect(bx, by, bw + 30, rows.length * 18 + 8);
           rows.forEach((r, k) => {
             const y = by + 13 + k * 18;
-            g.fillStyle = r.s.color; g.fillRect(bx + 6, y - 4, 8, 8);
+            // in its alert level's colour while one matches, as in UVScan
+            const x = ch.v[r.s.c][ci], L = r.s.levels && x != null ? levelOf(r.s.levels, x) : -1;
+            g.fillStyle = L >= 0 && r.s.levels[L].color ? r.s.levels[L].color : r.s.color;
+            g.fillRect(bx + 6, y - 4, 8, 8);
             g.font = "600 13px system-ui, sans-serif"; g.fillText(r.text, bx + 20, y);
             g.font = "11px system-ui, sans-serif"; g.fillStyle = "#9aa5b1"; g.fillText(r.scale, bx + 20 + r.w1, y);
           });
@@ -1265,11 +1312,24 @@ begin
       drawChart();
     };
     $("cpick").onclick = () => { ch.picking = !ch.picking; $("chips").hidden = !ch.picking; };
-    $("csame").onclick = () => { ch.mine = null; saveChart(); drawChart(); };
+    $("csame").onclick = () => { ch.mine = null; ch.ownSpan = 0; saveChart(); syncSpan(); drawChart(); };
+    function setSpan(sp) {
+      ch.span = sp;
+      $("span").value = String(sp);
+      if (ch.span > ch.loaded) ch.session = -1; // more than it has: all again
+    }
+    // UVScan's span (the nearest this has), unless this device picked one
+    function syncSpan() {
+      const want = ch.ownSpan || (last && last.chart && last.chart.span);
+      if (!want) return;
+      const opts = [...$("span").options].map(o => +o.value);
+      const sp = opts.reduce((a, b) => Math.abs(b - want) < Math.abs(a - want) ? b : a);
+      if (sp !== ch.span) setSpan(sp);
+    }
     $("span").value = String(ch.span);
     $("span").onchange = () => {
-      ch.span = +$("span").value;
-      if (ch.span > ch.loaded) ch.session = -1; // more than it has: all again
+      ch.ownSpan = +$("span").value;
+      setSpan(ch.ownSpan);
       saveChart();
       drawChart();
     };
@@ -1296,6 +1356,7 @@ begin
         fails = 0;
         $("lost").hidden = true;
         render();
+        syncSpan();
         if (tab === "chart") await pollChart(ctl.signal);
       } catch (e) {
         if (++fails >= 3) $("lost").hidden = false;

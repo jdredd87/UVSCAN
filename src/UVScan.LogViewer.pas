@@ -26,6 +26,15 @@ type
     R: TRectF;
   end;
 
+  { What the live chart shows (TLogViewerForm.LiveLook). }
+  TLiveLook = record
+    Mode: TChartMode;
+    Styles: TArray<TChannelStyle>;         // each channel of the live data
+    Levels: TArray<TArray<TDisplayLevel>>; // each channel's alert levels (bands, level colours)
+    Bands: Boolean;                        // the levels shaded behind the lines
+    Span: Double;                          // the seconds it shows
+  end;
+
   TLogViewerForm = class(TForm)
     pnlBar: TPanel;
     sbBar: TLayout; // the bars wrap to fit (FlowWideBars / LayoutNarrow), so they never scroll
@@ -203,7 +212,6 @@ type
     procedure ChartCursorChange(Sender: TObject);
     procedure SetPlaying(Value: Boolean);
     function SelectedChannel: Integer;
-    function DisplayLevelsFor(Ch: Integer): TArray<TDisplayLevel>;
     function ChannelValueText(Ch, Row: Integer): string;
     procedure MeasureChannels;
     procedure UpdateStatus;
@@ -268,9 +276,10 @@ type
     class function LiveBack: Boolean;
     class procedure LiveThemeChanged;
     { What the live chart shows, for the live view on the network: a style for
-      each channel of the live data (shown or not, its colour, its lane) and
-      the mode. Before it is first made: what it will show, from ViewsFile. }
-    class procedure LiveLook(const ViewsFile: string; out Mode: TChartMode; out Styles: TArray<TChannelStyle>);
+      each channel of the live data (shown or not, its colour, its lane, its
+      scale), their alert levels, the mode, the bands and the span. Before it
+      is first made: what it will show, from ViewsFile. }
+    class function LiveLook(Catalog: TPidCatalog; Display: TDisplaySettings; const ViewsFile: string): TLiveLook;
     { The main window's hotkeys, for keys pressed in the viewer's window:
       True when the key was one. }
     class var OnHotkey: TFunc<Word, TShiftState, Boolean>;
@@ -310,6 +319,35 @@ begin
     Captions[I] := Data.Channels[I].Caption;
   end;
   Result := ViewStyles(V, Names, Captions);
+end;
+
+{ A channel's alert levels: its own, else (UseDisplay) the ones Display &
+  alerts has for the PID with the same name. }
+function ChannelLevels(const Own: TArray<TDisplayLevel>; const Ch: TLogChannel; UseDisplay: Boolean;
+  Catalog: TPidCatalog; Display: TDisplaySettings): TArray<TDisplayLevel>;
+var
+  I: Integer;
+  P: TPidDef;
+  D: TPidDisplay;
+  Best: TPidDef;
+begin
+  Result := Own;
+  if (Length(Own) > 0) or not UseDisplay or (Catalog = nil) or (Display = nil) then
+    Exit;
+  Best := nil;
+  for I := 0 to Catalog.Count - 1 do
+  begin
+    P := Catalog[I];
+    // Same name, and the same units: levels in deg C mean nothing to a deg F column.
+    if (SameText(P.DisplayName, Ch.Name) or SameText(P.LongName, Ch.Name)) and
+      (SameText(Trim(P.Units), Trim(Ch.Units)) or (Trim(Ch.Units) = '')) then
+      Best := P;
+  end;
+  if Best = nil then
+    Exit;
+  D := Display.Find(Best.Id);
+  if D <> nil then
+    Result := Copy(D.Levels);
 end;
 
 const
@@ -514,21 +552,26 @@ begin
     LiveViewer.ApplyPalette;
 end;
 
-class procedure TLogViewerForm.LiveLook(const ViewsFile: string; out Mode: TChartMode;
-  out Styles: TArray<TChannelStyle>);
+class function TLogViewerForm.LiveLook(Catalog: TPidCatalog; Display: TDisplaySettings;
+  const ViewsFile: string): TLiveLook;
 var
   Age: TDateTime;
   I: Integer;
   V: TLogView;
 begin
-  Mode := cmLanes;
-  Styles := nil;
+  Result := Default(TLiveLook);
+  Result.Mode := cmLanes;
+  Result.Bands := True;
+  Result.Span := 60;
   if LiveSource = nil then
     Exit;
   if (LiveViewer <> nil) and LiveViewer.FLive and (LiveViewer.FData = LiveSource) then
   begin
-    Mode := LiveViewer.FChart.Mode;
-    Styles := Copy(LiveViewer.FStyles);
+    Result.Mode := LiveViewer.FChart.Mode;
+    Result.Styles := Copy(LiveViewer.FStyles);
+    Result.Levels := Copy(LiveViewer.FLevels);
+    Result.Bands := LiveViewer.FChart.ShowBands;
+    Result.Span := LiveViewer.FChart.LiveSpan;
     Exit;
   end;
   // Not made yet: the view it will start with (the scan list's, else the
@@ -548,6 +591,7 @@ begin
         // a broken file just means no saved views
       end;
   end;
+  Result.Span := LookViews.LiveSpan;
   I := LookViews.IndexOf(LiveViewHint);
   if I < 0 then
     I := LookViews.IndexOf(LookViews.LastView);
@@ -555,9 +599,13 @@ begin
   if I >= 0 then
   begin
     V := LookViews[I];
-    Mode := V.Mode;
+    Result.Mode := V.Mode;
   end;
-  Styles := StylesFor(LiveSource, V);
+  Result.Styles := StylesFor(LiveSource, V);
+  SetLength(Result.Levels, LiveSource.ChannelCount);
+  for I := 0 to LiveSource.ChannelCount - 1 do
+    Result.Levels[I] := ChannelLevels(Result.Styles[I].Levels, LiveSource.Channels[I], (V = nil) or V.UseDisplayLevels,
+      Catalog, Display);
 end;
 
 function TLogViewerForm.AreaWidth: Single;
@@ -2466,46 +2514,19 @@ begin
   LayoutStatus;
 end;
 
-{ Levels: a channel's own levels, else (if wanted) the ones Display & alerts
-  has for the PID with the same name. }
-function TLogViewerForm.DisplayLevelsFor(Ch: Integer): TArray<TDisplayLevel>;
-var
-  I: Integer;
-  P: TPidDef;
-  D: TPidDisplay;
-  Best: TPidDef;
-begin
-  Result := nil;
-  if (FCatalog = nil) or (FDisplay = nil) then
-    Exit;
-  Best := nil;
-  for I := 0 to FCatalog.Count - 1 do
-  begin
-    P := FCatalog[I];
-    // Same name, and the same units: levels in deg C mean nothing to a deg F column.
-    if (SameText(P.DisplayName, FData.Channels[Ch].Name) or SameText(P.LongName, FData.Channels[Ch].Name)) and
-      (SameText(Trim(P.Units), Trim(FData.Channels[Ch].Units)) or (Trim(FData.Channels[Ch].Units) = '')) then
-      Best := P;
-  end;
-  if Best = nil then
-    Exit;
-  D := FDisplay.Find(Best.Id);
-  if D <> nil then
-    Result := Copy(D.Levels);
-end;
-
 procedure TLogViewerForm.ComputeLevels;
 var
   I: Integer;
+  Own: TArray<TDisplayLevel>;
 begin
   SetLength(FLevels, FData.ChannelCount);
   for I := 0 to FData.ChannelCount - 1 do
-    if (I <= High(FStyles)) and (Length(FStyles[I].Levels) > 0) then
-      FLevels[I] := FStyles[I].Levels
-    else if chkUseDisplay.IsChecked then
-      FLevels[I] := DisplayLevelsFor(I)
-    else
-      FLevels[I] := nil;
+  begin
+    Own := nil;
+    if I <= High(FStyles) then
+      Own := FStyles[I].Levels;
+    FLevels[I] := ChannelLevels(Own, FData.Channels[I], chkUseDisplay.IsChecked, FCatalog, FDisplay);
+  end;
 end;
 
 procedure TLogViewerForm.StylesChanged;
