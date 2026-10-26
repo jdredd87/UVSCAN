@@ -190,7 +190,6 @@ type
     procedure FillViews(const Select: string);
     procedure FillColors;
     procedure ShowLog;
-    procedure DefaultStyles;
     procedure ApplyView(V: TLogView);
     function CurrentView(const Name: string): TLogView;
     function ComboText(Combo: TComboBox): string;
@@ -268,6 +267,10 @@ type
     class function LiveKey(var Key: Word; var KeyChar: WideChar; Shift: TShiftState): Boolean;
     class function LiveBack: Boolean;
     class procedure LiveThemeChanged;
+    { What the live chart shows, for the live view on the network: a style for
+      each channel of the live data (shown or not, its colour, its lane) and
+      the mode. Before it is first made: what it will show, from ViewsFile. }
+    class procedure LiveLook(const ViewsFile: string; out Mode: TChartMode; out Styles: TArray<TChannelStyle>);
     { The main window's hotkeys, for keys pressed in the viewer's window:
       True when the key was one. }
     class var OnHotkey: TFunc<Word, TShiftState, Boolean>;
@@ -289,6 +292,25 @@ var
   LiveViewer: TLogViewerForm;  // the live chart in the Live page
   LiveSource: TLogData;
   LiveViewHint: string;
+  LookViews: TLogViewList;     // the views file, for LiveLook before the live chart is made
+  LookViewsFile: string;
+  LookViewsAge: TDateTime;
+
+{ A view's styles for the data's channels (ViewStyles). }
+function StylesFor(Data: TLogData; V: TLogView): TArray<TChannelStyle>;
+var
+  Names, Captions: TArray<string>;
+  I: Integer;
+begin
+  SetLength(Names, Data.ChannelCount);
+  SetLength(Captions, Data.ChannelCount);
+  for I := 0 to Data.ChannelCount - 1 do
+  begin
+    Names[I] := Data.Channels[I].Name;
+    Captions[I] := Data.Channels[I].Caption;
+  end;
+  Result := ViewStyles(V, Names, Captions);
+end;
 
 const
   Speeds: array[0..6] of Double = (0.25, 0.5, 1, 2, 5, 10, 20);
@@ -490,6 +512,52 @@ class procedure TLogViewerForm.LiveThemeChanged;
 begin
   if LiveViewer <> nil then
     LiveViewer.ApplyPalette;
+end;
+
+class procedure TLogViewerForm.LiveLook(const ViewsFile: string; out Mode: TChartMode;
+  out Styles: TArray<TChannelStyle>);
+var
+  Age: TDateTime;
+  I: Integer;
+  V: TLogView;
+begin
+  Mode := cmLanes;
+  Styles := nil;
+  if LiveSource = nil then
+    Exit;
+  if (LiveViewer <> nil) and LiveViewer.FLive and (LiveViewer.FData = LiveSource) then
+  begin
+    Mode := LiveViewer.FChart.Mode;
+    Styles := Copy(LiveViewer.FStyles);
+    Exit;
+  end;
+  // Not made yet: the view it will start with (the scan list's, else the
+  // last one), as ShowLog picks it. The file is read again when it changes.
+  if not FileAge(ViewsFile, Age) then
+    Age := 0;
+  if (LookViews = nil) or (LookViewsFile <> ViewsFile) or (LookViewsAge <> Age) then
+  begin
+    FreeAndNil(LookViews);
+    LookViews := TLogViewList.Create;
+    LookViewsFile := ViewsFile;
+    LookViewsAge := Age;
+    if Age <> 0 then
+      try
+        LookViews.LoadFromFile(ViewsFile);
+      except
+        // a broken file just means no saved views
+      end;
+  end;
+  I := LookViews.IndexOf(LiveViewHint);
+  if I < 0 then
+    I := LookViews.IndexOf(LookViews.LastView);
+  V := nil;
+  if I >= 0 then
+  begin
+    V := LookViews[I];
+    Mode := V.Mode;
+  end;
+  Styles := StylesFor(LiveSource, V);
 end;
 
 function TLogViewerForm.AreaWidth: Single;
@@ -2132,43 +2200,11 @@ begin
     Result := nil;
 end;
 
-{ All channels visible (the first eight), colours from the palette. }
-procedure TLogViewerForm.DefaultStyles;
-var
-  I: Integer;
-begin
-  SetLength(FStyles, FData.ChannelCount);
-  for I := 0 to FData.ChannelCount - 1 do
-  begin
-    FStyles[I] := DefaultChannelStyle(FData.Channels[I].Name, I);
-    FStyles[I].Visible := I < 8;
-  end;
-end;
-
 procedure TLogViewerForm.ApplyView(V: TLogView);
-var
-  I, J: Integer;
 begin
-  DefaultStyles;
+  FStyles := StylesFor(FData, V);
   if V = nil then
     Exit;
-  for I := 0 to FData.ChannelCount - 1 do
-  begin
-    J := V.IndexOf(FData.Channels[I].Name);
-    if J < 0 then
-      J := V.IndexOf(FData.Channels[I].Caption);
-    if J >= 0 then
-    begin
-      FStyles[I] := V.Channels[J];
-      FStyles[I].Name := FData.Channels[I].Name;
-      FStyles[I].Order := J; // lanes in the view's order
-    end
-    else
-    begin
-      FStyles[I].Visible := False;
-      FStyles[I].Order := Length(V.Channels) + I; // ticked later: after the view's
-    end;
-  end;
   FLoading := True;
   try
     cbMode.ItemIndex := Ord(V.Mode);
@@ -3155,5 +3191,10 @@ begin
     Key := 0;
   end;
 end;
+
+initialization
+
+finalization
+  FreeAndNil(LookViews);
 
 end.

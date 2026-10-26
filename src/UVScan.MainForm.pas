@@ -727,7 +727,7 @@ uses
   System.JSON, UVScan.JsonFile, UVScan.UI.Common, UVScan.UI.Theme, UVScan.Sound, UVScan.PidEditor,
   UVScan.PidDiscovery, UVScan.DisplayEditor, UVScan.GaugeEditor, UVScan.ControlEditor, UVScan.LogViewer,
   UVScan.QuickStartEditor, UVScan.SensorEditor, UVScan.LogSendEditor, UVScan.LogManager, UVScan.Version, System.DateUtils,
-  System.Permissions;
+  System.Permissions, UVScan.LogViews;
 
 const
   AwayNote = 'uvscan_away';       // the notification's name
@@ -5248,9 +5248,12 @@ end;
   Colours are "#RRGGBB", null for the normal look. *)
 function TMainForm.LiveViewJson: string;
 var
-  Root, Row, Dash, Gj, Zj: TJSONObject;
+  Root, Row, Dash, Gj, Zj, Look: TJSONObject;
   Arr, Zones: TJSONArray;
-  I: Integer;
+  I, J: Integer;
+  Mode: TChartMode;
+  Styles: TArray<TChannelStyle>;
+  Order: TArray<Integer>;
   P: TPidDef;
   Part: TStatusPart;
   Text, Note: string;
@@ -5378,6 +5381,42 @@ begin
         Zj.AddPair('from', Num(Z.FromValue));
         Zj.AddPair('to', Num(Z.ToValue));
         Zj.AddPair('color', ColorToHex(Z.Color));
+      end;
+    end;
+
+    // The chart: as the live chart shows it (each channel in its lane order,
+    // ticked or not, its colour and a fixed scale), and the mode.
+    TLogViewerForm.LiveLook(LogViewsFile, Mode, Styles);
+    Look := TJSONObject.Create;
+    Root.AddPair('chart', Look);
+    Look.AddPair('mode', ChartModeKeys[Mode]);
+    Arr := TJSONArray.Create;
+    Look.AddPair('ch', Arr);
+    Order := nil;
+    for I := 0 to High(Styles) do
+    begin
+      // in lane order (few: a simple insertion)
+      J := Length(Order);
+      Order := Order + [I];
+      while (J > 0) and (Styles[Order[J - 1]].Order > Styles[I].Order) do
+      begin
+        Order[J] := Order[J - 1];
+        Dec(J);
+      end;
+      Order[J] := I;
+    end;
+    for I in Order do
+    begin
+      Gj := TJSONObject.Create;
+      Arr.AddElement(Gj);
+      Gj.AddPair('name', Styles[I].Name);
+      Gj.AddPair('on', TJSONBool.Create(Styles[I].Visible));
+      Gj.AddPair('color', ColorToHex(Styles[I].Color));
+      Gj.AddPair('width', TJSONNumber.Create(Styles[I].Width));
+      if not Styles[I].AutoScale and (Styles[I].MaxValue > Styles[I].MinValue) then
+      begin
+        Gj.AddPair('lo', Num(Styles[I].MinValue));
+        Gj.AddPair('hi', Num(Styles[I].MaxValue));
       end;
     end;
     Result := Root.ToJSON;

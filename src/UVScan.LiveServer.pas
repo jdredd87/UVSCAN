@@ -712,7 +712,9 @@ begin
     .cbar { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 10px; }
     .cbar select, .cbar button { background: #262e38; color: var(--text); border: 1px solid var(--line); border-radius: 8px; padding: 6px 12px; font: inherit; font-size: 14px; cursor: pointer; }
     #cpaused { color: var(--sub); font-size: 13px; }
-    #chips { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }
+    #chips { margin-bottom: 10px; }
+    #cnote { margin: 0 0 6px; color: var(--sub); font-size: 13px; }
+    #chipList { display: flex; flex-wrap: wrap; gap: 6px; }
     #chips button { background: none; border: 1px solid var(--line); border-radius: 999px; padding: 4px 10px; font: inherit; font-size: 13px; color: var(--sub); cursor: pointer; }
     #chips button.on { border-color: currentColor; }
     #cv { display: block; width: 100%; border-radius: 6px; touch-action: pan-y; cursor: crosshair; }
@@ -742,9 +744,10 @@ begin
           </select>
           <button id="clive">Pause</button>
           <button id="cpick">PIDs</button>
+          <button id="csame" hidden>Same as UVScan</button>
           <span id="cpaused"></span>
         </div>
-        <div id="chips" hidden></div>
+        <div id="chips" hidden><p id="cnote"></p><div id="chipList"></div></div>
         <canvas id="cv" hidden></canvas>
         <p id="chartEmpty" class="empty">Waiting for a scan. The chart fills when UVScan scans.</p>
       </section>
@@ -985,17 +988,31 @@ begin
     // The chart: the scan's samples (chart.json: the last so many seconds
     // first, then what came after), a lane per PID, each on its own scale.
     const COLORS = ["#46aaff", "#ff8a3d", "#3ddc84", "#f0c419", "#c77dff", "#ff5d73", "#2ec4b6", "#a3a3ff", "#ffb4a2", "#9be564"];
-    const ch = { session: -1, loaded: 0, names: [], units: [], sw: [], t: [], v: [], marks: [], on: [], span: 60,
-      paused: false, t1: 0, cursor: null, saved: null, picking: false };
+    // What it charts is what UVScan's chart shows (its PIDs, their order,
+    // colours and fixed scales, the mode), unless this device picks its own
+    // PIDs (ch.mine, kept with the span).
+    const ch = { session: -1, loaded: 0, names: [], units: [], sw: [], t: [], v: [], marks: [], span: 60,
+      paused: false, t1: 0, cursor: null, mine: null, picking: false, chipKey: "" };
     try {
       const sv = JSON.parse(localStorage.getItem("uvscanChart") || "{}");
       if ([15, 30, 60, 120, 300, 600, 900].includes(sv.span)) ch.span = sv.span;
-      if (Array.isArray(sv.on)) ch.saved = sv.on;
+      if (Array.isArray(sv.mine)) ch.mine = sv.mine;
     } catch (e) { }
     function saveChart() {
-      ch.saved = ch.names.filter((n, i) => ch.on[i]);
-      try { localStorage.setItem("uvscanChart", JSON.stringify({ span: ch.span, on: ch.saved })); } catch (e) { }
+      try { localStorage.setItem("uvscanChart", JSON.stringify({ span: ch.span, mine: ch.mine })); } catch (e) { }
     }
+    // every channel, in UVScan's lane order: {c, name, color, width, lo, hi, on}
+    function looks() {
+      const lk = last && last.chart && Array.isArray(last.chart.ch) ? last.chart.ch : [];
+      const by = new Map(lk.map(s => [s.name, s]));
+      const order = lk.map(s => s.name).filter(n => ch.names.includes(n)).concat(ch.names.filter(n => !by.has(n)));
+      return order.map(n => {
+        const c = ch.names.indexOf(n), s = by.get(n) || {};
+        return { c, name: n, color: s.color || COLORS[c % COLORS.length], width: s.width || 2, lo: s.lo, hi: s.hi,
+          on: ch.mine ? ch.mine.includes(n) : lk.length ? !!s.on : c < 8 };
+      });
+    }
+    function chartMode() { return (last && last.chart && last.chart.mode) || "lanes"; }
 
     async function pollChart(signal) {
       const since = ch.t.length ? ch.t[ch.t.length - 1] : -1;
@@ -1008,10 +1025,7 @@ begin
         ch.session = d.session; ch.loaded = back;
         ch.names = d.names; ch.units = d.units; ch.sw = d.switch;
         ch.t = []; ch.v = d.names.map(() => []);
-        ch.on = d.names.map((n, i) => ch.saved ? ch.saved.includes(n) : i < 6);
-        if (!ch.on.some(x => x)) ch.on = d.names.map((n, i) => i < 4);
-        ch.paused = false; ch.cursor = null;
-        buildChips();
+        ch.paused = false; ch.cursor = null; ch.chipKey = "";
       }
       const lastT = ch.t.length ? ch.t[ch.t.length - 1] : -Infinity;
       d.t.forEach((t, i) => {
@@ -1027,22 +1041,28 @@ begin
       drawChart();
     }
 
-    function buildChips() {
-      const box = $("chips");
+    // The PIDs picker: made again only when what it shows changes (UVScan's
+    // ticks, colours or order, or this device's pick).
+    function paintChips(all) {
+      $("csame").hidden = !ch.mine;
+      setText($("cnote"), ch.mine ? "This device's own pick. Same as UVScan shows what UVScan's chart shows again."
+        : "As UVScan's chart shows them; ticking PIDs there changes it here. Tap one to pick your own.");
+      const key = JSON.stringify(all.map(s => [s.name, s.color, s.on]));
+      if (key === ch.chipKey) return;
+      ch.chipKey = key;
+      const box = $("chipList");
       box.textContent = "";
-      ch.names.forEach((n, i) => {
+      for (const s of all) {
         const b = document.createElement("button");
-        b.textContent = n;
-        b.onclick = () => { ch.on[i] = !ch.on[i]; saveChart(); paintChips(); drawChart(); };
+        b.textContent = s.name;
+        if (s.on) { b.className = "on"; b.style.color = s.color; }
+        b.onclick = () => {
+          if (!ch.mine) ch.mine = looks().filter(x => x.on).map(x => x.name);
+          ch.mine = ch.mine.includes(s.name) ? ch.mine.filter(x => x !== s.name) : ch.mine.concat([s.name]);
+          saveChart(); drawChart();
+        };
         box.appendChild(b);
-      });
-      paintChips();
-    }
-    function paintChips() {
-      [...$("chips").children].forEach((b, i) => {
-        b.classList.toggle("on", !!ch.on[i]);
-        b.style.color = ch.on[i] ? COLORS[i % COLORS.length] : "";
-      });
+      }
     }
 
     function fmtVal(x, c) {
@@ -1062,16 +1082,53 @@ begin
       return lo;
     }
 
+    // a channel's scale: UVScan's fixed one, else what the shown span has
+    function rangeOf(s, i0, i1) {
+      if (s.lo != null && s.hi != null && s.hi > s.lo) return [s.lo, s.hi];
+      if (ch.sw[s.c]) return [0, 1];
+      const vals = ch.v[s.c];
+      let lo = Infinity, hi = -Infinity;
+      for (let i = i0; i < i1; i++) { const x = vals[i]; if (x != null) { if (x < lo) lo = x; if (x > hi) hi = x; } }
+      if (!isFinite(lo)) { lo = 0; hi = 1; }
+      if (hi - lo < 1e-9) { lo -= 1; hi += 1; }
+      const pad = (hi - lo) * 0.08;
+      return [lo >= 0 && lo - pad < 0 ? 0 : lo - pad, hi + pad]; // never below 0 for what is never negative
+    }
+    // the line: several samples to a pixel are drawn as their lowest and highest
+    function plotLine(g, s, lo, hi, top, bot, X, i0, i1, w) {
+      const vals = ch.v[s.c], Y = x => bot - (x - lo) / (hi - lo) * (bot - top);
+      g.save();
+      g.beginPath(); g.rect(0, top - 2, w, bot - top + 4); g.clip(); // a fixed scale: what is off it, cut
+      g.strokeStyle = s.color; g.lineWidth = Math.max(1.2, s.width * 0.85); g.lineJoin = "round";
+      g.beginPath();
+      const per = Math.max(1, Math.floor((i1 - i0) / (w * 2)));
+      let pen = false;
+      for (let i = i0; i < i1; i += per) {
+        let mn = null, mx = null;
+        for (let j = i; j < Math.min(i + per, i1); j++) { const x = vals[j]; if (x == null) continue; if (mn == null || x < mn) mn = x; if (mx == null || x > mx) mx = x; }
+        if (mn == null) { pen = false; continue; }
+        const px = X(ch.t[i]);
+        if (pen) g.lineTo(px, Y(mn)); else g.moveTo(px, Y(mn));
+        if (mx !== mn) g.lineTo(px, Y(mx));
+        pen = true;
+      }
+      g.stroke();
+      g.restore();
+    }
+    function fmtTick(x, step) { return trimNum(x.toFixed(step >= 1 ? 0 : step >= 0.1 ? 1 : 2)); }
+
     function drawChart() {
       if (tab !== "chart") return;
+      const all = looks(), sel = all.filter(s => s.on && s.c >= 0), mode = chartMode();
+      paintChips(all);
       const cv = $("cv"), n = ch.t.length;
       $("chartEmpty").hidden = n > 0;
       cv.hidden = n === 0;
       setText($("clive"), ch.paused ? "Live" : "Pause");
       setText($("cpaused"), ch.paused && ch.cursor != null ? "Paused at " + fmtTime(ch.cursor) : "");
       if (!n) return;
-      const lanes = ch.names.map((x, i) => i).filter(i => ch.on[i]);
-      const w = cv.clientWidth, laneH = w < 600 ? 86 : 108, axisH = 24, h = Math.max(1, lanes.length) * laneH + axisH;
+      const w = cv.clientWidth, lanesMode = mode === "lanes", laneH = w < 600 ? 86 : 108, axisH = 24;
+      const ph = lanesMode ? Math.max(1, sel.length) * laneH : (w < 600 ? 300 : 420), h = ph + axisH;
       const dpr = window.devicePixelRatio || 1;
       if (cv.width !== Math.round(w * dpr) || cv.height !== Math.round(h * dpr)) {
         cv.width = Math.round(w * dpr); cv.height = Math.round(h * dpr); cv.style.height = h + "px";
@@ -1087,64 +1144,92 @@ begin
         if (ci > 0 && ch.cursor - ch.t[ci - 1] < ch.t[ci] - ch.cursor) ci--;
       }
       const step = niceStep(ch.span, w < 600 ? 4 : 8);
-      lanes.forEach((c, k) => {
-        const y0 = k * laneH, top = y0 + 26, bot = y0 + laneH - 8, col = COLORS[c % COLORS.length], vals = ch.v[c];
-        g.fillStyle = k % 2 ? "#171c23" : "#1a2028";
-        g.fillRect(0, y0, w, laneH);
-        let lo = Infinity, hi = -Infinity;
-        if (ch.sw[c]) { lo = 0; hi = 1; }
-        else for (let i = i0; i < i1; i++) { const x = vals[i]; if (x != null) { if (x < lo) lo = x; if (x > hi) hi = x; } }
-        if (!isFinite(lo)) { lo = 0; hi = 1; }
-        if (hi - lo < 1e-9) { lo -= 1; hi += 1; }
-        if (!ch.sw[c]) { const pad = (hi - lo) * 0.08; lo = lo >= 0 && lo - pad < 0 ? 0 : lo - pad; hi += pad; } // never below 0 for what is never negative
-        const Y = x => bot - (x - lo) / (hi - lo) * (bot - top);
-        // time grid
+      const timeGrid = (y0, y1) => {
         g.strokeStyle = "#2b333d"; g.lineWidth = 1;
         g.beginPath();
-        for (let t = Math.ceil(t0 / step) * step; t <= t1; t += step) { const x = Math.round(X(t)) + 0.5; g.moveTo(x, y0); g.lineTo(x, y0 + laneH); }
+        for (let t = Math.ceil(t0 / step) * step; t <= t1; t += step) { const x = Math.round(X(t)) + 0.5; g.moveTo(x, y0); g.lineTo(x, y1); }
         g.stroke();
-        // the line: several samples to a pixel are drawn as their lowest and highest
-        g.strokeStyle = col; g.lineWidth = 1.7; g.lineJoin = "round";
-        g.beginPath();
-        const per = Math.max(1, Math.floor((i1 - i0) / (w * 2)));
-        let pen = false;
-        for (let i = i0; i < i1; i += per) {
-          let mn = null, mx = null;
-          for (let j = i; j < Math.min(i + per, i1); j++) { const x = vals[j]; if (x == null) continue; if (mn == null || x < mn) mn = x; if (mx == null || x > mx) mx = x; }
-          if (mn == null) { pen = false; continue; }
-          const px = X(ch.t[i]);
-          if (pen) g.lineTo(px, Y(mn)); else g.moveTo(px, Y(mn));
-          if (mx !== mn) g.lineTo(px, Y(mx));
-          pen = true;
+      };
+      const valText = s => fmtVal(ch.v[s.c][ci], s.c) + (ch.sw[s.c] ? "" : " " + (ch.units[s.c] || ""));
+      const boxText = (text, x, y, back) => { // right-aligned on a box, so a line under it does not hide it
+        const tw = g.measureText(text).width;
+        g.fillStyle = back;
+        g.fillRect(x - tw - 4, y - 7, tw + 8, 14);
+        g.fillStyle = "#9aa5b1";
+        g.fillText(text, x, y);
+      };
+      if (lanesMode) {
+        sel.forEach((s, k) => {
+          const y0 = k * laneH, top = y0 + 26, bot = y0 + laneH - 8, c = s.c;
+          const back = k % 2 ? "#171c23" : "#1a2028";
+          g.fillStyle = back;
+          g.fillRect(0, y0, w, laneH);
+          timeGrid(y0, y0 + laneH);
+          const [lo, hi] = rangeOf(s, i0, i1);
+          plotLine(g, s, lo, hi, top, bot, X, i0, i1, w);
+          // name and value, the scale at the right
+          g.textBaseline = "middle";
+          g.font = "600 13px system-ui, sans-serif";
+          g.fillStyle = s.color;
+          g.fillText(s.name, 8, y0 + 13);
+          const nw = g.measureText(s.name).width;
+          g.font = "700 15px system-ui, sans-serif";
+          g.fillStyle = "#ebeef2";
+          g.fillText(valText(s), 8 + nw + 10, y0 + 13);
+          g.font = "11px system-ui, sans-serif";
+          g.textAlign = "right";
+          const b = k % 2 ? "rgba(23,28,35,.85)" : "rgba(26,32,40,.85)";
+          boxText(ch.sw[c] ? "ON" : fmtVal(hi, c), w - 6, top + 4, b);
+          boxText(ch.sw[c] ? "OFF" : fmtVal(lo, c), w - 6, bot - 4, b);
+          g.textAlign = "left";
+        });
+      } else {
+        // overlay: every line on one plot, each on its own scale ("overlay")
+        // or all on one ("shared", its scale at the left)
+        const top = 10, bot = ph - 10;
+        g.fillStyle = "#1a2028";
+        g.fillRect(0, 0, w, ph);
+        timeGrid(0, ph);
+        const rs = sel.map(s => rangeOf(s, i0, i1));
+        let one = null;
+        if (mode === "shared" && sel.length) {
+          one = [Math.min(...rs.map(r => r[0])), Math.max(...rs.map(r => r[1]))];
+          const st = niceStep(one[1] - one[0], 5);
+          g.font = "11px system-ui, sans-serif"; g.textBaseline = "middle"; g.textAlign = "right";
+          for (let v = Math.ceil(one[0] / st) * st; v <= one[1]; v += st) {
+            const y = Math.round(bot - (v - one[0]) / (one[1] - one[0]) * (bot - top)) + 0.5;
+            g.strokeStyle = "#2b333d"; g.lineWidth = 1;
+            g.beginPath(); g.moveTo(0, y); g.lineTo(w, y); g.stroke();
+            boxText(fmtTick(v, st), w - 6, y, "rgba(26,32,40,.85)");
+          }
+          g.textAlign = "left";
         }
-        g.stroke();
-        // name and value, the scale at the right
+        sel.forEach((s, k) => { const r = one || rs[k]; plotLine(g, s, r[0], r[1], top, bot, X, i0, i1, w); });
+        // each one's name and value (and its own scale) in a box at the top left
+        const rows = sel.map((s, k) => ({ s, text: s.name + "  " + valText(s),
+          scale: one || ch.sw[s.c] ? "" : "  " + fmtVal(rs[k][0], s.c) + " - " + fmtVal(rs[k][1], s.c) }));
         g.textBaseline = "middle";
-        g.font = "600 13px system-ui, sans-serif";
-        g.fillStyle = col;
-        const name = ch.names[c];
-        g.fillText(name, 8, y0 + 13);
-        const nw = g.measureText(name).width;
-        g.font = "700 15px system-ui, sans-serif";
-        g.fillStyle = "#ebeef2";
-        const val = fmtVal(vals[ci], c) + (ch.sw[c] ? "" : " " + (ch.units[c] || ""));
-        g.fillText(val, 8 + nw + 10, y0 + 13);
-        g.font = "11px system-ui, sans-serif";
-        g.textAlign = "right";
-        const scale = (text, y) => {
-          const tw = g.measureText(text).width;
-          g.fillStyle = k % 2 ? "rgba(23,28,35,.85)" : "rgba(26,32,40,.85)";
-          g.fillRect(w - tw - 10, y - 7, tw + 8, 14);
-          g.fillStyle = "#9aa5b1";
-          g.fillText(text, w - 6, y);
-        };
-        scale(ch.sw[c] ? "ON" : fmtVal(hi, c), top + 4);
-        scale(ch.sw[c] ? "OFF" : fmtVal(lo, c), bot - 4);
-        g.textAlign = "left";
-      });
+        let bw = 0;
+        for (const r of rows) {
+          g.font = "600 13px system-ui, sans-serif"; r.w1 = g.measureText(r.text).width;
+          g.font = "11px system-ui, sans-serif"; r.w2 = g.measureText(r.scale).width;
+          bw = Math.max(bw, r.w1 + r.w2);
+        }
+        if (rows.length) {
+          const bx = 8, by = ch.marks.length ? 20 : 8;
+          g.fillStyle = "rgba(15,19,24,.82)";
+          g.fillRect(bx, by, bw + 30, rows.length * 18 + 8);
+          rows.forEach((r, k) => {
+            const y = by + 13 + k * 18;
+            g.fillStyle = r.s.color; g.fillRect(bx + 6, y - 4, 8, 8);
+            g.font = "600 13px system-ui, sans-serif"; g.fillText(r.text, bx + 20, y);
+            g.font = "11px system-ui, sans-serif"; g.fillStyle = "#9aa5b1"; g.fillText(r.scale, bx + 20 + r.w1, y);
+          });
+        }
+      }
       // marks, the cursor, the time axis
-      const ph = lanes.length * laneH;
       g.font = "600 11px system-ui, sans-serif";
+      g.textBaseline = "middle";
       for (const [t, num] of ch.marks) {
         if (t < t0 || t > t1) continue;
         const x = Math.round(X(t)) + 0.5;
@@ -1157,7 +1242,7 @@ begin
         g.strokeStyle = "rgba(235,238,242,.7)"; g.lineWidth = 1;
         g.beginPath(); g.moveTo(x, 0); g.lineTo(x, ph); g.stroke();
       }
-      g.fillStyle = "#9aa5b1"; g.font = "11px system-ui, sans-serif"; g.textBaseline = "middle"; g.textAlign = "center";
+      g.fillStyle = "#9aa5b1"; g.font = "11px system-ui, sans-serif"; g.textAlign = "center";
       for (let t = Math.ceil(t0 / step) * step; t <= t1; t += step) {
         const x = X(t);
         if (x > 20 && x < w - 20) g.fillText(fmtTime(t), x, ph + axisH / 2);
@@ -1180,6 +1265,7 @@ begin
       drawChart();
     };
     $("cpick").onclick = () => { ch.picking = !ch.picking; $("chips").hidden = !ch.picking; };
+    $("csame").onclick = () => { ch.mine = null; saveChart(); drawChart(); };
     $("span").value = String(ch.span);
     $("span").onchange = () => {
       ch.span = +$("span").value;

@@ -87,6 +87,10 @@ const
     $FFFF007F, $FF909000);
 
 function DefaultChannelStyle(const Name: string; Index: Integer): TChannelStyle;
+{ The styles a view gives a log's channels, matched by name or caption: the
+  others are not shown and come after the view's. No view: the first eight
+  shown, colours from the palette. }
+function ViewStyles(View: TLogView; const Names, Captions: TArray<string>): TArray<TChannelStyle>;
 
 implementation
 
@@ -104,6 +108,34 @@ begin
   Result.MinValue := 0;
   Result.MaxValue := 100;
   Result.Order := Index;
+end;
+
+function ViewStyles(View: TLogView; const Names, Captions: TArray<string>): TArray<TChannelStyle>;
+var
+  I, J: Integer;
+begin
+  SetLength(Result, Length(Names));
+  for I := 0 to High(Names) do
+  begin
+    Result[I] := DefaultChannelStyle(Names[I], I);
+    Result[I].Visible := I < 8;
+    if View = nil then
+      Continue;
+    J := View.IndexOf(Names[I]);
+    if (J < 0) and (I <= High(Captions)) then
+      J := View.IndexOf(Captions[I]);
+    if J >= 0 then
+    begin
+      Result[I] := View.Channels[J];
+      Result[I].Name := Names[I];
+      Result[I].Order := J; // lanes in the view's order
+    end
+    else
+    begin
+      Result[I].Visible := False;
+      Result[I].Order := Length(View.Channels) + I; // ticked later: after the view's
+    end;
+  end;
 end;
 
 function JFloatDef(Obj: TJSONObject; const Name: string; out V: Double): Boolean;

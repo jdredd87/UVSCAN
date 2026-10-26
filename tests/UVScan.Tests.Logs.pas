@@ -43,6 +43,7 @@ type
   public
     [Test] procedure RoundTrip;
     [Test] procedure PutReplacesByName;
+    [Test] procedure ViewStylesForChannels;
     [Test] procedure BuiltInViewsLoad;
     [Test] procedure BuiltInViewsFitTheirLists;
     [Test] procedure UpdateAddsNewBuiltIns;
@@ -601,6 +602,41 @@ begin
   finally
     V.Free;
     L.Free;
+  end;
+end;
+
+{ A view's channels by name or caption, in its order; the rest hidden and
+  after them; no view: the first eight. }
+procedure TLogViewTests.ViewStylesForChannels;
+var
+  V: TLogView;
+  S: TArray<TChannelStyle>;
+  Names: TArray<string>;
+  I: Integer;
+begin
+  S := ViewStyles(nil, ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I'], nil);
+  Assert.AreEqual(9, Length(S));
+  Assert.IsTrue(S[7].Visible);
+  Assert.IsFalse(S[8].Visible);
+  V := TLogView.Create;
+  try
+    V.Channels := [DefaultChannelStyle('TPS (%)', 0), DefaultChannelStyle('RPM', 1)];
+    V.Channels[0].Color := $FF112233;
+    V.Channels[0].AutoScale := False;
+    Names := ['RPM', 'ECT', 'TPS'];
+    S := ViewStyles(V, Names, ['RPM (rpm)', 'ECT (C)', 'TPS (%)']);
+    Assert.AreEqual('TPS', S[2].Name, 'named as the data names it');
+    Assert.IsTrue(S[2].Visible and S[0].Visible);
+    Assert.IsFalse(S[1].Visible);
+    Assert.AreEqual(0, S[2].Order, 'the view''s order');
+    Assert.AreEqual(1, S[0].Order);
+    Assert.IsTrue(S[1].Order > 1, 'not in the view: after');
+    SameColor($FF112233, S[2].Color);
+    Assert.IsFalse(S[2].AutoScale);
+    for I := 0 to High(S) do
+      Assert.AreEqual(Names[I], S[I].Name);
+  finally
+    V.Free;
   end;
 end;
 
