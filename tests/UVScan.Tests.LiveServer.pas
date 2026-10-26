@@ -23,12 +23,15 @@ type
     [Test] procedure AnswersTheRest;
     [Test] procedure NextPortWhenTaken;
     [Test] procedure ThisDevicesAddress;
+    [Test] procedure ReadsQueries;
+    [Test] procedure ChartFirstAllThenWhatIsNew;
+    [Test] procedure ServesTheChart;
   end;
 
 implementation
 
 uses
-  System.RegularExpressions, UVScan.Serial;
+  System.Math, System.JSON, System.RegularExpressions, UVScan.Serial;
 
 procedure TLiveServerTests.Setup;
 begin
@@ -144,6 +147,87 @@ begin
   A := LocalNetworkAddress; // '' on a PC with no network
   Assert.IsTrue((A = '') or TRegEx.IsMatch(A, '^\d{1,3}(\.\d{1,3}){3}$'), A);
   Assert.IsFalse(A.StartsWith('127.'), A);
+end;
+
+procedure TLiveServerTests.ReadsQueries;
+var
+  M, P, Q: string;
+begin
+  Assert.IsTrue(ParseRequestLine('GET /chart.json?session=2&since=12.5 HTTP/1.1', M, P, Q));
+  Assert.AreEqual('/chart.json', P);
+  Assert.AreEqual('session=2&since=12.5', Q);
+  Assert.AreEqual('2', QueryParam(Q, 'session'));
+  Assert.AreEqual('12.5', QueryParam(Q, 'since'));
+  Assert.AreEqual('', QueryParam(Q, 'back'));
+  Assert.AreEqual('', QueryParam('', 'since'));
+end;
+
+procedure TLiveServerTests.ChartFirstAllThenWhatIsNew;
+var
+  C: TLiveChart;
+  J: TJSONObject;
+  S: Integer;
+begin
+  C := TLiveChart.Create;
+  try
+    C.Start(['RPM', 'TCC'], ['RPM', ''], [False, True]);
+    S := C.Session;
+    C.Add(1, [800, 0]);
+    C.Add(2, [812.5, NaN]);
+    C.AddMark(2, 1);
+    C.Add(3, [830, 1]);
+    J := TJSONObject.ParseJSONValue(C.Json(-1, NaN, 60)) as TJSONObject;
+    try
+      Assert.IsTrue(J.GetValue<Boolean>('full'));
+      Assert.AreEqual('RPM', J.GetValue<string>('names[0]'));
+      Assert.IsTrue(J.GetValue<Boolean>('switch[1]'));
+      Assert.AreEqual(3, J.GetValue<TJSONArray>('t').Count);
+      Assert.AreEqual(812.5, J.GetValue<Double>('v[1][0]'), 0.001);
+      Assert.IsTrue(J.GetValue<TJSONArray>('v[1]').Items[1] is TJSONNull, 'no data: null');
+      Assert.AreEqual(1, J.GetValue<Integer>('marks[0][1]'));
+    finally
+      J.Free;
+    end;
+    J := TJSONObject.ParseJSONValue(C.Json(S, 2, 60)) as TJSONObject;
+    try
+      Assert.IsFalse(J.GetValue<Boolean>('full'));
+      Assert.IsNull(J.GetValue('names'));
+      Assert.AreEqual(1, J.GetValue<TJSONArray>('t').Count);
+      Assert.AreEqual(3.0, J.GetValue<Double>('t[0]'), 0.0001);
+    finally
+      J.Free;
+    end;
+    J := TJSONObject.ParseJSONValue(C.Json(S, NaN, 1.5)) as TJSONObject;
+    try
+      Assert.AreEqual(2, J.GetValue<TJSONArray>('t').Count, 'the last 1.5 s');
+    finally
+      J.Free;
+    end;
+    C.Start(['ECT'], ['C'], [False]); // a new scan: old browsers get all again
+    J := TJSONObject.ParseJSONValue(C.Json(S, 3, 60)) as TJSONObject;
+    try
+      Assert.IsTrue(J.GetValue<Boolean>('full'));
+      Assert.AreEqual('ECT', J.GetValue<string>('names[0]'));
+      Assert.AreEqual(0, J.GetValue<TJSONArray>('t').Count);
+    finally
+      J.Free;
+    end;
+  finally
+    C.Free;
+  end;
+end;
+
+procedure TLiveServerTests.ServesTheChart;
+var
+  S: string;
+begin
+  FServer.Chart.Start(['RPM'], ['RPM'], [False]);
+  FServer.Chart.Add(1.5, [900]);
+  S := Get('GET /chart.json?back=60 HTTP/1.1'#13#10#13#10);
+  Assert.StartsWith('HTTP/1.1 200 OK', S);
+  Assert.Contains(S, '"names":["RPM"]');
+  Assert.Contains(S, '"t":[1.500],"v":[[900]]');
+  Assert.AreEqual(1, Length(FServer.Viewers));
 end;
 
 initialization

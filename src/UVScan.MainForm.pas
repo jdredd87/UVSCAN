@@ -567,6 +567,7 @@ type
     procedure LiveViewOpenClick(Sender: TObject);
     procedure StartLiveView;
     procedure StopLiveView;
+    procedure SeedLiveChart;
     procedure LiveViewTick;
     function LiveViewAddress: string;
     function LiveViewJson: string;
@@ -5146,12 +5147,44 @@ begin
   end;
   if FLiveServer <> nil then
   begin
+    SeedLiveChart;
     AddMessage('Live view on: ' + LiveViewAddress);
     FLiveViewNext := 0;
     LiveViewTick;
   end;
   chkLiveView.IsChecked := FLiveServer <> nil;
   UpdateLiveViewBox;
+end;
+
+{ Turned on during a scan: the browsers' chart gets what the live chart has. }
+procedure TMainForm.SeedLiveChart;
+var
+  Names, Units: TArray<string>;
+  Switches: TArray<Boolean>;
+  Values: TArray<Double>;
+  I, C: Integer;
+begin
+  if FLiveLog.ChannelCount = 0 then
+    Exit;
+  SetLength(Names, FLiveLog.ChannelCount);
+  SetLength(Units, FLiveLog.ChannelCount);
+  SetLength(Switches, FLiveLog.ChannelCount);
+  SetLength(Values, FLiveLog.ChannelCount);
+  for C := 0 to FLiveLog.ChannelCount - 1 do
+  begin
+    Names[C] := FLiveLog.Channels[C].Name;
+    Units[C] := FLiveLog.Channels[C].Units;
+    Switches[C] := FLiveLog.Channels[C].IsSwitch;
+  end;
+  FLiveServer.Chart.Start(Names, Units, Switches);
+  for I := 0 to FLiveLog.Count - 1 do
+  begin
+    for C := 0 to FLiveLog.ChannelCount - 1 do
+      Values[C] := FLiveLog.Channels[C].Values[I];
+    FLiveServer.Chart.Add(FLiveLog.Times[I], Values);
+  end;
+  for var M in FLiveLog.Marks do
+    FLiveServer.Chart.AddMark(M.Time, M.Number);
 end;
 
 procedure TMainForm.StopLiveView;
@@ -6293,6 +6326,8 @@ begin
         if FLiveLog.Count > 0 then
         begin
           FLiveLog.AddMark(FLiveLog.Times[FLiveLog.Count - 1], Ev.Progress);
+          if FLiveServer <> nil then
+            FLiveServer.Chart.AddMark(FLiveLog.Times[FLiveLog.Count - 1], Ev.Progress);
           TLogViewerForm.LiveChanged(False);
         end;
       end;
@@ -6591,6 +6626,8 @@ begin
     end;
   end;
   FLiveLog.StartLive(IfThen(FTestMode, 'Test display', 'Live scan'), Names, Units, Switches);
+  if FLiveServer <> nil then
+    FLiveServer.Chart.Start(Names, Units, Switches);
   FLiveStart := TThread.GetTickCount64;
   // A scan list's own chart view and dashboard (the built-in lists each have both).
   if not FTestMode and (cbLists.ItemIndex > 0) then
@@ -6623,6 +6660,8 @@ begin
     else
       Values[I] := ParseLogValue(Text[I], Switch);
   FLiveLog.Append(Time, Values, KeepSeconds);
+  if FLiveServer <> nil then
+    FLiveServer.Chart.Add(Time, Values);
 end;
 
 { Phone: the notification while away (one, replaced as things change; a tap
