@@ -712,11 +712,13 @@ begin
     .cbar { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 10px; }
     .cbar select, .cbar button { background: #262e38; color: var(--text); border: 1px solid var(--line); border-radius: 8px; padding: 6px 12px; font: inherit; font-size: 14px; cursor: pointer; }
     #cpaused { color: var(--sub); font-size: 13px; }
-    #chips { margin-bottom: 10px; }
-    #cnote { margin: 0 0 6px; color: var(--sub); font-size: 13px; }
-    #chipList { display: flex; flex-wrap: wrap; gap: 6px; }
-    #chips button { background: none; border: 1px solid var(--line); border-radius: 999px; padding: 4px 10px; font: inherit; font-size: 13px; color: var(--sub); cursor: pointer; }
-    #chips button.on { border-color: currentColor; }
+    #ghid { color: var(--sub); font-size: 13px; }
+    .picks { margin-bottom: 10px; }
+    .picks p { margin: 0 0 6px; color: var(--sub); font-size: 13px; }
+    .picks div { display: flex; flex-wrap: wrap; gap: 6px; }
+    .picks button { background: none; border: 1px solid var(--line); border-radius: 999px; padding: 4px 10px; font: inherit; font-size: 13px; color: var(--sub); cursor: pointer; }
+    .picks button.on { border-color: currentColor; }
+    #gchips button.on { color: var(--text); border-color: var(--accent); }
     #cv { display: block; width: 100%; border-radius: 6px; touch-action: pan-y; cursor: crosshair; }
     </style>
     </head>
@@ -729,6 +731,12 @@ begin
     <div id="lost" hidden>No answer from UVScan. Is it still open, and is this device on the same network? Trying again...</div>
     <main>
       <section id="grid">
+        <div id="gbar" class="cbar" hidden>
+          <button id="gpick">PIDs</button>
+          <button id="gall" hidden>Show all</button>
+          <span id="ghid"></span>
+        </div>
+        <div id="gchips" class="picks" hidden><p>Tap a PID to hide or show it here. UVScan's own grid stays as it is.</p><div id="gchipList"></div></div>
         <table id="gridTable" hidden>
           <thead><tr><th>PID</th><th class="r">Value</th><th class="r mm">Min</th><th class="r mm">Max</th></tr></thead>
           <tbody id="rows"></tbody>
@@ -747,7 +755,7 @@ begin
           <button id="csame" hidden>Same as UVScan</button>
           <span id="cpaused"></span>
         </div>
-        <div id="chips" hidden><p id="cnote"></p><div id="chipList"></div></div>
+        <div id="chips" class="picks" hidden><p id="cnote"></p><div id="chipList"></div></div>
         <canvas id="cv" hidden></canvas>
         <p id="chartEmpty" class="empty">Waiting for a scan. The chart fills when UVScan scans.</p>
       </section>
@@ -925,8 +933,39 @@ begin
       } };
     }
 
+    // The PIDs this device hides from the grid (kept here); the rest, new
+    // ones too, show.
+    let gridHide = [], gchipKey = null;
+    try { const h = JSON.parse(localStorage.getItem("uvscanGridHide") || "[]"); if (Array.isArray(h)) gridHide = h; } catch (e) { }
+    function setGridHide(h) {
+      gridHide = h;
+      try { localStorage.setItem("uvscanGridHide", JSON.stringify(h)); } catch (e) { }
+      if (last) render();
+    }
+    function paintGridChips(all) {
+      const hid = all.filter(r => gridHide.includes(r.name)).length;
+      setText($("ghid"), hid ? hid + " of " + all.length + " hidden" : "");
+      $("gall").hidden = !hid;
+      const key = JSON.stringify([all.map(r => r.name), gridHide]);
+      if (key === gchipKey) return;
+      gchipKey = key;
+      const box = $("gchipList");
+      box.textContent = "";
+      for (const r of all) {
+        const b = document.createElement("button");
+        b.textContent = r.name;
+        if (!gridHide.includes(r.name)) b.className = "on";
+        b.onclick = () => setGridHide(gridHide.includes(r.name) ? gridHide.filter(x => x !== r.name) : gridHide.concat([r.name]));
+        box.appendChild(b);
+      }
+    }
+    $("gpick").onclick = () => { $("gchips").hidden = !$("gchips").hidden; };
+    $("gall").onclick = () => setGridHide([]);
+
     function renderGrid(d) {
-      const rows = d.rows || [], tb = $("rows"), key = rows.map(r => r.name).join("\n");
+      const all = d.rows || [], rows = all.filter(r => !gridHide.includes(r.name)), tb = $("rows"), key = rows.map(r => r.name).join("\n");
+      $("gbar").hidden = !all.length;
+      if (all.length) paintGridChips(all);
       if (key !== rowKey) {
         rowKey = key;
         tb.textContent = "";
@@ -939,6 +978,8 @@ begin
       $("gridTable").classList.toggle("nomm", !d.minMax);
       $("gridTable").classList.toggle("idle", !d.scanning);
       $("gridEmpty").hidden = rows.length > 0;
+      setText($("gridEmpty"), all.length ? "Every PID is hidden here. Tap PIDs to show some."
+        : "Waiting for a scan. The grid fills when UVScan scans.");
       rows.forEach((r, i) => {
         const tr = tb.rows[i], c = tr.cells, off = r.flash && !flashOn;
         setText(c[0], r.name);
@@ -1123,7 +1164,7 @@ begin
     function plotBands(g, s, lo, hi, top, bot, x0, x1) {
       const Y = x => bot - (x - lo) / (hi - lo) * (bot - top);
       g.save();
-      g.globalAlpha = 28 / 255;
+      g.globalAlpha = 64 / 255;
       for (const z of s.bands) {
         if (z.from == null || z.to == null) continue;
         const y1 = Math.max(top, Y(z.to)), y2 = Math.min(bot, Y(z.from));

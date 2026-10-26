@@ -718,7 +718,7 @@ var
     begin
       Y1 := Y_(Z.ToValue, Lo_, Hi_, Top, Height);
       Y2 := Y_(Z.FromValue, Lo_, Hi_, Top, Height);
-      Fill(FPlot.Left, Y1, FPlot.Width, Y2 - Y1, Z.Color, 28);
+      Fill(FPlot.Left, Y1, FPlot.Width, Y2 - Y1, Z.Color, 64);
     end;
   end;
 
