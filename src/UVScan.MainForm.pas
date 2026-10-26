@@ -19,7 +19,8 @@ uses
   UVScan.Serial, UVScan.Simulator, UVScan.Simulator.Elm, UVScan.Adapter, UVScan.Pids, UVScan.Dpid, UVScan.Dtc, UVScan.Engine,
   UVScan.Class2, UVScan.Paths, UVScan.Settings, UVScan.PidLists, UVScan.Defaults,
   UVScan.Display, UVScan.Alerts, UVScan.Controls, UVScan.Gauge, UVScan.UI.DataGrid, UVScan.LogData,
-  UVScan.QuickStart, UVScan.Update, UVScan.Hotkeys, UVScan.Sensors, UVScan.LogSend, UVScan.LogFiles;
+  UVScan.QuickStart, UVScan.Update, UVScan.Hotkeys, UVScan.Sensors, UVScan.LogSend, UVScan.LogFiles,
+  UVScan.LiveServer;
 
 type
   { Parts of the one-line status strip. }
@@ -320,6 +321,15 @@ type
     lblLogSend: TLabel;
     btnLogSend: TButton;
     FLogSender: TLogSender;          // while Send while logging is on
+    gbLiveView: TGroupBox;           // Connect page: the live data in a web browser on this network
+    chkLiveView: TCheckBox;
+    lblLiveView: TLabel;
+    btnLiveViewCopy: TButton;
+    btnLiveViewOpen: TButton;
+    FLiveServer: TLiveServer;        // while Live view is on
+    FLiveViewProblem: string;        // why it could not start
+    FLiveViewNext: UInt64;           // when the browsers get the data again (tick)
+    FLiveViewTicks: Integer;
     FLogSchedule: TLogSendSchedule;  // when the next snapshot of the log is due
     FLogSendState: array[TSendWay] of string; // how each way is doing, shown
     FLogSendShown: UInt64;           // when the box was last brought up to date
@@ -549,6 +559,18 @@ type
     procedure StopLogSend;
     procedure LogSendEvent(const Ev: TSendEvent);
     procedure LogSendTick;
+    procedure BuildLiveViewBox;
+    procedure UpdateLiveViewBox;
+    procedure LiveViewBoxResized(Sender: TObject);
+    procedure LiveViewCheckChange(Sender: TObject);
+    procedure LiveViewCopyClick(Sender: TObject);
+    procedure LiveViewOpenClick(Sender: TObject);
+    procedure StartLiveView;
+    procedure StopLiveView;
+    procedure LiveViewTick;
+    function LiveViewAddress: string;
+    function LiveViewJson: string;
+    procedure GaugeReading(const G: TGauge; out V: Double; out Text, Note: string);
     procedure LogSendLogStarted(const FileName: string; Appending: Boolean);
     procedure LogSendLogStopped;
     procedure QuickPickClick(Sender: TObject);
@@ -804,10 +826,15 @@ begin
   BuildChrome;
   BuildLogSendBox;
   BuildSensorBox;
+  BuildLiveViewBox;
   LoadData;
   LoadSettings;
   FLogSchedule := TLogSendSchedule.Create(FSettings.LogSend);
   UpdateLogSendBox;
+  if FSettings.LiveView then
+    StartLiveView
+  else
+    UpdateLiveViewBox;
   ApplyTheme(ThemeModeFromKey(FSettings.Theme));
   FThemeSub := TMessageManager.DefaultManager.SubscribeToMessage(TThemeChangedMessage, ThemeChanged);
   ApplyPalette;
@@ -4158,6 +4185,7 @@ begin
   tmrRefresh.Enabled := False;
   FEngine.Free; // stops the scan, closes the port, waits for the thread
   FreeAndNil(FLogSender); // a snapshot going out finishes on its own thread
+  FreeAndNil(FLiveServer); // after the browsers' requests being answered
   FLogSchedule.Free;
   FCatalog.Free;
   FSensors.Free;
@@ -4994,6 +5022,335 @@ end;
 procedure TMainForm.LogSendBoxResized(Sender: TObject);
 begin
   UpdateLogSendBox;
+end;
+
+{ Connect page: Live view - the grid, the dashboard and the status in a web
+  browser on this network (UVScan.LiveServer), for a crew watching from their
+  phones. Stays on (or off) the next time UVScan opens. }
+procedure TMainForm.BuildLiveViewBox;
+begin
+  gbLiveView := TGroupBox.Create(Self);
+  gbLiveView.Parent := gbLogRec.Parent;
+  gbLiveView.Stored := False;
+  gbLiveView.Align := TAlignLayout.Top;
+  gbLiveView.Margins.Rect := gbLogRec.Margins.Rect;
+  gbLiveView.Position.Y := gbSensors.Position.Y + gbSensors.Height + 1; // under Sensors
+  gbLiveView.Height := 150;
+  gbLiveView.Text := 'Live view on the network';
+  chkLiveView := TCheckBox.Create(Self);
+  chkLiveView.Parent := gbLiveView;
+  chkLiveView.Stored := False;
+  chkLiveView.Text := 'Show the live data in a web browser';
+  chkLiveView.CanFocus := False;
+  chkLiveView.OnChange := LiveViewCheckChange;
+  chkLiveView.SetBounds(12, 28, 300, 28);
+  lblLiveView := TLabel.Create(Self);
+  lblLiveView.Parent := gbLiveView;
+  lblLiveView.Stored := False;
+  lblLiveView.WordWrap := True;
+  lblLiveView.SetBounds(12, 60, 400, 22);
+  btnLiveViewCopy := TButton.Create(Self);
+  btnLiveViewCopy.Parent := gbLiveView;
+  btnLiveViewCopy.Stored := False;
+  btnLiveViewCopy.Text := 'Copy address';
+  btnLiveViewCopy.CanFocus := False;
+  btnLiveViewCopy.OnClick := LiveViewCopyClick;
+  btnLiveViewCopy.SetBounds(12, 90, 130, 40);
+  btnLiveViewOpen := TButton.Create(Self);
+  btnLiveViewOpen.Parent := gbLiveView;
+  btnLiveViewOpen.Stored := False;
+  btnLiveViewOpen.Text := 'Open';
+  btnLiveViewOpen.Hint := 'The page in this device''s browser';
+  btnLiveViewOpen.ShowHint := True;
+  btnLiveViewOpen.CanFocus := False;
+  btnLiveViewOpen.OnClick := LiveViewOpenClick;
+  btnLiveViewOpen.SetBounds(150, 90, 100, 40);
+  gbLiveView.OnResized := LiveViewBoxResized;
+end;
+
+procedure TMainForm.UpdateLiveViewBox;
+var
+  S: string;
+  Who: TArray<string>;
+  Width, Y: Single;
+begin
+  if gbLiveView = nil then
+    Exit;
+  if FLiveServer = nil then
+  begin
+    if FLiveViewProblem <> '' then
+      S := 'Off: it could not start (' + FLiveViewProblem + ').'
+    else
+      S := 'Off. On, a phone, tablet or laptop on the same Wi-Fi or network opens an address in its web ' +
+        'browser and sees the grid, the dashboard and the scan''s status as they change. It can only look.';
+  end
+  else
+  begin
+    S := 'On: open ' + LiveViewAddress + ' in a web browser on the same Wi-Fi or network.';
+    Who := FLiveServer.Viewers;
+    if Length(Who) = 0 then
+      S := S + sLineBreak + 'Nobody is watching now.'
+    else
+      S := S + sLineBreak + Format('Watching now: %d (%s)', [Length(Who), string.Join(', ', Who)]);
+  end;
+  if lblLiveView.Text <> S then
+    lblLiveView.Text := S;
+  Width := Max(100, gbLiveView.Width - 24);
+  chkLiveView.SetBounds(12, 28, Width, 28);
+  lblLiveView.SetBounds(12, 60, Width, Max(22, WrappedTextHeight(lblLiveView, Width) + 4));
+  Y := lblLiveView.Position.Y + lblLiveView.Height + 6;
+  btnLiveViewCopy.Visible := FLiveServer <> nil;
+  btnLiveViewOpen.Visible := FLiveServer <> nil;
+  if FLiveServer <> nil then
+  begin
+    FitTextWidth(btnLiveViewCopy, 130);
+    FitTextWidth(btnLiveViewOpen, 90);
+    btnLiveViewCopy.Position.Y := Y;
+    btnLiveViewOpen.Position.X := btnLiveViewCopy.Position.X + btnLiveViewCopy.Width + 8;
+    btnLiveViewOpen.Position.Y := Y;
+    Y := Y + btnLiveViewCopy.Height + 6;
+  end;
+  gbLiveView.Height := Y + 6;
+end;
+
+procedure TMainForm.LiveViewBoxResized(Sender: TObject);
+begin
+  UpdateLiveViewBox;
+end;
+
+procedure TMainForm.LiveViewCheckChange(Sender: TObject);
+begin
+  if chkLiveView.IsChecked = (FLiveServer <> nil) then
+    Exit; // set to what it is (below)
+  if chkLiveView.IsChecked then
+    StartLiveView
+  else
+    StopLiveView;
+  FSettings.LiveView := FLiveServer <> nil;
+  if FChromeReady then
+    SaveSettings;
+end;
+
+procedure TMainForm.StartLiveView;
+begin
+  FLiveViewProblem := '';
+  try
+    FLiveServer := TLiveServer.Create(FSettings.LiveViewPort);
+  except
+    on E: Exception do
+    begin
+      FLiveServer := nil;
+      FLiveViewProblem := E.Message;
+      AddMessage('Live view: could not start: ' + E.Message);
+    end;
+  end;
+  if FLiveServer <> nil then
+  begin
+    AddMessage('Live view on: ' + LiveViewAddress);
+    FLiveViewNext := 0;
+    LiveViewTick;
+  end;
+  chkLiveView.IsChecked := FLiveServer <> nil;
+  UpdateLiveViewBox;
+end;
+
+procedure TMainForm.StopLiveView;
+begin
+  FreeAndNil(FLiveServer);
+  if chkLiveView.IsChecked then
+    chkLiveView.IsChecked := False;
+  AddMessage('Live view off');
+  UpdateLiveViewBox;
+end;
+
+{ The page's address: this device on its network ('' when it has none). }
+function TMainForm.LiveViewAddress: string;
+var
+  Host: string;
+begin
+  Result := '';
+  if FLiveServer = nil then
+    Exit;
+  Host := LocalNetworkAddress;
+  if Host = '' then
+    Host := 'this device''s address (no network now)';
+  Result := Format('http://%s:%d', [Host, FLiveServer.Port]);
+end;
+
+procedure TMainForm.LiveViewCopyClick(Sender: TObject);
+var
+  Clip: IFMXClipboardService;
+begin
+  if (FLiveServer <> nil) and TPlatformServices.Current.SupportsPlatformService(IFMXClipboardService, Clip) then
+  begin
+    Clip.SetClipboard(LiveViewAddress);
+    ShowNotice('Copied: ' + LiveViewAddress, False);
+  end;
+end;
+
+procedure TMainForm.LiveViewOpenClick(Sender: TObject);
+begin
+  if FLiveServer <> nil then
+    OpenUrl(Format('http://127.0.0.1:%d', [FLiveServer.Port]));
+end;
+
+{ About 4 times a second: what the browsers show; the box (who is watching)
+  about once a second. }
+procedure TMainForm.LiveViewTick;
+begin
+  if (FLiveServer = nil) or (TThread.GetTickCount64 < FLiveViewNext) then
+    Exit;
+  FLiveViewNext := TThread.GetTickCount64 + 250;
+  FLiveServer.Publish(LiveViewJson);
+  Inc(FLiveViewTicks);
+  if FLiveViewTicks mod 4 = 0 then
+    UpdateLiveViewBox;
+end;
+
+(* The data the page shows, as the grid and the dashboard show it:
+  { "state": "Scanning", "scanning": true, "logging": false, "status": [...],
+    "rows": [ { "name", "value", "units", "min", "max", "bg", "fg", "nbg", "nfg", "flash", "size" } ],
+    "dash": { "name", "back", "gauges": [ { "name", "units", "style", "size", "min", "max",
+      "value", "text", "note", "level", "bg", "fg", "normal", "flash", "chip", "zones" } ] } }
+  Colours are "#RRGGBB", null for the normal look. *)
+function TMainForm.LiveViewJson: string;
+var
+  Root, Row, Dash, Gj, Zj: TJSONObject;
+  Arr, Zones: TJSONArray;
+  I: Integer;
+  P: TPidDef;
+  Part: TStatusPart;
+  Text, Note: string;
+  V: Double;
+  S: TResolvedStyle;
+  G: TGauge;
+  Z: TGaugeZone;
+
+  function Color(C: TAlphaColor): TJSONValue;
+  begin
+    if C = NoColor then
+      Result := TJSONNull.Create
+    else
+      Result := TJSONString.Create(ColorToHex(C));
+  end;
+
+  function Num(const X: Double): TJSONValue;
+  begin
+    if IsNan(X) or IsInfinite(X) then
+      Result := TJSONNull.Create
+    else
+      Result := TJSONNumber.Create(X);
+  end;
+
+  function Cell(Col, R: Integer): string;
+  begin
+    Result := '';
+    LiveGetText(nil, Col, R, Result);
+  end;
+
+begin
+  Root := TJSONObject.Create;
+  try
+    Root.AddPair('app', 'UVScan ' + VersionText);
+    Root.AddPair('state', IfThen(FTestMode, 'Test display', StateNames[FState]));
+    Root.AddPair('scanning', TJSONBool.Create(LiveActive));
+    Root.AddPair('logging', TJSONBool.Create(FLogging));
+    Root.AddPair('paused', TJSONBool.Create(FLogging and FLogPaused));
+    Root.AddPair('minMax', TJSONBool.Create(FSettings.ShowMinMax));
+    Arr := TJSONArray.Create;
+    for Part := Succ(spState) to High(TStatusPart) do // the state has a place of its own
+      if FStatus[Part] <> '' then
+        Arr.Add(FStatus[Part]);
+    Root.AddPair('status', Arr);
+
+    Arr := TJSONArray.Create;
+    Root.AddPair('rows', Arr);
+    for I := 0 to High(FLiveIds) do
+    begin
+      P := FCatalog.FindById(FLiveIds[I]);
+      if P = nil then
+        Continue;
+      V := NaN;
+      if (I <= High(FLive.Values)) and not FRejected.Contains(P.Id) then
+        V := FLive.Values[I];
+      S := FDisplay.Resolve(P.Id, V);
+      Row := TJSONObject.Create;
+      Arr.AddElement(Row);
+      Row.AddPair('name', Cell(ColName, I));
+      Row.AddPair('value', Cell(ColValue, I));
+      Row.AddPair('units', Cell(ColUnits, I));
+      Row.AddPair('min', Cell(ColMin, I));
+      Row.AddPair('max', Cell(ColMax, I));
+      Row.AddPair('bg', Color(S.RowColor));
+      Row.AddPair('fg', Color(S.TextColor));
+      Row.AddPair('nbg', Color(S.NormalRowColor));
+      Row.AddPair('nfg', Color(S.NormalTextColor));
+      Row.AddPair('flash', TJSONBool.Create(S.Flash));
+      if S.FontSize > 0 then
+        Row.AddPair('size', TJSONNumber.Create(S.FontSize));
+    end;
+
+    Dash := TJSONObject.Create;
+    Root.AddPair('dash', Dash);
+    if (FDisplay.Current >= 0) and (FDisplay.Current < FDisplay.DashboardCount) then
+    begin
+      Dash.AddPair('name', FDisplay.Dashboards[FDisplay.Current].Name);
+      Dash.AddPair('back', Color(FDisplay.Dashboards[FDisplay.Current].BackColor));
+    end;
+    Arr := TJSONArray.Create;
+    Dash.AddPair('gauges', Arr);
+    for I := 0 to FDisplay.Gauges.Count - 1 do
+    begin
+      G := FDisplay.Gauges[I];
+      GaugeReading(G, V, Text, Note);
+      S := FDisplay.Resolve(G.PidId, V);
+      P := FCatalog.FindById(G.PidId);
+      Gj := TJSONObject.Create;
+      Arr.AddElement(Gj);
+      if P <> nil then
+      begin
+        Gj.AddPair('name', P.LongName);
+        Gj.AddPair('units', P.Units);
+      end
+      else
+      begin
+        Gj.AddPair('name', Format('PID #%d (missing)', [G.PidId]));
+        Gj.AddPair('units', '');
+      end;
+      Gj.AddPair('style', GaugeStyleKeys[G.Style]);
+      Gj.AddPair('size', GaugeSizeKeys[G.Size]);
+      Gj.AddPair('min', Num(G.MinValue));
+      Gj.AddPair('max', Num(G.MaxValue));
+      Gj.AddPair('value', Num(V));
+      Gj.AddPair('text', Text);
+      if (Note = '') and (S.Level >= 0) then
+        Note := S.LevelName;
+      Gj.AddPair('note', Note);
+      Gj.AddPair('level', TJSONNumber.Create(S.Level));
+      // the card takes the level's colours; normal, the value arc the PID's own
+      if S.Level >= 0 then
+      begin
+        Gj.AddPair('bg', Color(S.RowColor));
+        Gj.AddPair('fg', Color(S.TextColor));
+      end;
+      Gj.AddPair('normal', Color(S.NormalRowColor));
+      Gj.AddPair('flash', TJSONBool.Create(S.Flash));
+      Gj.AddPair('chip', TJSONBool.Create(G.Minimized));
+      Zones := TJSONArray.Create;
+      Gj.AddPair('zones', Zones);
+      for Z in FDisplay.Zones(G.PidId, G.MinValue, G.MaxValue) do
+      begin
+        Zj := TJSONObject.Create;
+        Zones.AddElement(Zj);
+        Zj.AddPair('from', Num(Z.FromValue));
+        Zj.AddPair('to', Num(Z.ToValue));
+        Zj.AddPair('color', ColorToHex(Z.Color));
+      end;
+    end;
+    Result := Root.ToJSON;
+  finally
+    Root.Free;
+  end;
 end;
 
 procedure TMainForm.LogSendCheckChange(Sender: TObject);
@@ -6073,6 +6430,7 @@ var
 begin
   FlushMessages;
   LogSendTick;
+  LiveViewTick;
   if (FSaveDue <> 0) and (TThread.GetTickCount64 >= FSaveDue) then
   begin
     FSaveDue := 0;
@@ -8407,9 +8765,8 @@ end;
 
 procedure TMainForm.RefreshDashboard;
 var
-  I, Idx: Integer;
+  I: Integer;
   G: TGauge;
-  P: TPidDef;
   V: Double;
   Text, Note: string;
   Scanning: Boolean;
@@ -8420,28 +8777,38 @@ begin
     if I >= FDisplay.Gauges.Count then
       Break;
     G := FDisplay.Gauges[I];
-    P := FCatalog.FindById(G.PidId);
-    V := NaN;
-    Text := '-';
-    Note := '';
-    Idx := LiveIndexOf(G.PidId);
-    if P = nil then
-      Note := ''
-    else if Idx < 0 then
-    begin
-      if Scanning then
-        Note := 'not in this scan';
-    end
-    else if FRejected.Contains(G.PidId) then
-      Note := 'rejected'
-    else if Idx <= High(FLive.Values) then
-    begin
-      V := FLive.Values[Idx];
-      Text := LiveValueText(Idx, P);
-      if Text = '' then
-        Text := '-';
-    end;
+    GaugeReading(G, V, Text, Note);
     ShowGaugeReading(FGaugeViews[I], FDisplay.Resolve(G.PidId, V), FFlashOn or not Scanning, V, Text, Note);
+  end;
+end;
+
+{ A gauge's reading now: the value (NaN: none), its text ('-': none) and a
+  note ('not in this scan', 'rejected'). }
+procedure TMainForm.GaugeReading(const G: TGauge; out V: Double; out Text, Note: string);
+var
+  P: TPidDef;
+  Idx: Integer;
+begin
+  P := FCatalog.FindById(G.PidId);
+  V := NaN;
+  Text := '-';
+  Note := '';
+  Idx := LiveIndexOf(G.PidId);
+  if P = nil then
+    Note := ''
+  else if Idx < 0 then
+  begin
+    if LiveActive then
+      Note := 'not in this scan';
+  end
+  else if FRejected.Contains(G.PidId) then
+    Note := 'rejected'
+  else if Idx <= High(FLive.Values) then
+  begin
+    V := FLive.Values[Idx];
+    Text := LiveValueText(Idx, P);
+    if Text = '' then
+      Text := '-';
   end;
 end;
 

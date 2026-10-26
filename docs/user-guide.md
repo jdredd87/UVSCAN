@@ -349,6 +349,18 @@ The default is `UVScan_{date}_{time}`, the name logs always had. Under the box, 
 
 The log being written is marked *logging now* and is never renamed or deleted. On a phone the logs live in UVScan's own folder, which the Files app cannot open and which **uninstalling UVScan deletes** (an update keeps them): share or save a copy of the ones you want to keep.
 
+## Live view on the network
+
+Anyone on the same Wi‑Fi or network as UVScan (the crew's phones, a laptop in the pits, a tablet on the passenger seat) can watch the scan in a web browser, with no app to install: the **Grid** with its values, units, min / max and alert colours, the **Dashboard** UVScan is showing with its gauges, and the status (connected, scanning, the VIN, updates per second, logging). It changes about four times a second. The page can only look: nothing in it changes the scan.
+
+Tick **Show the live data in a web browser** in the *Live view on the network* box on the *Connect* page. The box then gives the address to open, such as `http://192.168.1.23:8080`, and who is watching. **Copy address** puts it on the clipboard to send to the crew; **Open** shows the page in this device's own browser. The address ending `#dash` opens on the Dashboard. It stays on (or off) the next time UVScan starts.
+
+- Every device has to be on the **same network**: the car's Wi‑Fi hotspot, the shop's Wi‑Fi. It does not reach over the internet.
+- **Windows** asks once whether UVScan may accept connections: allow it on private networks. Without that, other devices cannot open the page (**Open** on the PC itself still works).
+- A **phone sharing its own hotspot** may show its mobile data address instead of the hotspot's; the hotspot's is usually in the phone's hotspot settings (often `192.168.43.1` or `192.168.0.1`).
+- The port is 8080, or the next free one up to 8089 if another program has it (`liveView.port` in `settings.json` sets another).
+- Anyone on that network who has the address can watch. Untick it on a network you do not trust.
+
 ## Log viewer
 
 **Logs** in the tab bar, **Open logs** on the *Connect* page (or **F7**) opens your logs as a chart and a grid that follow one cursor. The first time it opens the newest log in the log folder; **Open log…** picks any file and the list next to it holds the 40 most recent. **Demo drive (made up)** opens a generated 10‑minute drive (cold start, city, highway, a hard pull with knock retard) to try everything without a log.

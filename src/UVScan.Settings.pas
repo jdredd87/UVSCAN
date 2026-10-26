@@ -12,6 +12,7 @@ unit UVScan.Settings;
     "updates":    { "check": true, "lastCheck": "2026-10-12T09:30:00.000Z" },
     "hotkeys":    { "connect": "F5", "scan": "F6", "mark": "F12", "liveChart": "Ctrl+G", "global": false },
     "logSend":    { "everyMinutes": 5, ... }   (sending the log while it is written: UVScan.LogSend)
+    "liveView":   { "on": false, "port": 8080 }   (the live data in a browser: UVScan.LiveServer)
     "window":     { "left": 100, "top": 80, "width": 1180, "height": 720,
                     "maximized": false, "pidPanelWidth": 400 } }
 
@@ -69,6 +70,8 @@ type
     GlobalHotkeys: Boolean; // Windows: they work when another program is in front too
     Window: TWindowSettings;
     LogSend: TLogSendSettings; // sending the log while it is written (where to, how often)
+    LiveView: Boolean;      // the live data in a web browser on this network (UVScan.LiveServer)
+    LiveViewPort: Integer;  // its port (the next free one if taken)
     constructor Create;
     destructor Destroy; override;
     procedure ResetToDefaults;
@@ -165,6 +168,8 @@ begin
   GlobalHotkeys := False;
   Window := Default(TWindowSettings);
   LogSend.ResetToDefaults;
+  LiveView := False;
+  LiveViewPort := 8080;
 end;
 
 function TAppSettings.ToJson: TJSONObject;
@@ -245,6 +250,11 @@ begin
   Sec.AddPair('global', TJSONBool.Create(GlobalHotkeys));
   Result.AddPair('hotkeys', Sec);
   Result.AddPair('logSend', LogSend.ToJson);
+
+  Sec := TJSONObject.Create;
+  Sec.AddPair('on', TJSONBool.Create(LiveView));
+  Sec.AddPair('port', TJSONNumber.Create(LiveViewPort));
+  Result.AddPair('liveView', Sec);
 
   if Window.Saved then
   begin
@@ -369,6 +379,13 @@ begin
   end;
 
   LogSend.FromJson(JObj(Root, 'logSend'));
+
+  Sec := JObj(Root, 'liveView');
+  if Sec <> nil then
+  begin
+    LiveView := JBool(Sec, 'on', LiveView);
+    LiveViewPort := EnsureRange(JInt(Sec, 'port', LiveViewPort), 1024, 65000);
+  end;
 
   Sec := JObj(Root, 'window');
   if Sec <> nil then

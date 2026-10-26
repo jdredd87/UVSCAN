@@ -353,6 +353,7 @@
         <DCCReference Include="src\UVScan.LogSendEditor.pas"/>
         <DCCReference Include="src\UVScan.LogFiles.pas"/>
         <DCCReference Include="src\UVScan.LogManager.pas"/>
+        <DCCReference Include="src\UVScan.LiveServer.pas"/>
         <DCCReference Include="src\UVScan.UI.Common.pas"/>
         <DCCReference Include="src\UVScan.UI.Theme.pas"/>
         <DCCReference Include="src\UVScan.UI.DataGrid.pas"/>

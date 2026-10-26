@@ -1,0 +1,152 @@
+unit UVScan.Tests.LiveServer;
+
+(* The live view's web server: the page, the data last published, the
+  addresses watching, and what it answers to anything else. *)
+
+interface
+
+uses
+  System.SysUtils, System.Classes, DUnitX.TestFramework, UVScan.LiveServer;
+
+type
+  [TestFixture]
+  TLiveServerTests = class
+  private
+    FServer: TLiveServer;
+    function Get(const Request: string): string;
+  public
+    [Setup] procedure Setup;
+    [TearDown] procedure TearDown;
+    [Test] procedure ParsesRequestLines;
+    [Test] procedure ServesThePage;
+    [Test] procedure ServesTheLatestData;
+    [Test] procedure AnswersTheRest;
+    [Test] procedure NextPortWhenTaken;
+    [Test] procedure ThisDevicesAddress;
+  end;
+
+implementation
+
+uses
+  System.RegularExpressions, UVScan.Serial;
+
+procedure TLiveServerTests.Setup;
+begin
+  FServer := TLiveServer.Create(0);
+end;
+
+procedure TLiveServerTests.TearDown;
+begin
+  FreeAndNil(FServer);
+end;
+
+{ The whole answer to Request (sent as it is), read until the server closes. }
+function TLiveServerTests.Get(const Request: string): string;
+var
+  Port: ISerialPort;
+  Buf: array[0..4095] of Byte;
+  Got: TBytes;
+  N, L: Integer;
+begin
+  Port := TTcpSerialPort.Create('127.0.0.1', FServer.Port);
+  Port.Open;
+  Port.Write(TEncoding.ASCII.GetBytes(Request));
+  try
+    repeat
+      N := Port.Read(Buf, SizeOf(Buf), 2000);
+      if N > 0 then
+      begin
+        L := Length(Got);
+        SetLength(Got, L + N);
+        Move(Buf[0], Got[L], N);
+      end;
+    until N <= 0;
+  except
+    on ESerialError do
+      ; // closed: the whole answer is in
+  end;
+  Result := TEncoding.UTF8.GetString(Got);
+end;
+
+procedure TLiveServerTests.ParsesRequestLines;
+var
+  M, P: string;
+begin
+  Assert.IsTrue(ParseRequestLine('GET /live.json?t=5 HTTP/1.1', M, P));
+  Assert.AreEqual('GET', M);
+  Assert.AreEqual('/live.json', P);
+  Assert.IsTrue(ParseRequestLine('head / HTTP/1.0', M, P));
+  Assert.AreEqual('HEAD', M);
+  Assert.AreEqual('/', P);
+  Assert.IsFalse(ParseRequestLine('GET /', M, P), 'no version');
+  Assert.IsFalse(ParseRequestLine('hello there friend', M, P));
+  Assert.IsFalse(ParseRequestLine('', M, P));
+end;
+
+procedure TLiveServerTests.ServesThePage;
+var
+  S: string;
+begin
+  S := Get('GET / HTTP/1.1'#13#10'Host: x'#13#10#13#10);
+  Assert.StartsWith('HTTP/1.1 200 OK'#13#10, S);
+  Assert.Contains(S, 'Content-Type: text/html; charset=utf-8');
+  Assert.Contains(S, '<title>UVScan live</title>');
+  Assert.Contains(S, 'live.json');
+  Assert.EndsWith('</html>', S);
+end;
+
+procedure TLiveServerTests.ServesTheLatestData;
+var
+  S: string;
+begin
+  Assert.AreEqual(0, Length(FServer.Viewers));
+  FServer.Publish('{"state":"Connected"}');
+  FServer.Publish('{"state":"Scanning","rpm":"812"}');
+  S := Get('GET /live.json HTTP/1.1'#13#10'Host: x'#13#10#13#10);
+  Assert.StartsWith('HTTP/1.1 200 OK'#13#10, S);
+  Assert.Contains(S, 'Content-Type: application/json');
+  Assert.Contains(S, 'Cache-Control: no-store');
+  Assert.EndsWith(#13#10#13#10'{"state":"Scanning","rpm":"812"}', S);
+  Assert.AreEqual(1, Length(FServer.Viewers));
+  Assert.AreEqual('127.0.0.1', FServer.Viewers[0]);
+end;
+
+procedure TLiveServerTests.AnswersTheRest;
+var
+  S: string;
+begin
+  Assert.StartsWith('HTTP/1.1 404 ', Get('GET /settings.json HTTP/1.1'#13#10#13#10));
+  Assert.StartsWith('HTTP/1.1 405 ', Get('POST /live.json HTTP/1.1'#13#10'Content-Length: 0'#13#10#13#10));
+  Assert.StartsWith('HTTP/1.1 400 ', Get('nonsense'#13#10#13#10));
+  S := Get('HEAD / HTTP/1.1'#13#10#13#10);
+  Assert.StartsWith('HTTP/1.1 200 OK', S);
+  Assert.EndsWith(#13#10#13#10, S, 'no body');
+  Assert.AreEqual(0, Length(FServer.Viewers), 'only the data counts as watching');
+end;
+
+procedure TLiveServerTests.NextPortWhenTaken;
+var
+  Other: TLiveServer;
+begin
+  Other := TLiveServer.Create(FServer.Port, 5);
+  try
+    Assert.AreNotEqual(Integer(FServer.Port), Integer(Other.Port));
+    Assert.IsTrue((Other.Port > FServer.Port) and (Other.Port < FServer.Port + 5));
+  finally
+    Other.Free;
+  end;
+end;
+
+procedure TLiveServerTests.ThisDevicesAddress;
+var
+  A: string;
+begin
+  A := LocalNetworkAddress; // '' on a PC with no network
+  Assert.IsTrue((A = '') or TRegEx.IsMatch(A, '^\d{1,3}(\.\d{1,3}){3}$'), A);
+  Assert.IsFalse(A.StartsWith('127.'), A);
+end;
+
+initialization
+  TDUnitX.RegisterTestFixture(TLiveServerTests);
+
+end.

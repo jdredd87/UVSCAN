@@ -49,7 +49,9 @@ uses
   UVScan.LogSend in '..\src\UVScan.LogSend.pas',
   UVScan.Tests.LogSend in 'UVScan.Tests.LogSend.pas',
   UVScan.LogFiles in '..\src\UVScan.LogFiles.pas',
-  UVScan.Tests.LogFiles in 'UVScan.Tests.LogFiles.pas';
+  UVScan.Tests.LogFiles in 'UVScan.Tests.LogFiles.pas',
+  UVScan.LiveServer in '..\src\UVScan.LiveServer.pas',
+  UVScan.Tests.LiveServer in 'UVScan.Tests.LiveServer.pas';
 
 {$R 'UVScan.Defaults.res' '..\UVScan.Defaults.rc'}
 
