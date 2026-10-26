@@ -238,7 +238,10 @@ end;
 
 function IsTcpAddress(const Name: string): Boolean;
 begin
-  Result := StartsText('tcp:', Trim(Name)) or ((Name.IndexOfAny(['.', ':']) >= 0) and not IsBluetoothPortName(Name));
+  // An address has no spaces; port names with a colon have one: "BT vLinker FD [DC:0D:...]"
+  // and Android's "USB Keyspan 06CD:0121".
+  Result := StartsText('tcp:', Trim(Name)) or
+    ((Name.IndexOfAny(['.', ':']) >= 0) and (Trim(Name).IndexOf(' ') < 0));
 end;
 
 function IsBluetoothPortName(const Name: string): Boolean;

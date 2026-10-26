@@ -183,6 +183,8 @@ begin
   Assert.IsTrue(IsTcpAddress('192.168.2.99:5000'));
   Assert.IsTrue(IsTcpAddress('tcp:avt'));
   Assert.IsFalse(IsTcpAddress('COM9'));
+  Assert.IsFalse(IsTcpAddress('USB Keyspan 06CD:0121'), 'an Android USB port, with a colon');
+  Assert.IsFalse(IsTcpAddress('USB FTDI 0403:6001 #2'));
 end;
 
 { The whole protocol through TTcpSerialPort, to the simulator served on the
