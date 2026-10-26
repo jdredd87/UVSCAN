@@ -33,6 +33,9 @@ type
     Levels: TArray<TArray<TDisplayLevel>>; // each channel's alert levels (bands, level colours)
     Bands: Boolean;                        // the levels shaded behind the lines
     Span: Double;                          // the seconds it shows
+    Paused: Boolean;                       // not following the scan: T0..T1 and the cursor are where it was left
+    T0, T1, Cursor: Double;
+    Sel0, Sel1: Double;                    // a selected range; NaN: none
   end;
 
   TLogViewerForm = class(TForm)
@@ -563,6 +566,8 @@ begin
   Result.Mode := cmLanes;
   Result.Bands := True;
   Result.Span := 60;
+  Result.Sel0 := NaN;
+  Result.Sel1 := NaN;
   if LiveSource = nil then
     Exit;
   if (LiveViewer <> nil) and LiveViewer.FLive and (LiveViewer.FData = LiveSource) then
@@ -572,6 +577,15 @@ begin
     Result.Levels := Copy(LiveViewer.FLevels);
     Result.Bands := LiveViewer.FChart.ShowBands;
     Result.Span := LiveViewer.FChart.LiveSpan;
+    Result.Paused := not LiveViewer.FChart.Follow;
+    Result.T0 := LiveViewer.FChart.WindowStart;
+    Result.T1 := LiveViewer.FChart.WindowEnd;
+    Result.Cursor := LiveViewer.FChart.CursorTime;
+    if LiveViewer.FChart.HasSelection then
+    begin
+      Result.Sel0 := Min(LiveViewer.FChart.SelStart, LiveViewer.FChart.SelEnd);
+      Result.Sel1 := Max(LiveViewer.FChart.SelStart, LiveViewer.FChart.SelEnd);
+    end;
     Exit;
   end;
   // Not made yet: the view it will start with (the scan list's, else the

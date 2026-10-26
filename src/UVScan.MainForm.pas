@@ -5398,6 +5398,19 @@ begin
     Root.AddPair('chart', Look);
     Look.AddPair('mode', ChartModeKeys[LL.Mode]);
     Look.AddPair('span', Num(LL.Span));
+    // paused in UVScan: where it was left (the window, the cursor)
+    if LL.Paused then
+    begin
+      Look.AddPair('paused', TJSONBool.Create(True));
+      Look.AddPair('t0', Num(LL.T0));
+      Look.AddPair('t1', Num(LL.T1));
+      Look.AddPair('cursor', Num(LL.Cursor));
+    end;
+    if not IsNan(LL.Sel0) then
+    begin
+      Look.AddPair('sel0', Num(LL.Sel0));
+      Look.AddPair('sel1', Num(LL.Sel1));
+    end;
     Arr := TJSONArray.Create;
     Look.AddPair('ch', Arr);
     Order := nil;

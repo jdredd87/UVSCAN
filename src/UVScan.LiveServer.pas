@@ -992,7 +992,7 @@ begin
     // colours, scales and alert levels, the mode, the span), unless this
     // device picks its own PIDs (ch.mine) or span (ch.ownSpan), kept here.
     const ch = { session: -1, loaded: 0, names: [], units: [], sw: [], t: [], v: [], marks: [], span: 60,
-      paused: false, t1: 0, cursor: null, mine: null, ownSpan: 0, picking: false, chipKey: "" };
+      paused: false, t1: 0, pspan: 60, cursor: null, view: null, need: 0, mine: null, ownSpan: 0, picking: false, chipKey: "" };
     try {
       const sv = JSON.parse(localStorage.getItem("uvscanChart") || "{}");
       if ([15, 30, 60, 120, 300, 600, 900].includes(sv.ownSpan)) ch.span = ch.ownSpan = sv.ownSpan;
@@ -1018,7 +1018,7 @@ begin
 
     async function pollChart(signal) {
       const since = ch.t.length ? ch.t[ch.t.length - 1] : -1;
-      const back = Math.max(ch.span, 60);
+      const back = Math.min(900, Math.max(ch.span, 60, ch.need));
       const url = ch.session < 0 ? `chart.json?back=${back}` : `chart.json?session=${ch.session}&since=${since}`;
       const r = await fetch(url, { cache: "no-store", signal });
       if (!r.ok) throw new Error(r.status);
@@ -1067,34 +1067,48 @@ begin
       }
     }
 
-    function fmtVal(x, c) {
-      if (x == null) return "-";
-      if (ch.sw[c]) return x >= 0.5 ? "ON" : "OFF";
-      const a = Math.abs(x);
-      return trimNum(x.toFixed(a >= 100 ? 0 : a >= 10 ? 1 : 2));
-    }
-    function fmtTime(t) {
-      const neg = t < 0; t = Math.abs(t);
-      const m = Math.floor(t / 60), sec = t - m * 60;
-      return (neg ? "-" : "") + m + ":" + (sec < 10 ? "0" : "") + trimNum(sec.toFixed(1));
-    }
     function indexAt(t) { // the first sample at or after t
       let lo = 0, hi = ch.t.length;
       while (lo < hi) { const m = (lo + hi) >> 1; if (ch.t[m] < t) lo = m + 1; else hi = m; }
       return lo;
     }
 
-    // a channel's scale: UVScan's fixed one, else what the shown span has
+    // Drawn as UVScan's chart draws it (TLogChart.Paint): its colours, its
+    // axes on the left, the cursor with each value beside it, its numbers.
+    const BACK = "#161a1e", PLOT = "#1b1f26", GRID = "#2c323a", DIM = "#828c96", CURSOR = "#ffffff",
+      SEL = "#46aaff", MARK = "#ffb020", FONT = "Segoe UI, system-ui, sans-serif";
+    function chartStep(range, target) { // NiceStep
+      if (!(range > 0) || target < 1) return 1;
+      const raw = range / target, mag = Math.pow(10, Math.floor(Math.log10(raw))), f = raw / mag;
+      return (f < 1.5 ? 1 : f < 2.25 ? 2 : f < 3.5 ? 2.5 : f < 7.5 ? 5 : 10) * mag;
+    }
+    function fmtAxis(v, step) { // FormatAxis
+      if (Math.abs(v) >= 10000) return trimNum((v / 1000).toFixed(1)) + "k";
+      return step >= 1 ? v.toFixed(0) : step >= 0.1 ? v.toFixed(1) : trimNum(v.toFixed(2));
+    }
+    function fmtShort(x, c) { // FormatValueShort (a switch: ON / OFF)
+      if (x == null) return "--";
+      if (ch.sw[c]) return x >= 0.5 ? "ON" : "OFF";
+      const a = Math.abs(x);
+      return a >= 1000 ? x.toFixed(0) : a >= 100 ? trimNum(x.toFixed(1)) : trimNum(x.toFixed(2));
+    }
+    function fmtLogTime(t) { // FormatLogTime
+      const s = Math.max(0, t), m = Math.floor(s / 60), r = s - m * 60;
+      return m + ":" + (r < 9.95 ? "0" : "") + r.toFixed(1);
+    }
+    function caption(s) { const u = ch.units[s.c]; return u ? s.name + " (" + u + ")" : s.name; }
+
+    // a channel's scale: UVScan's (fixed, else what the scan kept spans)
     function rangeOf(s, i0, i1) {
       if (s.lo != null && s.hi != null && s.hi > s.lo) return [s.lo, s.hi];
-      if (ch.sw[s.c]) return [0, 1];
+      if (ch.sw[s.c]) return [-0.15, 1.15];
       const vals = ch.v[s.c];
       let lo = Infinity, hi = -Infinity;
       for (let i = i0; i < i1; i++) { const x = vals[i]; if (x != null) { if (x < lo) lo = x; if (x > hi) hi = x; } }
-      if (!isFinite(lo)) { lo = 0; hi = 1; }
+      if (!isFinite(lo)) return [0, 1];
       if (hi - lo < 1e-9) { lo -= 1; hi += 1; }
-      const pad = (hi - lo) * 0.08;
-      return [lo >= 0 && lo - pad < 0 ? 0 : lo - pad, hi + pad]; // never below 0 for what is never negative
+      const pad = (hi - lo) * 0.06;
+      return [lo - pad, hi + pad];
     }
     // An alert level's test, as UVScan's (the first level that matches wins).
     const OPS = {
@@ -1105,33 +1119,32 @@ begin
       for (let i = 0; i < lv.length; i++) if (lv[i].v != null && (OPS[lv[i].op] || OPS.ne)(x, lv[i].v)) return i;
       return -1;
     }
-    // the alert levels shaded behind the line (Level bands in UVScan)
-    function plotBands(g, s, lo, hi, top, bot, w) {
+    // the alert levels shaded behind the line (Level bands)
+    function plotBands(g, s, lo, hi, top, bot, x0, x1) {
       const Y = x => bot - (x - lo) / (hi - lo) * (bot - top);
       g.save();
       g.globalAlpha = 28 / 255;
       for (const z of s.bands) {
         if (z.from == null || z.to == null) continue;
         const y1 = Math.max(top, Y(z.to)), y2 = Math.min(bot, Y(z.from));
-        if (y2 > y1) { g.fillStyle = z.color; g.fillRect(0, y1, w, y2 - y1); }
+        if (y2 > y1) { g.fillStyle = z.color; g.fillRect(x0, y1, x1 - x0, y2 - y1); }
       }
       g.restore();
     }
     // the line: several samples to a pixel are drawn as their lowest and
     // highest; where an alert level matches (level colours on), in its colour
     // and thicker
-    function plotLine(g, s, lo, hi, top, bot, X, i0, i1, w) {
+    function plotLine(g, s, lo, hi, top, bot, X, i0, i1, x0, x1) {
       const vals = ch.v[s.c], Y = x => bot - (x - lo) / (hi - lo) * (bot - top), lv = s.levels;
       g.save();
-      g.beginPath(); g.rect(0, top - 2, w, bot - top + 4); g.clip(); // a fixed scale: what is off it, cut
+      g.beginPath(); g.rect(x0, top - 2, x1 - x0, bot - top + 4); g.clip();
       g.lineJoin = "round"; g.lineCap = "round";
-      const base = Math.max(1.2, s.width * 0.85);
       let pts = [], run = -2;
       const flush = () => {
         if (pts.length >= 2) {
           const L = run >= 0 ? lv[run] : null;
           g.strokeStyle = L && L.color ? L.color : s.color;
-          g.lineWidth = L ? base + 1.5 : base;
+          g.lineWidth = L ? s.width + 1.5 : s.width;
           g.beginPath();
           g.moveTo(pts[0][0], pts[0][1]);
           for (let k = 1; k < pts.length; k++) g.lineTo(pts[k][0], pts[k][1]);
@@ -1145,7 +1158,7 @@ begin
         run = L;
         pts.push([px, Y(x)]);
       };
-      const per = Math.max(1, Math.floor((i1 - i0) / (w * 2)));
+      const per = Math.max(1, Math.floor((i1 - i0) / ((x1 - x0) * 2)));
       for (let i = i0; i < i1; i += per) {
         let mn = null, mx = null;
         for (let j = i; j < Math.min(i + per, i1); j++) { const x = vals[j]; if (x == null) continue; if (mn == null || x < mn) mn = x; if (mx == null || x > mx) mx = x; }
@@ -1157,158 +1170,187 @@ begin
       flush();
       g.restore();
     }
-    function fmtTick(x, step) { return trimNum(x.toFixed(step >= 1 ? 0 : step >= 0.1 ? 1 : 2)); }
 
     function drawChart() {
       if (tab !== "chart") return;
-      const all = looks(), sel = all.filter(s => s.on && s.c >= 0), mode = chartMode();
+      const all = looks(), sel = all.filter(s => s.on && s.c >= 0), mode = chartMode(), N = sel.length;
       paintChips(all);
       const cv = $("cv"), n = ch.t.length;
+      // What it shows: this device paused where it was left; else UVScan
+      // paused where it was left there; else the newest (until there is a
+      // full span, growing from the left edge, as in UVScan).
+      const lk = (last && last.chart) || {}, appPaused = !ch.paused && !!lk.paused && lk.t1 > lk.t0;
+      setText($("clive"), ch.paused ? "Live" : "Pause");
+      setText($("cpaused"), ch.paused && ch.cursor != null ? "Paused at " + fmtLogTime(ch.cursor)
+        : appPaused ? "Paused in UVScan at " + fmtLogTime(lk.cursor) : "");
       $("chartEmpty").hidden = n > 0;
       cv.hidden = n === 0;
-      setText($("clive"), ch.paused ? "Live" : "Pause");
-      setText($("cpaused"), ch.paused && ch.cursor != null ? "Paused at " + fmtTime(ch.cursor) : "");
       if (!n) return;
-      const w = cv.clientWidth, lanesMode = mode === "lanes", laneH = w < 600 ? 86 : 108, axisH = 24;
-      const ph = lanesMode ? Math.max(1, sel.length) * laneH : (w < 600 ? 300 : 420), h = ph + axisH;
+      const w = cv.clientWidth, narrow = w < 600;
+      const axisW = mode === "overlay" ? Math.max(1, Math.min(N, 6)) * 46 : narrow ? 46 : 58;
+      const plotH = mode === "lanes" ? Math.max(1, N) * (narrow ? 86 : 108) : narrow ? 300 : 420;
+      const L = Math.round(axisW + 6), T = 8, R = Math.round(w - 10), B = T + plotH, h = B + 26, PW = R - L;
+      ch.plotX = { L, R };
       const dpr = window.devicePixelRatio || 1;
       if (cv.width !== Math.round(w * dpr) || cv.height !== Math.round(h * dpr)) {
         cv.width = Math.round(w * dpr); cv.height = Math.round(h * dpr); cv.style.height = h + "px";
       }
       const g = cv.getContext("2d");
       g.setTransform(dpr, 0, 0, dpr, 0, 0);
-      g.clearRect(0, 0, w, h);
-      const t1 = ch.paused ? ch.t1 : ch.t[n - 1], t0 = t1 - ch.span, X = t => (t - t0) / ch.span * w;
+      const span = ch.paused ? ch.pspan : appPaused ? lk.t1 - lk.t0 : ch.span;
+      const t1 = ch.paused ? ch.t1 : appPaused ? lk.t1 : Math.max(ch.t[n - 1], ch.t[0] + span);
+      const t0 = t1 - span, X = t => L + (t - t0) / span * PW;
+      ch.view = { t0, t1 };
       const i0 = Math.max(0, indexAt(t0) - 1), i1 = Math.min(n, indexAt(t1) + 1);
-      let ci = n - 1; // the sample whose values the labels show
-      if (ch.paused && ch.cursor != null) {
-        ci = Math.min(n - 1, indexAt(ch.cursor));
-        if (ci > 0 && ch.cursor - ch.t[ci - 1] < ch.t[ci] - ch.cursor) ci--;
+      // the cursor: where it was paused, else the newest sample
+      const cursor = ch.paused ? ch.cursor : appPaused ? lk.cursor : ch.t[n - 1];
+      let ci = Math.min(n - 1, indexAt(cursor)); // the sample whose values it shows
+      if (ci > 0 && cursor - ch.t[ci - 1] < ch.t[ci] - cursor) ci--;
+      const cx = X(cursor);
+
+      const txt = (s, x, y, size, color, align, bold, maxW) => { // y: the middle; too wide for maxW: cut, with ...
+        g.font = (bold ? "600 " : "") + size + "px " + FONT;
+        if (maxW && g.measureText(s).width > maxW) {
+          let k = s.length;
+          while (k > 1 && g.measureText(s.slice(0, k) + "...").width > maxW) k--;
+          s = s.slice(0, k) + "...";
+        }
+        g.fillStyle = color; g.textAlign = align; g.textBaseline = "middle";
+        g.fillText(s, x, y);
+      };
+      const tw = (s, size, bold) => { g.font = (bold ? "600 " : "") + size + "px " + FONT; return g.measureText(s).width; };
+      const hline = y => { g.strokeStyle = GRID; g.lineWidth = 1; g.beginPath(); g.moveTo(L, Math.round(y) + 0.5); g.lineTo(R, Math.round(y) + 0.5); g.stroke(); };
+      const vline = (x, color, width, alpha) => {
+        g.save(); g.globalAlpha = alpha; g.strokeStyle = color; g.lineWidth = width;
+        g.beginPath(); g.moveTo(Math.round(x) + 0.5, T); g.lineTo(Math.round(x) + 0.5, B); g.stroke(); g.restore();
+      };
+      const fill = (x, y, ww, hh, color, alpha) => { g.save(); g.globalAlpha = alpha; g.fillStyle = color; g.fillRect(x, y, ww, hh); g.restore(); };
+      const timeX = x => Math.min(Math.max(x, L + 40), w - 41); // a time label's middle: inside at both edges
+      const Y = (v, lo, hi, top, ht) => top + ht - (v - lo) / (hi - lo) * ht;
+
+      g.fillStyle = BACK; g.fillRect(0, 0, w, h);
+      g.fillStyle = PLOT; g.fillRect(L, T, PW, plotH);
+      // time grid and labels (not under the cursor's time)
+      const step = chartStep(span, Math.max(2, Math.trunc(PW / 90)));
+      for (let t = Math.ceil(t0 / step) * step; t <= t1 + 1e-9; t += step) {
+        const x = X(t);
+        vline(x, GRID, 1, 1);
+        if (Math.abs(timeX(x) - timeX(cx)) > 70) txt(fmtLogTime(t), timeX(x), B + 13, 11, DIM, "center");
       }
-      const step = niceStep(ch.span, w < 600 ? 4 : 8);
-      const timeGrid = (y0, y1) => {
-        g.strokeStyle = "#2b333d"; g.lineWidth = 1;
-        g.beginPath();
-        for (let t = Math.ceil(t0 / step) * step; t <= t1; t += step) { const x = Math.round(X(t)) + 0.5; g.moveTo(x, y0); g.lineTo(x, y1); }
-        g.stroke();
-      };
-      const valText = s => fmtVal(ch.v[s.c][ci], s.c) + (ch.sw[s.c] ? "" : " " + (ch.units[s.c] || ""));
-      const boxText = (text, x, y, back) => { // right-aligned on a box, so a line under it does not hide it
-        const tw = g.measureText(text).width;
-        g.fillStyle = back;
-        g.fillRect(x - tw - 4, y - 7, tw + 8, 14);
-        g.fillStyle = "#9aa5b1";
-        g.fillText(text, x, y);
-      };
-      if (lanesMode) {
+
+      if (!N) txt("Tick channels in UVScan's chart to chart them", L + PW / 2, T + plotH / 2, 15, DIM, "center");
+      else if (mode === "lanes") {
+        const lh = plotH / N;
         sel.forEach((s, k) => {
-          const y0 = k * laneH, top = y0 + 26, bot = y0 + laneH - 8, c = s.c;
-          const back = k % 2 ? "#171c23" : "#1a2028";
-          g.fillStyle = back;
-          g.fillRect(0, y0, w, laneH);
-          timeGrid(y0, y0 + laneH);
-          const [lo, hi] = rangeOf(s, i0, i1);
-          plotBands(g, s, lo, hi, top, bot, w);
-          plotLine(g, s, lo, hi, top, bot, X, i0, i1, w);
-          // name and value, the scale at the right
-          g.textBaseline = "middle";
-          g.font = "600 13px system-ui, sans-serif";
-          g.fillStyle = s.color;
-          g.fillText(s.name, 8, y0 + 13);
-          const nw = g.measureText(s.name).width;
-          g.font = "700 15px system-ui, sans-serif";
-          g.fillStyle = "#ebeef2";
-          g.fillText(valText(s), 8 + nw + 10, y0 + 13);
-          g.font = "11px system-ui, sans-serif";
-          g.textAlign = "right";
-          const b = k % 2 ? "rgba(23,28,35,.85)" : "rgba(26,32,40,.85)";
-          boxText(ch.sw[c] ? "ON" : fmtVal(hi, c), w - 6, top + 4, b);
-          boxText(ch.sw[c] ? "OFF" : fmtVal(lo, c), w - 6, bot - 4, b);
-          g.textAlign = "left";
+          const top = T + k * lh, [lo, hi] = rangeOf(s, i0, i1);
+          if (k > 0) hline(top);
+          plotBands(g, s, lo, hi, top + 3, top + lh - 3, L, R);
+          plotLine(g, s, lo, hi, top + 3, top + lh - 3, X, i0, i1, L, R);
+          // the name on the side away from the cursor, the scale on the left
+          const name = caption(s), nw = Math.min(PW / 2 - 8, tw(name, 12, true) + 8);
+          if (cx > L + PW / 2) { fill(L + 2, top + 2, nw, 16, PLOT, 170 / 255); txt(name, L + 6, top + 10, 12, s.color, "left", true, PW / 2 - 8); }
+          else { fill(R - 8 - nw, top + 2, nw, 16, PLOT, 170 / 255); txt(name, R - 8, top + 10, 12, s.color, "right", true, PW / 2 - 8); }
+          txt(fmtAxis(hi, (hi - lo) / 4), axisW, top + 8, 10.5, s.color, "right", false, axisW);
+          if (lh >= 34) txt(fmtAxis(lo, (hi - lo) / 4), axisW, top + lh - 8, 10.5, s.color, "right", false, axisW);
+          // its value beside the cursor, inside its own lane
+          const v = ch.v[s.c][ci];
+          if (v != null) {
+            let y = Y(Math.min(hi, Math.max(lo, v)), lo, hi, top + 3, lh - 6);
+            if (lh >= 24) y = Math.min(top + lh - 10, Math.max(top + 10, y));
+            const bh = Math.min(18, Math.max(11, lh - 2)), fs = bh * 12 / 18, text = fmtShort(v, s.c) + " " + (ch.units[s.c] || "");
+            const bw = tw(text, fs, true) + 10;
+            const bx = cx + bw + 6 > R ? cx - bw - 6 : cx + 6, by = Math.min(B - bh, Math.max(T, y - bh / 2));
+            fill(bx, by, bw, bh, BACK, 225 / 255);
+            fill(bx, by, 3, bh, s.color, 1);
+            txt(text, bx + 5, by + bh / 2, fs, s.color, "left", true);
+          }
         });
       } else {
-        // overlay: every line on one plot, each on its own scale ("overlay")
-        // or all on one ("shared", its scale at the left)
-        const top = 10, bot = ph - 10;
-        g.fillStyle = "#1a2028";
-        g.fillRect(0, 0, w, ph);
-        timeGrid(0, ph);
         const rs = sel.map(s => rangeOf(s, i0, i1));
-        let one = null;
-        if (mode === "shared" && sel.length) {
-          one = [Math.min(...rs.map(r => r[0])), Math.max(...rs.map(r => r[1]))];
-          const st = niceStep(one[1] - one[0], 5);
-          g.font = "11px system-ui, sans-serif"; g.textBaseline = "middle"; g.textAlign = "right";
-          for (let v = Math.ceil(one[0] / st) * st; v <= one[1]; v += st) {
-            const y = Math.round(bot - (v - one[0]) / (one[1] - one[0]) * (bot - top)) + 0.5;
-            g.strokeStyle = "#2b333d"; g.lineWidth = 1;
-            g.beginPath(); g.moveTo(0, y); g.lineTo(w, y); g.stroke();
-            boxText(fmtTick(v, st), w - 6, y, "rgba(26,32,40,.85)");
+        if (mode === "overlay") {
+          sel.forEach((s, k) => plotBands(g, s, rs[k][0], rs[k][1], T, B, L, R));
+          sel.forEach((s, k) => {
+            const [lo, hi] = rs[k];
+            plotLine(g, s, lo, hi, T, B, X, i0, i1, L, R);
+            if (k < 6) { // one narrow axis each, side by side
+              const x = k * 46 + 44;
+              txt(s.name, x, T + 7, 10, s.color, "right", true, 44);
+              txt(fmtAxis(hi, (hi - lo) / 4), x, T + 21, 10.5, s.color, "right");
+              txt(fmtAxis((hi + lo) / 2, (hi - lo) / 4), x, T + plotH / 2, 10.5, s.color, "right");
+              txt(fmtAxis(lo, (hi - lo) / 4), x, B - 7, 10.5, s.color, "right");
+            }
+          });
+        } else { // one scale, at the left
+          const lo = Math.min(...rs.map(r => r[0])), hi = Math.max(...rs.map(r => r[1]));
+          const st = chartStep(hi - lo, Math.max(2, Math.trunc(plotH / 40)));
+          for (let v = Math.ceil(lo / st) * st; v <= hi; v += st) {
+            const y = Y(v, lo, hi, T, plotH);
+            hline(y);
+            txt(fmtAxis(v, st), axisW, y, 10.5, DIM, "right");
           }
-          g.textAlign = "left";
+          sel.forEach(s => plotLine(g, s, lo, hi, T, B, X, i0, i1, L, R));
         }
-        if (!one) sel.forEach((s, k) => plotBands(g, s, rs[k][0], rs[k][1], top, bot, w)); // (one scale: no bands, as in UVScan)
-        sel.forEach((s, k) => { const r = one || rs[k]; plotLine(g, s, r[0], r[1], top, bot, X, i0, i1, w); });
-        // each one's name and value (and its own scale) in a box at the top left
-        const rows = sel.map((s, k) => ({ s, text: s.name + "  " + valText(s),
-          scale: one || ch.sw[s.c] ? "" : "  " + fmtVal(rs[k][0], s.c) + " - " + fmtVal(rs[k][1], s.c) }));
-        g.textBaseline = "middle";
-        let bw = 0;
-        for (const r of rows) {
-          g.font = "600 13px system-ui, sans-serif"; r.w1 = g.measureText(r.text).width;
-          g.font = "11px system-ui, sans-serif"; r.w2 = g.measureText(r.scale).width;
-          bw = Math.max(bw, r.w1 + r.w2);
+      }
+
+      // marks: a line, and the number in a flag at the top
+      for (const [t, num] of ch.marks) {
+        const x = X(t);
+        if (x < L || x > R) continue;
+        vline(x, MARK, 1.5, 190 / 255);
+        const fw = tw(String(num), 11, true) + 8;
+        fill(x, T, fw, 16, MARK, 1);
+        txt(String(num), x + fw / 2, T + 8, 11, BACK, "center", true);
+      }
+      // a range selected in UVScan
+      if (lk.sel0 != null && lk.sel1 > lk.sel0) {
+        const x0 = Math.max(L, X(lk.sel0)), x1 = Math.min(R, X(lk.sel1));
+        if (x1 > x0) {
+          fill(x0, T, x1 - x0, plotH, SEL, 38 / 255);
+          vline(x0, SEL, 1, 160 / 255); vline(x1, SEL, 1, 160 / 255);
         }
-        if (rows.length) {
-          const bx = 8, by = ch.marks.length ? 20 : 8;
-          g.fillStyle = "rgba(15,19,24,.82)";
-          g.fillRect(bx, by, bw + 30, rows.length * 18 + 8);
+      }
+      // the cursor, its time, and (overlaid) one box with every value at it
+      if (cx >= L && cx <= R) {
+        vline(cx, CURSOR, 1.2, 200 / 255);
+        txt(fmtLogTime(cursor), timeX(cx), B + 13, 11, CURSOR, "center", true);
+        if (mode !== "lanes" && N) {
+          const rows = sel.map(s => {
+            const v = ch.v[s.c][ci], lvl = s.levels && v != null ? levelOf(s.levels, v) : -1;
+            return { text: s.name + ":  " + fmtShort(v, s.c) + " " + (ch.units[s.c] || ""),
+              color: lvl >= 0 && s.levels[lvl].color ? s.levels[lvl].color : s.color };
+          });
+          const pw = Math.max(...rows.map(r => tw(r.text, 12, true))) + 16;
+          const bx = cx + pw + 10 > R ? cx - pw - 8 : cx + 8, by = T + (ch.marks.length ? 20 : 6);
+          fill(bx, by, pw, rows.length * 17 + 8, BACK, 230 / 255);
           rows.forEach((r, k) => {
-            const y = by + 13 + k * 18;
-            // in its alert level's colour while one matches, as in UVScan
-            const x = ch.v[r.s.c][ci], L = r.s.levels && x != null ? levelOf(r.s.levels, x) : -1;
-            g.fillStyle = L >= 0 && r.s.levels[L].color ? r.s.levels[L].color : r.s.color;
-            g.fillRect(bx + 6, y - 4, 8, 8);
-            g.font = "600 13px system-ui, sans-serif"; g.fillText(r.text, bx + 20, y);
-            g.font = "11px system-ui, sans-serif"; g.fillStyle = "#9aa5b1"; g.fillText(r.scale, bx + 20 + r.w1, y);
+            fill(bx + 4, by + 8 + k * 17, 6, 9, r.color, 1);
+            txt(r.text, bx + 13, by + 4 + k * 17 + 8.5, 12, r.color, "left", true);
           });
         }
-      }
-      // marks, the cursor, the time axis
-      g.font = "600 11px system-ui, sans-serif";
-      g.textBaseline = "middle";
-      for (const [t, num] of ch.marks) {
-        if (t < t0 || t > t1) continue;
-        const x = Math.round(X(t)) + 0.5;
-        g.strokeStyle = "#ffb020"; g.lineWidth = 1.5;
-        g.beginPath(); g.moveTo(x, 0); g.lineTo(x, ph); g.stroke();
-        g.fillStyle = "#ffb020"; g.fillText(String(num), x + 3, 8);
-      }
-      if (ch.paused && ch.cursor != null) {
-        const x = Math.round(X(ch.t[ci])) + 0.5;
-        g.strokeStyle = "rgba(235,238,242,.7)"; g.lineWidth = 1;
-        g.beginPath(); g.moveTo(x, 0); g.lineTo(x, ph); g.stroke();
-      }
-      g.fillStyle = "#9aa5b1"; g.font = "11px system-ui, sans-serif"; g.textAlign = "center";
-      for (let t = Math.ceil(t0 / step) * step; t <= t1; t += step) {
-        const x = X(t);
-        if (x > 20 && x < w - 20) g.fillText(fmtTime(t), x, ph + axisH / 2);
       }
       g.textAlign = "left";
     }
 
     function chartAt(ev) {
       if (!ch.t.length) return;
-      const cv = $("cv"), rc = cv.getBoundingClientRect();
-      if (!ch.paused) { ch.paused = true; ch.t1 = ch.t[ch.t.length - 1]; }
-      ch.cursor = ch.t1 - ch.span + (ev.clientX - rc.left) / rc.width * ch.span;
+      const cv = $("cv"), rc = cv.getBoundingClientRect(), px = ch.plotX || { L: 0, R: rc.width };
+      pauseHere();
+      const f = Math.min(1, Math.max(0, (ev.clientX - rc.left - px.L) / (px.R - px.L)));
+      ch.cursor = ch.t1 - ch.pspan + f * ch.pspan;
       drawChart();
     }
     $("cv").addEventListener("pointerdown", ev => { chartAt(ev); try { $("cv").setPointerCapture(ev.pointerId); } catch (e) { } });
     $("cv").addEventListener("pointermove", ev => { if (ev.buttons) chartAt(ev); });
+    // this device's own pause, at what it shows now (Live: back to UVScan's)
+    function pauseHere() {
+      if (ch.paused || !ch.view) return;
+      const lk = (last && last.chart) || {};
+      ch.paused = true; ch.t1 = ch.view.t1; ch.pspan = ch.view.t1 - ch.view.t0;
+      ch.cursor = lk.paused ? lk.cursor : ch.t[ch.t.length - 1];
+    }
     $("clive").onclick = () => {
       if (ch.paused) { ch.paused = false; ch.cursor = null; }
-      else if (ch.t.length) { ch.paused = true; ch.t1 = ch.t[ch.t.length - 1]; ch.cursor = ch.t1; }
+      else if (ch.t.length) pauseHere();
       drawChart();
     };
     $("cpick").onclick = () => { ch.picking = !ch.picking; $("chips").hidden = !ch.picking; };
@@ -1320,6 +1362,11 @@ begin
     }
     // UVScan's span (the nearest this has), unless this device picked one
     function syncSpan() {
+      const lk = last && last.chart;
+      if (lk && lk.paused && ch.t.length) {
+        const need = Math.min(900, Math.ceil(ch.t[ch.t.length - 1] - lk.t0) + 5);
+        if (lk.t0 < ch.t[0] - 0.5 && need > ch.loaded) { ch.need = need; ch.session = -1; }
+      } else ch.need = 0;
       const want = ch.ownSpan || (last && last.chart && last.chart.span);
       if (!want) return;
       const opts = [...$("span").options].map(o => +o.value);
@@ -1330,6 +1377,7 @@ begin
     $("span").onchange = () => {
       ch.ownSpan = +$("span").value;
       setSpan(ch.ownSpan);
+      if (ch.paused) ch.pspan = ch.span;
       saveChart();
       drawChart();
     };
