@@ -2,7 +2,7 @@
 
 UVScan reads live data, trouble codes and vehicle information from GM vehicles on the **Class 2 / J1850 VPW** bus through an **AVT‑841** (or 838 / 842) interface or an **ELM327** type adapter (Bluetooth, USB or Wi‑Fi), logs it to CSV, shows it as a grid or as gauges with alerts, and can send real‑time control commands. It was written for the 1996‑2005 GM V6s (3100 / 3400 / 3800) but works with any Class 2 PCM.
 
-- [Installing](#installing)
+- [Installing](#installing) ([on Android](#installing-on-android))
 - [The main window](#the-main-window)
 - [Phones and tablets](#phones-and-tablets)
 - [Connecting](#connecting)
@@ -35,11 +35,29 @@ Nearly all screenshots and clips were taken with the built‑in **Simulator**, s
 
 **Windows:** download `UVScan-<version>-build<n>-setup.exe` from the [latest release](https://github.com/jdredd87/UVSCAN/releases/latest) and run it. It asks whether to install for you only (no admin needed) or for all users of the PC, then adds UVScan to the Start menu and the desktop (untick *Create a desktop shortcut* if you don't want that one). The setup program is not signed yet, so Windows may say *Windows protected your PC*: click *More info*, then *Run anyway*. Running a newer setup updates UVScan in place. To remove it, *Settings → Apps → UVScan → Uninstall*; your PIDs, lists, settings (`C:\ProgramData\UVScan`) and logs stay.
 
-**Android:** install `UVScan.apk` (allow installs from the app that opens it, a file manager say).
+**Android:** download `UVScan-<version>-build<n>.apk` from the same release on the phone and open it. UVScan isn't in the Play Store, so Android asks first: see [Installing on Android](#installing-on-android) below.
 
 **Updates:** once a day, a few seconds after it starts, UVScan asks GitHub whether there is a newer release. If there is, it says what is new and offers to install it: on Windows it downloads the setup program and closes; the setup shows just a progress window, keeps the choices made when UVScan was installed and starts UVScan again (installed for all users, Windows first asks for permission) (your data and logs stay); on a phone it opens the release page. While a scan or a log is running it only shows a notice, so a drive is never interrupted. *More → About* shows what the last check found, has **Check now**, and **Check for updates at start** turns the daily check off (nothing is sent but the request for the latest release). On an adapter's own Wi‑Fi there is no internet, so the check says *no internet connection* and tries again the next time UVScan starts.
 
 ![Asking to install a newer UVScan](images/win-update.png)
+
+### Installing on Android
+
+UVScan runs on 64‑bit phones and tablets with Android 6 or later. It isn't in the Play Store; the APK on the release page is the app itself, and Android installs it once you allow it.
+
+1. On the phone, open the [latest release](https://github.com/jdredd87/UVSCAN/releases/latest) in the browser and, under **Assets**, tap `UVScan-<version>-build<n>.apk` to download it. (Or copy the file to the phone from a PC.)
+2. Open it: tap the download when it finishes, or find it in **Files** / **My Files** → **Downloads**.
+3. Android says that, for your security, the phone isn't allowed to install unknown apps from this source. Tap **Settings**, turn on **Allow from this source** (for the browser or the files app that opened it), go back and tap **Install**. On Android 7 and older the switch is **Settings → Security → Unknown sources**.
+4. **Play Protect** may warn that it doesn't know the developer (*Unsafe app blocked* or *App not scanned*). Tap **More details → Install anyway**; sending it for scanning is up to you.
+5. Open UVScan. It asks for **Nearby devices** (or *Location* on older Android) when you pick a Bluetooth adapter, and for USB permission when an adapter is plugged in.
+
+You can turn **Allow from this source** off again afterwards; installing updates the same way asks again.
+
+**Updates:** UVScan's daily check opens the release page when there is a newer one. Download the new APK and install it the same way: it installs over the one you have, and your settings, PIDs, dashboards and logs stay. **Don't uninstall first** — uninstalling deletes UVScan's settings and the logs in its own folder.
+
+**From a PC** with adb: `adb install -r UVScan-<version>-build<n>.apk`.
+
+**Had an APK built from the source before 2.0.9?** That one was signed with a different key, so Android won't install the release over it (*App not installed* or *package conflicts with an existing package*). Copy the logs you want to keep off first (the *Logs* page → share, or from a PC: `Android/data/com.jdredd87.uvscan/files/Logs`), uninstall UVScan, then install the release. From then on, releases update in place.
 
 ## The main window
 

@@ -1,21 +1,25 @@
 <#
   Publishes a UVScan release on GitHub: the tag v<version> with the Windows
-  setup program. UVScan's update check (More > About) offers the newest one.
+  setup program and the Android APK. UVScan's update check (More > About)
+  offers the newest one.
 
   1. Change AppVersion in src\UVScan.Version.pas and the version info in
      UVScan.dproj to match (Windows file version, Android versionName),
      commit and push.
-  2. powershell -File tools\release.ps1 [-Notes notes.md] [-DryRun]
+  2. Set UV_KEYSTORE and UV_KEYSTORE_PASS to the Android release key (see
+     docs\development.md), then
+     powershell -File tools\release.ps1 [-Notes notes.md] [-DryRun] [-NoApk]
 
   It checks that everything is committed and pushed, the versions agree and
   the tag is new; builds and tests (build.cmd), builds the setup program
-  (build.cmd installer), tags, pushes the tag and makes the release (gh).
+  (build.cmd installer) and the APK (build.cmd android release; -NoApk
+  leaves it out), tags, pushes the tag and makes the release (gh).
   Without -Notes the release says how to install it and lists the commits
   since the last release; in -Notes, {VERSION} and {BUILD} are filled in (for
   the setup program's name). Start the notes with a "### What's new" section:
   that is what the update question shows. -DryRun stops before the tag.
 #>
-param([string]$Notes = '', [switch]$DryRun)
+param([string]$Notes = '', [switch]$DryRun, [switch]$NoApk)
 $ErrorActionPreference = 'Continue' # git and gh write to stderr; their exit codes are checked
 $root = Split-Path -Parent $PSScriptRoot
 Set-Location $root
@@ -29,6 +33,9 @@ $dproj = Get-Content UVScan.dproj -Raw
 if ($dproj -notmatch [regex]::Escape("FileVersion=$ver.0;")) { Fail "UVScan.dproj: the Windows file version is not $ver.0" }
 if ($dproj -notmatch [regex]::Escape("versionName=$ver;")) { Fail "UVScan.dproj: the Android versionName is not $ver" }
 
+if (-not $NoApk -and (-not $env:UV_KEYSTORE -or -not $env:UV_KEYSTORE_PASS)) {
+  Fail 'set UV_KEYSTORE and UV_KEYSTORE_PASS to the Android release key (or -NoApk)'
+}
 if (git status --porcelain --untracked-files=no) { Fail 'commit (or undo) the changes first' }
 git fetch -q origin
 if ((git rev-parse HEAD) -ne (git rev-parse '@{u}')) { Fail 'push first (or pull): this is not what GitHub has' }
@@ -45,6 +52,14 @@ $build = [regex]::Match($stamp, 'BuildNumber\s*=\s*(\d+)').Groups[1].Value
 if ($stamp -match "BuildCommit\s*=\s*'[^']*\+'") { Fail 'built with uncommitted changes (did the build change a file?)' }
 $setup = "installer\Output\UVScan-$ver-build$build-setup.exe"
 if (-not (Test-Path $setup)) { Fail "no $setup" }
+$assets = @($setup)
+if (-not $NoApk) {
+  & (Join-Path $root 'build.cmd') android release
+  if ($LASTEXITCODE -ne 0) { Fail 'the APK did not build' }
+  $apk = "installer\Output\UVScan-$ver-build$build.apk"
+  if (-not (Test-Path $apk)) { Fail "no $apk (did the build number change?)" }
+  $assets += $apk
+}
 
 if ($Notes) {
   # {VERSION} and {BUILD} in the notes become this release's
@@ -53,6 +68,10 @@ if ($Notes) {
   $text = "UVScan $ver (build $build).`n`n" +
     "**Windows:** download ``UVScan-$ver-build$build-setup.exe`` below and run it. " +
     "Already have UVScan? It offers the update itself (*More > About*), and your PIDs, lists, settings and logs stay.`n"
+  if (-not $NoApk) {
+    $text += "`n**Android:** download ``UVScan-$ver-build$build.apk`` below on the phone and open it; " +
+      "[installing without the Play Store](https://github.com/jdredd87/UVSCAN/blob/main/docs/user-guide.md#installing-on-android) says how.`n"
+  }
   $prev = git describe --tags --abbrev=0 --match 'v[0-9]*' 2>$null
   if ($LASTEXITCODE -eq 0 -and $prev) {
     $log = git log --pretty='- %s' "$prev..HEAD"
@@ -61,12 +80,12 @@ if ($Notes) {
 }
 $notesFile = Join-Path $env:TEMP "uvscan-release-$ver.md"
 [IO.File]::WriteAllText($notesFile, $text)
-Write-Host "--- $tag, $setup`n$text---"
+Write-Host "--- $tag, $($assets -join ', ')`n$text---"
 if ($DryRun) { Write-Host 'Dry run: no tag, no release.'; exit 0 }
 
 git tag -a $tag -m "UVScan $ver"
 git push -q origin $tag
 if ($LASTEXITCODE -ne 0) { Fail 'could not push the tag' }
-gh release create $tag $setup --verify-tag --title "UVScan $ver" --notes-file $notesFile
+gh release create $tag @assets --verify-tag --title "UVScan $ver" --notes-file $notesFile
 if ($LASTEXITCODE -ne 0) { Fail 'gh could not make the release (the tag is pushed; run gh release create again)' }
 Write-Host "Released $tag"

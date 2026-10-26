@@ -5,6 +5,8 @@ rem probe, the simulator served on the network for the Network (TCP/IP) connecti
 rem agent for testing on another PC).
 rem Usage: build
 rem        build android [install]   - Android64 debug APK (install: adb install on the attached phone)
+rem        build android release     - the APK for a release, signed with the release key: set
+rem                                    UV_KEYSTORE (the .p12) and UV_KEYSTORE_PASS first
 rem        build installer           - Win32 Release and its setup program (Inno Setup 6), see installer\
 setlocal
 if /i "%~1"=="android" goto android
@@ -30,10 +32,20 @@ exit /b %UV_RESULT%
 call "C:\Program Files (x86)\Embarcadero\Studio\37.0\bin\rsvars.bat" || exit /b 1
 rem The SDK profile is named explicitly: the IDE default may point at an SDK folder from an older update.
 if "%UV_ANDROID_SDK%"=="" set UV_ANDROID_SDK=AndroidAPI36.1_64bit.sdk
+if /i "%~2"=="release" goto androidrelease
 msbuild "%~dp0UVScan.dproj" /t:Build;Deploy /p:Config=Debug /p:Platform=Android64 /p:PlatformSDK=%UV_ANDROID_SDK% /nologo /v:minimal || exit /b 1
 echo APK: %~dp0Android64\Debug\UVScan\bin\UVScan.apk
 if /i not "%~2"=="install" exit /b 0
 "C:\Users\Public\Documents\Embarcadero\Studio\37.0\CatalogRepository\AndroidSDK-37.0.59082.6021\platform-tools\adb.exe" install -r "%~dp0Android64\Debug\UVScan\bin\UVScan.apk"
+exit /b %ERRORLEVEL%
+
+:androidrelease
+rem The Debug configuration (its deployment holds the icons and files) built as for a store:
+rem not debuggable, an app bundle (unsigned: Delphi wants the IDE's encrypted password), made
+rem into one APK signed with the release key by tools\apk.ps1.
+if "%UV_KEYSTORE%"=="" echo Set UV_KEYSTORE and UV_KEYSTORE_PASS to the release key first. & exit /b 1
+msbuild "%~dp0UVScan.dproj" /t:Build;Deploy /p:Config=Debug /p:Platform=Android64 /p:PlatformSDK=%UV_ANDROID_SDK% /p:BT_BuildType=AppStore /p:PF_KeyStore= /p:ENV_PF_KeyStore= /nologo /v:minimal || exit /b 1
+powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0tools\apk.ps1"
 exit /b %ERRORLEVEL%
 
 :installer

@@ -24,6 +24,18 @@ builds `Android64\Debug\UVScan\bin\UVScan.apk` and, with `install`, puts it on t
 - `deploy\android\device_filter.xml`: the USB adapters UVScan can drive (deployed to `res\xml`).
 - `UVScan.deployproj`: what goes into the APK.
 
+That APK is a debug build, signed with Delphi's debug key on the PC that built it. The APK on a release comes from
+
+```
+set UV_KEYSTORE=C:\Users\<you>\UVScan-signing\uvscan-release.p12
+set UV_KEYSTORE_PASS=<its password>
+build.cmd android release
+```
+
+which builds the same Debug configuration (its deployment holds the icons and files) as for a store (`BT_BuildType=AppStore`): not debuggable, an app bundle, `Android64\Debug\UVScan\bin\UVScan.aab`. `tools\apk.ps1` then makes it into one universal APK with bundletool (it comes with Delphi), signed with the release key, `installer\Output\UVScan-<version>-build<n>.apk`. The bundle itself is left unsigned: Delphi's signing step wants the password encrypted as the IDE stores it.
+
+The release key (`uvscan-release.p12`, alias `uvscan`, made 2026-10-26, SHA-256 `4D:8D:8D:92:...:4D:EF`) is not in the repository; `README-KEY.txt` beside it has the password. **Every release APK must be signed with it**: Android installs an update only over an app with the same key, so without it people would have to uninstall (losing their settings and logs) to update. Keep a copy of both off the PC. Copies installed with `build.cmd android install` have the debug key, so a release can't install over them (and the other way round): uninstall first, after copying off what's worth keeping.
+
 On Android the data folder is the app's private documents folder, and logs go to `Android/data/com.jdredd87.uvscan/files/Logs` (reachable over USB). The serial port is USB host (`UVScan.Serial.Android`): FTDI (the AVT‑841's own USB port, if it is FTDI), CP210x, CH340/CH341, CDC‑ACM and the Keyspan USA‑19HS (the bench's COM9 adapter; its firmware is in ROM, and the other Keyspan models, which need firmware loaded, are not supported). Android asks for permission the first time; connect again after allowing it.
 
 Receiving has a thread of its own (`TUsbReader`) that always keeps one `UsbRequest` queued on the IN endpoint and waits in `requestWait`; `Read` takes from what it collected. Reading with `bulkTransfer` and a timeout lost data: when the timeout ran out as a packet arrived, the packet was thrown away, and the scan engine reads with timeouts of 20 ms (on the S9+ with the Keyspan, 9.3 instead of 10 rows/s). The Keyspan runs in DMA mode above 57600 baud, as in the Linux driver; in its "by hand" mode at 115200 nearly every byte came in a USB packet of its own. With the forwarding length and timeout of 1 that UVScan sets, short replies are not held back in DMA mode.
@@ -68,12 +80,12 @@ builds `Win32\Release\UVScan.exe` and the setup program `installer\Output\UVScan
 
 ### Releases
 
-A release is a GitHub release tagged `v<AppVersion>` with the setup program attached; UVScan's update check (`src\UVScan.Update.pas`) reads `releases/latest` from the GitHub API, compares its tag with `AppVersion` and, on Windows, downloads the asset ending in `-setup.exe` (a phone opens the release page; an `.apk` asset is recognised for later). Drafts and pre-releases are not offered. To release:
+A release is a GitHub release tagged `v<AppVersion>` with the setup program and the APK attached; UVScan's update check (`src\UVScan.Update.pas`) reads `releases/latest` from the GitHub API, compares its tag with `AppVersion` and, on Windows, downloads the asset ending in `-setup.exe` (a phone opens the release page, where the APK is; an `.apk` asset is recognised for later). Drafts and pre-releases are not offered. To release:
 
-1. Raise `AppVersion` in `src\UVScan.Version.pas` and the version info in `UVScan.dproj` (Windows file version, Android `versionName`) to match; commit and push.
-2. `powershell -File tools\release.ps1` (`-Notes notes.md` for your own text, `-DryRun` to stop before tagging).
+1. Raise `AppVersion` in `src\UVScan.Version.pas` and the version info in `UVScan.dproj` (Windows file version, Android `versionName`, and `versionCode` one up, or Android won't take it as an update) to match; commit and push.
+2. Set `UV_KEYSTORE` and `UV_KEYSTORE_PASS` (above), then `powershell -File tools\release.ps1` (`-Notes notes.md` for your own text, `-DryRun` to stop before tagging, `-NoApk` for a release without the APK).
 
-It checks that everything is committed and pushed, the two versions agree and the tag is new; runs `build.cmd` (build and tests) and `build.cmd installer`; then tags, pushes the tag and makes the release with `gh`. Its default notes say how to install and list the commits since the previous release. UVScan shows, in the question whether to install, only the section of the notes under the first heading that says *new* or *change* (*### What’s new*, *### Changes since v2.0.0*), as plain text; write one in your own notes. Builds between releases keep the version and differ in the build number, so the update check only offers a release with a higher version.
+It checks that everything is committed and pushed, the two versions agree and the tag is new; runs `build.cmd` (build and tests), `build.cmd installer` and `build.cmd android release`; then tags, pushes the tag and makes the release with `gh`. Its default notes say how to install and list the commits since the previous release. UVScan shows, in the question whether to install, only the section of the notes under the first heading that says *new* or *change* (*### What’s new*, *### Changes since v2.0.0*), as plain text; write one in your own notes. Builds between releases keep the version and differ in the build number, so the update check only offers a release with a higher version.
 
 ## Tests
 

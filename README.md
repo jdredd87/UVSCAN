@@ -6,7 +6,7 @@ A data logger and scan tool for GM vehicles on **J1850 VPW (GM Class 2)**, using
 
 It is a rewrite of the 2008 UVSCAN (Delphi 2007) for **Delphi 13 FireMonkey (FMX)**, with no third‑party components. It runs on Windows (Win32) and builds for **Android** (64‑bit); the last VCL version is git tag `vcl-final`.
 
-**Download:** the Windows setup program is on the [latest release](https://github.com/jdredd87/UVSCAN/releases/latest). UVScan checks for newer ones itself and offers to install them, then starts again.
+**Download:** the Windows setup program and the Android APK are on the [latest release](https://github.com/jdredd87/UVSCAN/releases/latest). On Windows, UVScan checks for newer ones itself and offers to install them, then starts again. The APK installs without the Play Store: see [installing on Android](docs/user-guide.md#installing-on-android).
 
 ![Live data](docs/images/live-data.png)
 
@@ -29,7 +29,7 @@ It is a rewrite of the 2008 UVSCAN (Delphi 2007) for **Delphi 13 FireMonkey (FMX
 - **Sensors** — a wideband (Innovate LC‑1 / LC‑2 / LM‑2 / MTX‑L over MTS, AEM X‑Series, PLX iMFD modules, Zeitronix ZT‑2 / ZT‑3, Tech Edge), an EGT box or anything that sends numbers on a serial, Bluetooth or network port, read beside the car: its readings are PIDs, so they log, chart, show on gauges and set off alerts with the PCM's. Add one from a template or build your own on one page — test it live, add PIDs with formulas and calculated ones, and share it all as a file; [examples](examples/sensors/) include Arduino sketches to build your own.
 - **Network AVT** — an AVT with an Ethernet port (or behind a serial‑to‑network adapter) over TCP/IP, from Windows or a phone.
 - **ELM327 adapters** — Bluetooth (a phone or a PC), USB or Wi‑Fi, with the same DPID streaming at about 10 updates a second; only the AVT's analog inputs are missing. Tried with the vLinker FD over Bluetooth and a cheap Wi‑Fi clone, on a PC and on a phone.
-- **Installer and updates** — a Windows setup program on the [releases page](https://github.com/jdredd87/UVSCAN/releases/latest); UVScan checks for a newer release once a day and offers to install it (*More → About*).
+- **Installer and updates** — a Windows setup program and an Android APK on the [releases page](https://github.com/jdredd87/UVSCAN/releases/latest); UVScan checks for a newer release once a day and offers to install it (*More → About*).
 - **Simulator** — choose port *Simulator* to use everything without hardware, as an AVT or as an ELM327.
 
 | | |
@@ -82,10 +82,11 @@ Delphi 13 (RAD Studio 37.0); Win32 Debug for now:
 ```
 build.cmd
 build.cmd android [install]
+build.cmd android release
 build.cmd installer
 ```
 
-`build.cmd installer` builds the Win32 Release exe and its setup program (Inno Setup 6). `build.cmd` builds the app and the DUnitX tests, runs the tests, and builds the console tools (`tools\Win32\UVScanProbe.exe`, the bench tool, and `tools\Win32\UVScanSimServer.exe`, the simulator on the network). See [development](docs/development.md).
+`build.cmd installer` builds the Win32 Release exe and its setup program (Inno Setup 6); `build.cmd android release`, the APK for a release, signed with the release key. `build.cmd` builds the app and the DUnitX tests, runs the tests, and builds the console tools (`tools\Win32\UVScanProbe.exe`, the bench tool, and `tools\Win32\UVScanSimServer.exe`, the simulator on the network). See [development](docs/development.md).
 
 ## Status
 
