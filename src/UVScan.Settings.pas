@@ -63,6 +63,8 @@ type
     RoundReadings: Boolean; // gauges and live data: tidy decimals per PID (logs keep every digit)
     LockRotation: Boolean;  // phone / tablet: the screen keeps the way it faces (bumps in a car)
     ScanView: string;       // the Live page when a scan starts: 'keep' (as it was), 'grid' or 'chart'
+    StartPage: string;      // the page UVScan opens on: one of StartPageKeys ('last': LastPage)
+    LastPage: string;       // the page it showed when it last closed (a StartPageKeys key, not 'last')
     QuickStarts: TQuickStarts; // named ways to start in a hurry (Quick start menu, shortcuts)
     CheckUpdates: Boolean;  // ask GitHub for a newer UVScan when it starts (once a day)
     UpdateChecked: TDateTime; // when it last asked, 0: never
@@ -86,6 +88,9 @@ type
 const
   SettingsVersion = 1;
   StreamSpeedKeys: array[TStreamSpeed] of string = ('fast', 'medium', 'slow');
+  { The pages UVScan can open on (TAppSettings.StartPage), in the order the
+    setting lists them; 'last': the one it showed when it last closed. }
+  StartPageKeys: array[0..6] of string = ('connect', 'pids', 'live', 'gauges', 'codes', 'more', 'last');
 
 { Low nibble of the $2A rate byte (UVScan.Class2.StreamSpeed*). }
 function StreamSpeedNibble(Speed: TStreamSpeed): Byte;
@@ -161,6 +166,8 @@ begin
   KeepScreenOn := True;
   RoundReadings := True;
   ScanView := 'keep';
+  StartPage := 'live';
+  LastPage := 'live';
   QuickStarts := DefaultQuickStarts;
   CheckUpdates := True;
   UpdateChecked := 0;
@@ -234,6 +241,8 @@ begin
   Sec.AddPair('roundReadings', TJSONBool.Create(RoundReadings));
   Sec.AddPair('lockRotation', TJSONBool.Create(LockRotation));
   Sec.AddPair('scanView', ScanView);
+  Sec.AddPair('startPage', StartPage);
+  Sec.AddPair('lastPage', LastPage);
   Result.AddPair('appearance', Sec);
 
   Result.AddPair('quickStarts', QuickStartsToJson(QuickStarts));
@@ -354,6 +363,12 @@ begin
     ScanView := LowerCase(JStr(Sec, 'scanView', ScanView));
     if not MatchText(ScanView, ['keep', 'grid', 'chart']) then
       ScanView := 'keep';
+    StartPage := LowerCase(JStr(Sec, 'startPage', StartPage));
+    if not MatchText(StartPage, StartPageKeys) then
+      StartPage := 'live';
+    LastPage := LowerCase(JStr(Sec, 'lastPage', LastPage));
+    if not MatchText(LastPage, StartPageKeys) or (LastPage = 'last') then
+      LastPage := 'live';
   end;
 
   // Missing (an older file): the defaults stay; there but empty: none.

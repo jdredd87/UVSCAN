@@ -69,6 +69,8 @@ type
     chkLockRotate: TCheckBox;
     lblScanView: TLabel;
     cbScanView: TComboBox;
+    lblStartPage: TLabel;
+    cbStartPage: TComboBox;
     chkAlwaysLog: TCheckBox;
     chkOneLog: TCheckBox;
     chkAskKeep: TCheckBox;
@@ -212,6 +214,7 @@ type
     procedure chkRoundChange(Sender: TObject);
     procedure chkLockRotateChange(Sender: TObject);
     procedure cbScanViewChange(Sender: TObject);
+    procedure cbStartPageChange(Sender: TObject);
     procedure chkAlwaysLogChange(Sender: TObject);
     procedure chkOneLogChange(Sender: TObject);
     procedure KeepLogOptionChange(Sender: TObject);
@@ -427,6 +430,7 @@ type
     FMoreActions: TArray<TNotifyEvent>; // ... or what it does (a page of its own)
     FPageMenu: TPopupMenu;
     FPidsDocked: Boolean;            // wide window: the PID list sits beside the pages
+    FStartShown: Boolean;            // the page it opens on is shown: the page now is worth saving
     FWide: Boolean;                  // the window is wide enough for the PID list beside the pages
     FFullScreen: Boolean;            // the dashboard alone on the whole screen
     FQuick: TQuickStart;             // the quick start (or command line) being carried out
@@ -515,6 +519,8 @@ type
     procedure LiveChartMenuClick(Sender: TObject);
     procedure ShowPage(Page: TTabItem);
     function CurrentPage: TTabItem;
+    function PageKey(Page: TTabItem): string;
+    function PageForKey(const Key: string): TTabItem;
     procedure UpdateAppBar;
     procedure PlaceAddGauge;
     procedure CtlWarnClick(Sender: TObject);
@@ -861,7 +867,8 @@ begin
     C.OnResized := FlowBoxResized;
   ArrangeLayout;
   UpdateControls;
-  ShowPage(tiLive);
+  ShowPage(PageForKey(FSettings.StartPage)); // Settings > When UVScan starts, show
+  FStartShown := True;
   // Android ends an app without closing its form (swiped away, or killed in
   // the background), so save whenever the app leaves the screen.
   if TPlatformServices.Current.SupportsPlatformService(IFMXApplicationEventService, Events) then
@@ -1423,6 +1430,18 @@ begin
   cbScanView.Items.Add('The chart');
   cbScanView.ItemIndex := 0;
   cbScanView.OnChange := cbScanViewChange;
+  // Settings: the page UVScan opens on.
+  lblStartPage := TLabel.Create(Self);
+  lblStartPage.Stored := False;
+  lblStartPage.Parent := gbAppearance;
+  lblStartPage.Text := 'When UVScan starts, show';
+  cbStartPage := TComboBox.Create(Self);
+  cbStartPage.Stored := False;
+  cbStartPage.Parent := gbAppearance;
+  cbStartPage.Height := cbTheme.Height;
+  cbStartPage.Items.AddStrings(['Connect', 'PIDs', 'Live', 'Gauges', 'Codes', 'More', 'The page used last']); // as StartPageKeys
+  cbStartPage.ItemIndex := 2;
+  cbStartPage.OnChange := cbStartPageChange;
   // Gauges page: the dashboard's own background behind the gauges.
   FDashBack := TRectangle.Create(Self);
   FDashBack.Parent := sbDash.Parent;
@@ -1774,6 +1793,38 @@ begin
     Result := tcMain.ActiveTab;
   if Result = nil then
     Result := tiLive;
+end;
+
+{ A page as StartPageKeys names it: a main page, or 'more' for More and the
+  pages under it. }
+function TMainForm.PageKey(Page: TTabItem): string;
+begin
+  if Page = tiConnect then
+    Result := 'connect'
+  else if Page = tiPids then
+    Result := 'pids'
+  else if Page = tiDashboard then
+    Result := 'gauges'
+  else if Page = tiVehicle then
+    Result := 'codes'
+  else if (Page = tiMore) or (Page.TabControl = tcMore) then
+    Result := 'more'
+  else
+    Result := 'live';
+end;
+
+function TMainForm.PageForKey(const Key: string): TTabItem;
+begin
+  case IndexText(Key, StartPageKeys) of
+    0: Result := tiConnect;
+    1: Result := tiPids;
+    3: Result := tiDashboard;
+    4: Result := tiVehicle;
+    5: Result := tiMore;
+    6: Result := PageForKey(FSettings.LastPage);
+  else
+    Result := tiLive;
+  end;
 end;
 
 procedure TMainForm.ShowPage(Page: TTabItem);
@@ -2858,6 +2909,14 @@ begin
   SaveSettings;
 end;
 
+procedure TMainForm.cbStartPageChange(Sender: TObject);
+begin
+  if not FChromeReady then
+    Exit;
+  FSettings.StartPage := StartPageKeys[EnsureRange(cbStartPage.ItemIndex, 0, High(StartPageKeys))];
+  SaveSettings;
+end;
+
 procedure TMainForm.cbScanViewChange(Sender: TObject);
 const
   Keys: array[0..2] of string = ('keep', 'grid', 'chart');
@@ -3581,9 +3640,11 @@ begin
     end;
   end;
   Y := Row(lblScanView, cbScanView, nil, gbAppearance, Y + 2);
+  Y := Row(lblStartPage, cbStartPage, nil, gbAppearance, Y);
   if gbAppearance.Width >= 50 then
   begin
     cbScanView.Width := Min(cbScanView.Width, 260);
+    cbStartPage.Width := Min(cbStartPage.Width, 260);
     gbAppearance.Height := Y + 4;
   end;
   Y := Row(lblLogFolderCaption, edtLogFolder, btnBrowseLogFolder, gbLogging);
@@ -4384,6 +4445,7 @@ begin
   chkRound.IsChecked := FSettings.RoundReadings;
   chkLockRotate.IsChecked := FSettings.LockRotation;
   cbScanView.ItemIndex := IndexText(FSettings.ScanView, ['keep', 'grid', 'chart']);
+  cbStartPage.ItemIndex := Max(0, IndexText(FSettings.StartPage, StartPageKeys));
   chkAlwaysLog.IsChecked := FSettings.AlwaysLog;
   chkOneLog.IsChecked := FSettings.OneLog;
   chkAskKeep.IsChecked := FSettings.AskKeep;
@@ -4454,6 +4516,8 @@ begin
   FSettings.ShowMinMax := chkMinMax.IsChecked;
   FSettings.Theme := ThemeKeys[TThemeMode(Max(0, cbTheme.ItemIndex))];
   FSettings.KeepScreenOn := chkKeepAwake.IsChecked;
+  if FStartShown then
+    FSettings.LastPage := PageKey(CurrentPage);
   FSettings.SelectedPids := FSelected.ToArray;
   if cbLists.ItemIndex > 0 then
     FSettings.ActiveList := ComboText(cbLists)

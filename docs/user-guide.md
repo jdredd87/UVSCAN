@@ -54,6 +54,8 @@ Windows and Android share one layout:
 | Status strip | A dot — grey idle, blue connected, green scanning, red logging, amber paused — then state, port, VIN, OS ID, update rate and logging. Tap it to go to *Connect*. |
 | Tab bar | **Connect · PIDs · Live · Gauges · Codes · Logs · More** at the bottom (down the left side when the phone is held sideways). |
 
+UVScan opens on *Live*. **When UVScan starts, show** (*Settings → Appearance*) picks another: *Connect*, *PIDs*, *Live*, *Gauges*, *Codes*, *More*, or *The page used last* (the one it showed when it was closed; a page under *More* opens the *More* menu). A [quick start](#quick-start) or a shortcut that connects and scans still goes where it says.
+
 On a wide window (about 1000 pixels and up — a big Windows window, or a tablet held sideways) the PID list stays docked on the left beside the pages (drag the splitter to size it) and the *Live* and *Gauges* pages show their buttons in a bar; on a phone or a narrow window those buttons are in the **⋮** menu.
 
 **More room for the pages:** the **‹** button at the end of the *Scan list* row (or the button at the left of the top bar, **Ctrl + L**, or **⋮ → PID list beside the pages**) puts the PID list away, also while scanning, and gives it a page of its own, **PIDs** in the tab bar, as on a phone. The **›** strip down the left edge (or the same top bar button, or Ctrl + L) brings it back. UVScan remembers which you chose.

@@ -246,6 +246,8 @@ begin
     A.Hotkeys[haScan] := THotkey.Make(0, []); // none
     A.GlobalHotkeys := True;
     A.ScanView := 'chart';
+    A.StartPage := 'last';
+    A.LastPage := 'gauges';
     A.SaveToFile(TempFile('settings.json'));
     Assert.IsFalse(FileExists(TempFile('settings.json.tmp')));
 
@@ -269,6 +271,8 @@ begin
     Assert.AreEqual('F5', B.Hotkeys[haConnect].Text);
     Assert.IsTrue(B.GlobalHotkeys);
     Assert.AreEqual('chart', B.ScanView);
+    Assert.AreEqual('last', B.StartPage);
+    Assert.AreEqual('gauges', B.LastPage);
   finally
     A.Free;
     B.Free;
@@ -289,6 +293,7 @@ begin
     Assert.IsFalse(S.Window.Saved);
     Assert.IsTrue(S.CheckUpdates);
     Assert.IsTrue(S.UpdateChecked = 0);
+    Assert.AreEqual('live', S.StartPage, 'opens on Live, as it always did');
   finally
     S.Free;
   end;
