@@ -2,11 +2,15 @@
 
 <img src="res/artwork/uvscan.svg" alt="UVScan icon" width="112" align="right">
 
-A data logger and scan tool for GM vehicles on **J1850 VPW (GM Class 2)**, using an **AVT‑841** (or 838 / 842) interface on a serial port, USB, or the network (an AVT with an Ethernet port), or an **ELM327** type adapter (Bluetooth, USB or Wi‑Fi) that supports VPW. Written for the 1996‑2005 GM V6s (3100 / 3400 / 3800), it works with any Class 2 PCM.
+A data logger and scan tool for GM vehicles on **J1850 VPW (GM Class 2)**, using an **AVT‑838, 841 or 842** interface on a serial port, USB, or the network (an AVT with an Ethernet port), or an **ELM327** type adapter (Bluetooth, USB or Wi‑Fi) that supports VPW. Written for the 1996‑2005 GM V6s (3100 / 3400 / 3800), it works with any Class 2 PCM.
 
 It is a rewrite of the 2008 UVSCAN (Delphi 2007) for **Delphi 13 FireMonkey (FMX)**, with no third‑party components. It runs on Windows (Win32) and builds for **Android** (64‑bit); the last VCL version is git tag `vcl-final`.
 
-**Download:** the Windows setup program and the Android APK are on the [latest release](https://github.com/jdredd87/UVSCAN/releases/latest). On Windows, UVScan checks for newer ones itself and offers to install them, then starts again. The APK installs without the Play Store: see [installing on Android](docs/user-guide.md#installing-on-android).
+## Download
+
+### [Windows setup and Android APK: latest release](https://github.com/jdredd87/UVSCAN/releases/latest)
+
+On Windows, UVScan checks for a newer release itself and offers to install it, then starts again. The APK installs without the Play Store: see [installing on Android](docs/user-guide.md#installing-on-android).
 
 ![Live data](docs/images/live-data.png)
 
